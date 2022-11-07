@@ -1,0 +1,14 @@
+12
+15.34
+
+def main(x: int|str, y: None | bool) -> int:
+    a = 1
+    b = "100" if a == 1 else "nan"
+    c: List<int|bool|str> = [1, 2, False, "4"]
+
+    for i in range(100):
+        print('wow')
+        break
+    if a > b or a < c:
+        pass
+    return a + 1
