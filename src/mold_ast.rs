@@ -1,4 +1,4 @@
-use crate::mold_tokens::Token;
+use crate::mold_tokens::SolidToken;
 
 enum AstNode {
     Statement,
@@ -11,7 +11,7 @@ pub struct Ast<'a> {
     value: AstNode,
 }
 
-pub fn maks_ast<'a>(input_code: Vec<Token>) -> Ast<'a> {
+pub fn maks_ast<'a>(input_code: Vec<SolidToken>) -> Ast<'a> {
     Ast{
         children: vec![],
         parent: None,

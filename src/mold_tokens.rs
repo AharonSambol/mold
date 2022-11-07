@@ -1,14 +1,15 @@
-// works?
-use std::collections::HashSet;
-use crate::mold_tokens::Token::{Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char};
+// use std::collections::HashSet;
+use crate::mold_tokens::Token::{
+    Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char
+};
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IsOpen { True, False }
 
 
 #[derive(Debug)]
-pub enum Token {
+enum Token {
     Brace(IsOpen), Bracket(IsOpen), Parenthesis(IsOpen),
     Word {
         start: usize,
@@ -33,23 +34,62 @@ pub enum Token {
     Tab, NewLine
 }
 
+#[derive(Debug)]
+pub enum SolidToken {
+    Brace(IsOpen), Bracket(IsOpen), Parenthesis(IsOpen),
+    Word(String),
+    Str(String), Char(char),
+    Int(i32), Float(f32),
+    Operator(OperatorType),
+    Colon, Comma, Period,
+    Tab, NewLine
+}
+
+#[derive(Debug)]
+pub enum OperatorType {
+    Eq, IsEq, Bigger, Smaller, NEq, BEq, SEq,
+    Plus, Minus, Mul, Pow, Div, Mod, FloorDiv,
+    PlusEq, MinusEq, MulEq, PowEq, DivEq, ModEq, FloorDivEq,
+    Or, And, Xor, Not,
+    OrEq, AndEq, XorEq,
+    Returns
+}
+
 // lazy_static! {
 //     static ref VALID_LONG_OPERATORS: HashSet<&'static str> = HashSet::from(
-//         ["//", "**", "==", "!=", "/=", "//=", "+=", "-=", "*=", "%=", "^=", "&=", "**="]
+//         ["//", "**", "==", "!=", "/=", "//=", "+=", "-=", "*=", "%=", "^=", "&=", "|=", "**=", ">=", "<="]
 //     );
 // }
 
-pub fn tokenize(input_code: String) -> Vec<Token> {
+pub fn tokenize(input_code: String) -> Vec<SolidToken> {
     let mut tokens = Vec::new();
     let mut skip = 0;
+    let mut is_str = false;
+    let mut escaped = false;
     let chars: Vec<char> = input_code.chars().collect();
     for (i, c) in chars.iter().enumerate() {
         if skip > 0 {
             skip -= 1;
             continue
         }
+
+        if is_str {
+            match c {
+                '"' => {
+                    is_str = escaped;
+                    escaped = false;
+                },
+                '\\' => escaped = !escaped,
+                _ => escaped = false
+            }
+            if let Str { end, .. } = tokens.last_mut().unwrap() { // always true
+                *end += 1;
+            }
+            continue
+        }
+
         let token = match c {
-            '+' | '-' | '*' | '&' | '^' | '%' | '!' | '|' | '/' | '=' => Operator {
+            '+' | '-' | '*' | '&' | '^' | '%' | '!' | '|' | '/' | '=' | '>' | '<' => Operator {
                 start: i, end: i + 1, is_spaced: false
             },
             '[' => Bracket(IsOpen::True),       ']' => Bracket(IsOpen::False),
@@ -63,16 +103,16 @@ pub fn tokenize(input_code: String) -> Vec<Token> {
             ':' => Colon,   ',' => Comma,   '.' => Period,
 
             '\'' => {
-                if chars[i + 1] == '\\' {
-                    skip = 3;
-                    // todo tokens.push(Char())
-                } else {
-                    skip = 2;
-                    tokens.push(Char(chars[i + 1]))
-                }
+                make_char(&mut tokens, &mut skip, &chars, i);
                 continue
             },
-            // '"' => (),
+            '"' => {
+                is_str = true;
+                tokens.push(Str {
+                    start: i, end: i + 1
+                });
+                continue
+            },
 
             '0'..='9' => Num { start: i, end: i + 1 },
             _ => Word { start: i, end: i + 1, is_spaced: false }
@@ -80,15 +120,86 @@ pub fn tokenize(input_code: String) -> Vec<Token> {
         match token {
             Operator { is_spaced: false, .. } if join_op(&mut tokens, i + 1) => (),
             Word { is_spaced: false, .. } if join_to_word(&mut tokens, i + 1) => (),
-            Num {..} if join_int(&mut tokens, i + 1) => (),
-            Period if join_int(&mut tokens, i + 1) => (),
+            Num {..} if join_num(&mut tokens, i + 1) => (),
+            Period if join_num(&mut tokens, i + 1) => (),
             _ => tokens.push(token)
         };
     }
-    tokens
+    solidify_tokens(&tokens, input_code)
 }
 
-fn join_int(tokens: &mut Vec<Token>, new_end: usize) -> bool {
+fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
+    let mut res = Vec::with_capacity(tokens.len());
+    for token in tokens {
+        res.push(match token {
+            Brace(is_open) =>        SolidToken::Brace(is_open.clone()),
+            Bracket(is_open) =>      SolidToken::Bracket(is_open.clone()),
+            Parenthesis(is_open) =>  SolidToken::Parenthesis(is_open.clone()),
+            Char(chr) => SolidToken::Char(chr.clone()),
+            Word { start, end, .. } => SolidToken::Word(
+                input_code[*start..*end].parse().unwrap()
+            ),
+            Str { start, end } => SolidToken::Str(
+                input_code[*start..*end].parse().unwrap()
+            ),
+            Operator { start, end, .. } => SolidToken::Operator(
+                str_to_op_type(&input_code[*start..*end])
+            ),
+            Num { start, end } => parse_num(&input_code[*start..*end]),
+            Colon => SolidToken::Colon, Comma => SolidToken::Comma, Period => SolidToken::Period,
+            Tab => SolidToken::Tab,     NewLine => SolidToken::NewLine
+        });
+    }
+    res
+}
+
+fn parse_num(num: &str) -> SolidToken {
+    if num.contains('.') {
+        SolidToken::Float(num.parse::<f32>().unwrap())
+    } else {
+        SolidToken::Int(num.parse::<i32>().unwrap())
+    }
+}
+
+fn str_to_op_type(st: &str) -> OperatorType {
+    match st {
+        "=" => OperatorType::Eq,        "==" => OperatorType::IsEq,
+        ">" => OperatorType::Bigger,    "<" => OperatorType::Smaller,
+        "!=" => OperatorType::NEq,  ">=" => OperatorType::BEq,      "<=" => OperatorType::SEq,
+        "+" => OperatorType::Plus,  "-" => OperatorType::Minus,     "*" => OperatorType::Mul,
+        "/" => OperatorType::Div,   "//" => OperatorType::FloorDiv,
+        "**" => OperatorType::Pow,  "%" => OperatorType::Mod,
+        "+=" => OperatorType::PlusEq,   "-=" => OperatorType::MinusEq,  "*=" => OperatorType::MulEq,
+        "/=" => OperatorType::DivEq,    "//=" => OperatorType::FloorDivEq,
+        "**=" => OperatorType::PowEq,   "%=" => OperatorType::ModEq,
+        "|" => OperatorType::Or,    "&" => OperatorType::And,
+        "^" => OperatorType::Xor,   "~" => OperatorType::Not,
+        "|=" => OperatorType::OrEq, "&=" => OperatorType::AndEq,    "^=" => OperatorType::XorEq,
+        "->" => OperatorType::Returns,
+        _ => panic!("invalid operator {}", st.parse::<String>().unwrap())
+    }
+}
+
+fn make_char(tokens: &mut Vec<Token>, skip: &mut i32, chars: &Vec<char>, i: usize) {
+    if chars[i + 1] != '\\' {
+        *skip = 2;
+        tokens.push(Char(chars[i + 1]));
+        return;
+    }
+    *skip = 3;
+    tokens.push(Char(
+        match chars[i + 2] {
+            '\'' => '\'',
+            't' => '\t',
+            '\\' => '\\',
+            'n' => '\n',
+            'r' => '\r',
+        _ => panic!("Invalid escape sequence \\{}", chars[i + 2])
+        }
+    ));
+}
+
+fn join_num(tokens: &mut Vec<Token>, new_end: usize) -> bool {
     if let Some(Num { end, .. }) = tokens.last_mut() {
         *end = new_end;
         true
