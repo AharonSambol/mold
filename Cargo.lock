@@ -13,4 +13,9 @@ name = "mold"
 version = "0.1.0"
 dependencies = [
  "lazy_static",
+ "pretty-print-tree",
 ]
+
+[[package]]
+name = "pretty-print-tree"
+version = "0.1.0"

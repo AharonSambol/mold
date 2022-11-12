@@ -66,6 +66,9 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
     let mut skip = 0;
     let mut is_str = false;
     let mut escaped = false;
+    let mut open_braces = 0;
+    let mut open_brackets = 0;
+    let mut open_parentheses = 0;
     let chars: Vec<char> = input_code.chars().collect();
     for (i, c) in chars.iter().enumerate() {
         if skip > 0 {
@@ -89,19 +92,48 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
         }
 
         let token = match c {
-            '+' | '-' | '*' | '&' | '^' | '%' | '!' | '|' | '/' | '=' | '>' | '<' => Operator {
-                start: i, end: i + 1, is_spaced: false
-            },
-            '[' => Bracket(IsOpen::True),       ']' => Bracket(IsOpen::False),
-            '{' => Brace(IsOpen::True),         '}' => Brace(IsOpen::False),
-            '(' => Parenthesis(IsOpen::True),   ')' => Parenthesis(IsOpen::False),
             ' ' => {
                 space_prev_token(&mut tokens);
                 if is_tab(&chars, i) {  skip = 3;   Tab   } else { continue }
             },
             '\t' => Tab,   '\n' => NewLine,
             ':' => Colon,   ',' => Comma,   '.' => Period,
-
+            '0'..='9' => Num { start: i, end: i + 1 },
+            // <editor-fold desc="+-*%">
+            '+' | '-' | '*' | '&' | '^' | '%' | '!' | '|' | '/' | '=' | '>' | '<' => Operator {
+                start: i, end: i + 1, is_spaced: false
+            },
+            // </editor-fold>
+            // <editor-fold desc="[]{}()">
+            '[' => {
+                open_brackets += 1;
+                Bracket(IsOpen::True)
+            },
+            ']' => {
+                open_brackets -= 1;
+                if open_brackets == -1 {    panic!("unexpected close bracket") }
+                Bracket(IsOpen::False)
+            },
+            '{' => {
+                open_braces += 1;
+                Brace(IsOpen::True)
+            },
+            '}' => {
+                open_braces -= 1;
+                if open_braces == -1 {    panic!("unexpected close braces") }
+                Brace(IsOpen::False)
+            },
+            '(' => {
+                open_parentheses += 1;
+                Parenthesis(IsOpen::True)
+            },
+            ')' => {
+                open_parentheses -= 1;
+                if open_parentheses == -1 {    panic!("unexpected close parentheses") }
+                Parenthesis(IsOpen::False)
+            },
+            // </editor-fold>
+            // <editor-fold desc="''">
             '\'' => {
                 make_char(&mut tokens, &mut skip, &chars, i);
                 continue
@@ -113,8 +145,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
                 });
                 continue
             },
-
-            '0'..='9' => Num { start: i, end: i + 1 },
+            // </editor-fold>
             _ => Word { start: i, end: i + 1, is_spaced: false }
         };
         match token {
@@ -137,10 +168,10 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
             Parenthesis(is_open) =>  SolidToken::Parenthesis(is_open.clone()),
             Char(chr) => SolidToken::Char(chr.clone()),
             Word { start, end, .. } => SolidToken::Word(
-                input_code[*start..*end].parse().unwrap()
+                String::from(&input_code[*start..*end])
             ),
             Str { start, end } => SolidToken::Str(
-                input_code[*start..*end].parse().unwrap()
+                String::from(&input_code[*start..*end])
             ),
             Operator { start, end, .. } => SolidToken::Operator(
                 str_to_op_type(&input_code[*start..*end])
