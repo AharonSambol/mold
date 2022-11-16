@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 // use std::collections::HashSet;
 use crate::mold_tokens::Token::{
     Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char
@@ -34,32 +35,96 @@ enum Token {
     Tab, NewLine
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SolidToken {
     Brace(IsOpen), Bracket(IsOpen), Parenthesis(IsOpen),
     Word(String),
     Str(String), Char(char),
-    Int(i32), Float(f32),
+    Int(String), // Float(f32),
     Operator(OperatorType),
     Colon, Comma, Period,
-    Tab, NewLine
+    Tab, NewLine,
+    Def, Class, Enum, Struct,
+    If, Else, Elif,
+    Match, Case, While, For,
+    Break, Continue, Return, Pass,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum OperatorType {
     Eq, IsEq, Bigger, Smaller, NEq, BEq, SEq,
     Plus, Minus, Mul, Pow, Div, Mod, FloorDiv,
     PlusEq, MinusEq, MulEq, PowEq, DivEq, ModEq, FloorDivEq,
     Or, And, Xor, Not,
     OrEq, AndEq, XorEq,
+    ShiftR, ShiftL,
     Returns
 }
-
-// lazy_static! {
-//     static ref VALID_LONG_OPERATORS: HashSet<&'static str> = HashSet::from(
-//         ["//", "**", "==", "!=", "/=", "//=", "+=", "-=", "*=", "%=", "^=", "&=", "|=", "**=", ">=", "<="]
-//     );
-// }
+// todo is, in, not
+// todo unary
+impl Display for OperatorType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            OperatorType::Eq => "=",
+            OperatorType::IsEq => "==",
+            OperatorType::Bigger => ">",
+            OperatorType::Smaller => "<",
+            OperatorType::NEq => "!=",
+            OperatorType::BEq => ">=",
+            OperatorType::SEq => "<=",
+            OperatorType::Plus => "+",
+            OperatorType::Minus => "-",
+            OperatorType::Mul => "*",
+            OperatorType::Pow => "**",
+            OperatorType::Div => "/",
+            OperatorType::Mod => "%",
+            OperatorType::FloorDiv=> "//",
+            OperatorType::PlusEq => "+=",
+            OperatorType::MinusEq => "-=",
+            OperatorType::MulEq => "*=",
+            OperatorType::PowEq => "**=",
+            OperatorType::DivEq => "/=",
+            OperatorType::ModEq => "%=",
+            OperatorType::FloorDivEq => "//=",
+            OperatorType::Or => "|",
+            OperatorType::And => "&",
+            OperatorType::Xor => "^",
+            OperatorType::Not => "~",
+            OperatorType::OrEq => "|=",
+            OperatorType::AndEq => "&=",
+            OperatorType::XorEq => "^=",
+            OperatorType::ShiftL => "<<",
+            OperatorType::ShiftR => ">>",
+            OperatorType::Returns => "->"
+        })
+    }
+}
+impl OperatorType {
+    pub(crate) fn get_priority(&self) -> i16 {
+        match self {
+            OperatorType::Pow => 100,
+            OperatorType::Mul
+            | OperatorType::Div
+            | OperatorType::Mod
+            | OperatorType::FloorDiv => 90,
+            OperatorType::Plus
+            | OperatorType::Minus => 80,
+            OperatorType::ShiftL
+            | OperatorType::ShiftR => 70,
+            OperatorType::And => 60,
+            OperatorType::Xor => 50,
+            OperatorType::Or => 40,
+            OperatorType::IsEq
+            | OperatorType::Bigger
+            | OperatorType::Smaller
+            | OperatorType::NEq
+            | OperatorType::BEq
+            | OperatorType::SEq => 30,
+            // OperatorType::Not => "~",
+            _ => -100
+        }
+    }
+}
 
 pub fn tokenize(input_code: String) -> Vec<SolidToken> {
     let mut tokens = Vec::new();
@@ -167,16 +232,30 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
             Bracket(is_open) =>      SolidToken::Bracket(is_open.clone()),
             Parenthesis(is_open) =>  SolidToken::Parenthesis(is_open.clone()),
             Char(chr) => SolidToken::Char(chr.clone()),
-            Word { start, end, .. } => SolidToken::Word(
-                String::from(&input_code[*start..*end])
-            ),
+            Word { start, end, .. } => {
+                let st = &input_code[*start..*end];
+                match st {
+                    "def" => SolidToken::Def, "class" => SolidToken::Class,
+                    "enum" => SolidToken::Enum, "struct" => SolidToken::Struct,
+                    "if" => SolidToken::If, "else" => SolidToken::Else,
+                    "elif" => SolidToken::Elif,
+                    "match" => SolidToken::Match, "case" => SolidToken::Case,
+                    "while" => SolidToken::While, "for" => SolidToken::For,
+                    "break" => SolidToken::Break, "continue" => SolidToken::Continue,
+                    "return" => SolidToken::Return, "pass" => SolidToken::Pass,
+                    _ => SolidToken::Word(String::from(st))
+                }
+            },
             Str { start, end } => SolidToken::Str(
                 String::from(&input_code[*start..*end])
             ),
             Operator { start, end, .. } => SolidToken::Operator(
                 str_to_op_type(&input_code[*start..*end])
             ),
-            Num { start, end } => parse_num(&input_code[*start..*end]),
+            // Num { start, end } => parse_num(&input_code[*start..*end]),
+            Num { start, end } => SolidToken::Int(
+                String::from(&input_code[*start..*end])
+            ),
             Colon => SolidToken::Colon, Comma => SolidToken::Comma, Period => SolidToken::Period,
             Tab => SolidToken::Tab,     NewLine => SolidToken::NewLine
         });
@@ -184,13 +263,13 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
     res
 }
 
-fn parse_num(num: &str) -> SolidToken {
-    if num.contains('.') {
-        SolidToken::Float(num.parse::<f32>().unwrap())
-    } else {
-        SolidToken::Int(num.parse::<i32>().unwrap())
-    }
-}
+// fn parse_num(num: &str) -> SolidToken {
+//     if num.contains('.') {
+//         SolidToken::Float(num.parse::<f32>().unwrap())
+//     } else {
+//         SolidToken::Int(num.parse::<i32>().unwrap())
+//     }
+// }
 
 fn str_to_op_type(st: &str) -> OperatorType {
     match st {

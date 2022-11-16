@@ -1,4 +1,5 @@
-use std::fmt::{Display, Formatter, write};
+use std::fmt::{Display, Formatter};
+use crate::ast_structure::join;
 
 pub const UNKNOWN_TYPE: Type = Type {
     kind: TypeKind::Unknown,
@@ -23,12 +24,9 @@ impl Display for Type {
         match &self.kind {
             TypeKind::Unknown => write!(f, "Unknown"),
             TypeKind::Typ(st) => write!(f, "{}", st),
-            TypeKind::OneOf => write!(f, "({})", self.children
+            TypeKind::OneOf => write!(f, "({})", join(&self.children
                 .clone()
-                .unwrap_or(vec![])
-                .iter().map(|x| x.to_string())
-                .collect::<Vec<String>>()
-                .join("|"))
+                .unwrap_or(vec![]), "|"))
         }
     }
 }

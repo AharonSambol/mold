@@ -1,7 +1,9 @@
 // #[macro_use]
 // extern crate lazy_static;
 
-use pretty_print_tree::{Color, PrettyPrintTree};
+extern crate core;
+
+use pretty_print_tree::PrettyPrintTree;
 
 mod mold_ast;
 mod mold_tokens;
@@ -9,6 +11,7 @@ mod ast_structure;
 mod types;
 
 use std::fs;
+use crate::mold_tokens::SolidToken;
 
 fn main() {
     let data = fs::read_to_string("input_program.txt")
@@ -30,6 +33,6 @@ fn main() {
         })
     );
     let tokens = mold_tokens::tokenize(data);
-    println!("{:?}", tokens);
+    println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidToken)>>());
     let _ast = mold_ast::construct_ast(&tokens, 0, &ppt);
 }

@@ -1,5 +1,6 @@
 use crate::types::{Type, UNKNOWN_TYPE};
-use std::fmt::{Display, Formatter, write};
+use std::fmt::{Display, Formatter};
+use crate::mold_tokens::OperatorType;
 
 #[derive(Clone, Debug)]
 pub struct Ast {
@@ -22,10 +23,16 @@ impl Ast {
 pub enum AstNode {
     Statement,
     Expression,
-    Module,
+    Module,             // children = all the functions/classes/enums..
     Function(Function),
     Class, Enum,
-
+    Identifier(String), // no children
+    Assignment,         // children[0] = var, children[1] = val
+    FunctionCall,       // children[0] = func, children[1..] = param,
+    Property,           // children[0] = obj, children[1] = prop
+    Number(String),     // no children
+    Operator(OperatorType),   // children[0] = elem1, children[1] = elem2
+    Parentheses,        // children[0] = inside
 }
 
 impl Display for AstNode {
@@ -36,7 +43,17 @@ impl Display for AstNode {
             AstNode::Module => write!(f, "Module"),
             AstNode::Class => write!(f, "Class"),
             AstNode::Enum => write!(f, "Enum"),
-            AstNode::Function(func) => write!(f, "Func({})", func.to_string())
+            AstNode::Function(func) => write!(f, "Func({})", func.to_string()),
+            AstNode::FunctionCall =>
+                write!(f, "FuncCall()"),
+            AstNode::Assignment =>
+                write!(f, "Assignment"),
+            AstNode::Property =>
+                write!(f, "Property"),
+            AstNode::Identifier(st) => write!(f, "{}", st),
+            AstNode::Number(num) => write!(f, "{}", num),
+            AstNode::Operator(op) => write!(f, "{}", op),
+            AstNode::Parentheses => write!(f, "()"),
         }
     }
 }
@@ -59,13 +76,17 @@ pub struct Function {
 
 impl Display for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let params = self.params.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(", ");
+        let params = join(&self.params, ", ");
         if let Some(rt) = &self.return_type {
             write!(f, "\n\tname: {}\n\tparam({})\n\treturn type: {}\n", self.name, params, rt)
         } else {
             write!(f, "\n\tname: {}\n\tparam: {}\n\tno return\n", self.name, params)
         }
     }
+}
+
+pub fn join<T: Display>(lst: &Vec<T>, sep: &str) -> String {
+    lst.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(sep)
 }
 
 #[derive(Debug, Clone)]
