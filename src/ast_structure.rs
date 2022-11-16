@@ -32,6 +32,7 @@ pub enum AstNode {
     Property,           // children[0] = obj, children[1] = prop
     Number(String),     // no children
     Operator(OperatorType),   // children[0] = elem1, children[1] = elem2
+    UnaryOp(OperatorType),    // children[0] = elem
     Parentheses,        // children[0] = inside
 }
 
@@ -53,6 +54,7 @@ impl Display for AstNode {
             AstNode::Identifier(st) => write!(f, "{}", st),
             AstNode::Number(num) => write!(f, "{}", num),
             AstNode::Operator(op) => write!(f, "{}", op),
+            AstNode::UnaryOp(op) => write!(f, "Unary({})", op),
             AstNode::Parentheses => write!(f, "()"),
         }
     }

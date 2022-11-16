@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::fmt::Write;
 // use std::collections::HashSet;
 use crate::mold_tokens::Token::{
     Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char
@@ -55,7 +56,7 @@ pub enum OperatorType {
     Eq, IsEq, Bigger, Smaller, NEq, BEq, SEq,
     Plus, Minus, Mul, Pow, Div, Mod, FloorDiv,
     PlusEq, MinusEq, MulEq, PowEq, DivEq, ModEq, FloorDivEq,
-    Or, And, Xor, Not,
+    Or, And, Xor, BinNot,
     OrEq, AndEq, XorEq,
     ShiftR, ShiftL,
     Returns
@@ -89,7 +90,7 @@ impl Display for OperatorType {
             OperatorType::Or => "|",
             OperatorType::And => "&",
             OperatorType::Xor => "^",
-            OperatorType::Not => "~",
+            OperatorType::BinNot => "~",
             OperatorType::OrEq => "|=",
             OperatorType::AndEq => "&=",
             OperatorType::XorEq => "^=",
@@ -103,6 +104,7 @@ impl OperatorType {
     pub(crate) fn get_priority(&self) -> i16 {
         match self {
             OperatorType::Pow => 100,
+            OperatorType::BinNot => 95,
             OperatorType::Mul
             | OperatorType::Div
             | OperatorType::Mod
@@ -120,7 +122,6 @@ impl OperatorType {
             | OperatorType::NEq
             | OperatorType::BEq
             | OperatorType::SEq => 30,
-            // OperatorType::Not => "~",
             _ => -100
         }
     }
@@ -130,6 +131,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
     let mut tokens = Vec::new();
     let mut skip = 0;
     let mut is_str = false;
+    let mut is_comment = false;
     let mut escaped = false;
     let mut open_braces = 0;
     let mut open_brackets = 0;
@@ -140,7 +142,13 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
             skip -= 1;
             continue
         }
-
+        if is_comment {
+            if *c == '\n' {
+                is_comment = false;
+            } else {
+                continue
+            }
+        }
         if is_str {
             match c {
                 '"' => {
@@ -157,6 +165,10 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
         }
 
         let token = match c {
+            '#' => {
+                is_comment = true;
+                continue
+            },
             ' ' => {
                 space_prev_token(&mut tokens);
                 if is_tab(&chars, i) {  skip = 3;   Tab   } else { continue }
@@ -165,7 +177,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
             ':' => Colon,   ',' => Comma,   '.' => Period,
             '0'..='9' => Num { start: i, end: i + 1 },
             // <editor-fold desc="+-*%">
-            '+' | '-' | '*' | '&' | '^' | '%' | '!' | '|' | '/' | '=' | '>' | '<' => Operator {
+            '+' | '-' | '*' | '&' | '^' | '%' | '!' | '|' | '/' | '=' | '>' | '<' | '~' => Operator {
                 start: i, end: i + 1, is_spaced: false
             },
             // </editor-fold>
@@ -227,7 +239,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
 fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
     let mut res = Vec::with_capacity(tokens.len());
     for token in tokens {
-        res.push(match token {
+        let st = match token {
             Brace(is_open) =>        SolidToken::Brace(is_open.clone()),
             Bracket(is_open) =>      SolidToken::Bracket(is_open.clone()),
             Parenthesis(is_open) =>  SolidToken::Parenthesis(is_open.clone()),
@@ -249,16 +261,31 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
             Str { start, end } => SolidToken::Str(
                 String::from(&input_code[*start..*end])
             ),
-            Operator { start, end, .. } => SolidToken::Operator(
-                str_to_op_type(&input_code[*start..*end])
-            ),
+            Operator { start, end, .. } => {
+                // todo this is messy...
+                let mut oper = String::new();
+                for c in input_code.chars().skip(*start).take(*end-*start) {
+                    if !matches!(str_to_op_type(&(oper.clone() + &c.to_string())), Some(_)) {
+                        res.push(SolidToken::Operator(str_to_op_type(&oper).unwrap()));
+                        oper = c.to_string()
+                    } else {
+                        write!(&mut oper, "{}", c).unwrap();
+                    }
+                }
+                SolidToken::Operator(if let Some(op) = str_to_op_type(&oper) {
+                    op
+                } else {
+                    panic!("invalid operator {}", &oper.parse::<String>().unwrap())
+                })
+            },
             // Num { start, end } => parse_num(&input_code[*start..*end]),
             Num { start, end } => SolidToken::Int(
                 String::from(&input_code[*start..*end])
             ),
             Colon => SolidToken::Colon, Comma => SolidToken::Comma, Period => SolidToken::Period,
             Tab => SolidToken::Tab,     NewLine => SolidToken::NewLine
-        });
+        };
+        res.push(st);
     }
     res
 }
@@ -271,8 +298,8 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
 //     }
 // }
 
-fn str_to_op_type(st: &str) -> OperatorType {
-    match st {
+fn str_to_op_type(st: &str) -> Option<OperatorType> {
+    Some(match st {
         "=" => OperatorType::Eq,        "==" => OperatorType::IsEq,
         ">" => OperatorType::Bigger,    "<" => OperatorType::Smaller,
         "!=" => OperatorType::NEq,  ">=" => OperatorType::BEq,      "<=" => OperatorType::SEq,
@@ -283,11 +310,11 @@ fn str_to_op_type(st: &str) -> OperatorType {
         "/=" => OperatorType::DivEq,    "//=" => OperatorType::FloorDivEq,
         "**=" => OperatorType::PowEq,   "%=" => OperatorType::ModEq,
         "|" => OperatorType::Or,    "&" => OperatorType::And,
-        "^" => OperatorType::Xor,   "~" => OperatorType::Not,
+        "^" => OperatorType::Xor,   "~" => OperatorType::BinNot,
         "|=" => OperatorType::OrEq, "&=" => OperatorType::AndEq,    "^=" => OperatorType::XorEq,
         "->" => OperatorType::Returns,
-        _ => panic!("invalid operator {}", st.parse::<String>().unwrap())
-    }
+        _ => return None
+    })
 }
 
 fn make_char(tokens: &mut Vec<Token>, skip: &mut i32, chars: &Vec<char>, i: usize) {

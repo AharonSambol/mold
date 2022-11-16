@@ -109,25 +109,6 @@ fn insert_as_parent_of_prev(tree: &mut Vec<Ast>, parent: usize, value: AstNode) 
     }
     index
 }
-/*fn update_pointers(tree: &mut Vec<Ast>, diff: isize) {
-    for mut ast in tree {
-        if let Some(children) = &ast.children {
-            ast.children = Some(children.iter().map(|x| (*x as isize + diff) as usize).collect());
-        }
-        if let Some(parent) = &ast.parent {
-            ast.parent = Some((*parent as isize + diff) as usize)
-        };
-        // else {
-        //     if let Some(mut children) = &tree[ast.parent.unwrap()].children {
-        //         children.push(((i as isize) + diff) as usize);
-        //     } else {
-        //         tree[ast.parent.unwrap()].children = Some(vec![((i as isize) + diff) as usize]);
-        //     }
-        //     def_parent
-        // };
-
-    }
-}*/
 
 fn make_ast_expression(
     tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize,
@@ -137,7 +118,6 @@ fn make_ast_expression(
     while pos < tokens.len() {
         let token = &tokens[pos];
         match token {
-            // <editor-fold desc="({[]})">
             SolidToken::Parenthesis(IsOpen::True) | SolidToken::Bracket(IsOpen::True) | SolidToken::Brace(IsOpen::True) => {
                 amount_of_open += 1;
                 if let SolidToken::Parenthesis(_) = token {
@@ -154,13 +134,9 @@ fn make_ast_expression(
             },
             SolidToken::Parenthesis(IsOpen::False) | SolidToken::Bracket(IsOpen::False) | SolidToken::Brace(IsOpen::False) => {
                 amount_of_open -= 1;
-                if amount_of_open == -1 {
-                    break
-                }
+                if amount_of_open == -1 { break }
             },
-            // </editor-fold>
             SolidToken::NewLine if amount_of_open == 0 => break,
-            // SolidToken::Word(str) =>
             SolidToken::Int(num) => {
                 add_to_tree(parent, &mut tree, Ast {
                     children: None,
@@ -170,18 +146,26 @@ fn make_ast_expression(
             },
             SolidToken::Operator(op) => {
                 let mut parent = parent;
-                while let AstNode::Operator(prev_op) = &tree[parent].value {
-                    if prev_op.get_priority() < op.get_priority() { break }
-                    parent = tree[parent].parent.unwrap();
+                let unary = is_unary(&tree, parent);
+                if !unary {
+                    while let AstNode::Operator(prev_op) | AstNode::UnaryOp(prev_op) = &tree[parent].value {
+                        if !matches!(&tree[parent].value, AstNode::UnaryOp(_))
+                            && prev_op.get_priority() < op.get_priority() { break }
+                        parent = tree[parent].parent.unwrap();
+                    }
                 }
-
-                // let index = if tree[parent].children.clone().unwrap().last().unwrap() == 1 {
-                //     0
-                // } else {
-                let index = insert_as_parent_of_prev(&mut tree, parent, {
-                    AstNode::Operator(op.clone())
-                });
-                // };
+                let index = if unary {
+                    add_to_tree(parent, &mut tree, Ast{
+                        children: None,
+                        parent: Some(parent),
+                        value: AstNode::UnaryOp(op.clone())
+                    });
+                    tree.len() - 1
+                } else {
+                    insert_as_parent_of_prev(&mut tree, parent, {
+                        AstNode::Operator(op.clone())
+                    })
+                };
                 let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, ppt);
                 pos = p - 1;
                 tree = t;
@@ -193,6 +177,15 @@ fn make_ast_expression(
     (pos, tree)
 }
 
+fn is_unary(tree: &Vec<Ast>, parent: usize) -> bool {
+    match tree[parent].value {
+        AstNode::Assignment => tree[parent].children.clone().unwrap().len() < 2,
+        AstNode::Operator(_) => tree[parent].children.clone().unwrap().len() < 2,
+        AstNode::UnaryOp(_) => tree[parent].children.clone().unwrap_or(vec![]).len() == 0,
+        AstNode::Parentheses => tree[parent].children.clone().unwrap_or(vec![]).len() == 0,
+        _ => panic!("unexpected parent ({:?}) for operator", tree[parent].value)
+    }
+}
 
 fn add_to_tree(parent: usize, tree: &mut Vec<Ast>, new_node: Ast) {
     tree.push(new_node);
@@ -299,3 +292,20 @@ fn get_arg_typ(tokens: &Vec<SolidToken>, pos: &mut usize) -> Type {
     }
     res.unwrap_or_else(|| panic!("expected arg but no arg found"))
 }
+
+
+/*
+fn eval(tree: &Vec<Ast>, pos: usize) -> f64 {
+    let children = tree[pos].children.clone().unwrap_or(vec![]);
+    match &tree[pos].value {
+        AstNode::Operator(OperatorType::Plus) => eval(tree, children[0]) + eval(tree, children[1]),
+        AstNode::Operator(OperatorType::Minus) => eval(tree, children[0]) - eval(tree, children[1]),
+        AstNode::Operator(OperatorType::Div) => eval(tree, children[0]) / eval(tree, children[1]),
+        AstNode::Operator(OperatorType::Mul) => eval(tree, children[0]) * eval(tree, children[1]),
+        AstNode::UnaryOp(OperatorType::Minus) => -eval(tree, children[0]),
+        AstNode::Parentheses => eval(tree, children[0]),
+        AstNode::Module => eval(tree, children[0]),
+        AstNode::Number(num) => num.parse::<f64>().unwrap()
+    }
+}
+*/
