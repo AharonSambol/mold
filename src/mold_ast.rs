@@ -19,26 +19,50 @@ fn make_ast_statement(
         let token = &tokens[pos];
         match token {
             SolidToken::Def => {
-                let func = Ast::new(AstNode::new_func());
-                add_to_tree(parent, &mut tree, func);
+                add_to_tree(parent, &mut tree, Ast::new(AstNode::new_func()));
                 let len = tree.len();
                 let temp = make_func(tokens, pos + 1, tree, len - 1, indent, ppt);
                 pos = temp.0; tree = temp.1;
-                println!("{}", ppt.to_str(&(tree.clone(), 0)));
+                println!("\n\n{}", ppt.to_str(&(tree.clone(), 0)));
             },
-            // SolidToken::Class => {},
-            // SolidToken::Enum => {},
-            // SolidToken::Struct => {},
-            // SolidToken::If => {},
-            // SolidToken::Else => {},
-            // SolidToken::Elif => {},
-            // SolidToken::For => {},
-            // SolidToken::Match => {},
-            // SolidToken::While => {},
-            // SolidToken::Break => {},
-            // SolidToken::Continue => {},
-            // SolidToken::Return => {},
-            // SolidToken::Pass => {},
+            SolidToken::If => {
+                let (p, t) = if_expression(tokens, pos, tree, parent, indent, ppt);
+                pos = p;
+                tree = t;
+            },
+            SolidToken::Else => {
+                if let SolidToken::Colon = tokens[pos + 1] {
+                    pos += 1;
+                } else {
+                    panic!("expected colon")
+                }
+                let last = get_last(&mut tree[parent].children);
+                if let AstNode::IfExpression = tree[last].value {
+                    add_to_tree(last, &mut tree, Ast {
+                        children: None,
+                        parent: Some(last),
+                        value: AstNode::Module
+                    });
+                    let len = tree.len();
+                    let (p, t) = make_ast_statement(
+                        tokens, pos + 1, tree, len - 1, indent + 1, ppt
+                    );
+                    pos = p - 1;
+                    tree = t;
+                } else {
+                    panic!("else to unknown if")
+                }
+            },
+            SolidToken::Elif => {
+                let last = get_last(&mut tree[parent].children);
+                if let AstNode::IfExpression = tree[last].value {
+                    let (p, t) = if_expression(tokens, pos, tree, last, indent, ppt);
+                    pos = p;
+                    tree = t;
+                } else {
+                    panic!("elif to unknown if")
+                }
+            },
             SolidToken::Word(st) => {
                 // todo only if in correct context
                 add_to_tree(parent, &mut tree, Ast {
@@ -81,16 +105,62 @@ fn make_ast_statement(
                 }
                 pos += tabs;
             },
+
             _ => panic!("unexpected token `{:?}`", token)
         }
         pos += 1;
     }
-    ppt.to_str(&(tree.clone(), 0));
     (pos, tree)
 }
 
+fn get_last(arr: &mut Option<Vec<usize>>) -> usize{
+    if let Some(arr) = arr {
+        let last = arr.pop().unwrap();
+        arr.push(last);
+        last
+    } else { panic!() }
+}
+fn get_len(arr: &Option<Vec<usize>>) -> usize {
+    if let Some(arr) = arr {
+        arr.len()
+    } else { 0 }
+}
+
+fn if_expression(
+    tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize,
+    indent: usize, ppt: &PrettyPrintTree<(Vec<Ast>, usize)>
+) -> (usize, Vec<Ast>) {
+    add_to_tree(parent, &mut tree, Ast {
+        children: None,
+        parent: Some(parent),
+        value: AstNode::IfExpression
+    });
+    let len = tree.len();
+    //4 condition:
+    add_to_tree(len - 1, &mut tree, Ast {
+        children: None,
+        parent: Some(len - 1),
+        value: AstNode::ColonParentheses
+    });
+    let (p, t) = make_ast_expression(
+        tokens, pos + 1, tree, len, ppt
+    );
+    pos = p; tree = t;
+    //4 body:
+    add_to_tree(len - 1, &mut tree, Ast {
+        children: None,
+        parent: Some(len - 1),
+        value: AstNode::Module
+    });
+    let len = tree.len();
+    let (p, t) = make_ast_statement(
+        tokens, pos + 1, tree, len - 1, indent + 1, ppt
+    );
+    (p - 1, t)
+}
+
 fn insert_as_parent_of_prev(tree: &mut Vec<Ast>, parent: usize, value: AstNode) -> usize {
-    let index = *tree[parent].children.clone().unwrap().last().unwrap();
+    let index = get_last(&mut tree[parent].children);
     tree[index].parent = Some(index);
     tree.insert(index, Ast {
         value,
@@ -137,6 +207,7 @@ fn make_ast_expression(
                 if amount_of_open == -1 { break }
             },
             SolidToken::NewLine if amount_of_open == 0 => break,
+            SolidToken::Colon => break,
             SolidToken::Int(num) => {
                 add_to_tree(parent, &mut tree, Ast {
                     children: None,
@@ -179,10 +250,11 @@ fn make_ast_expression(
 
 fn is_unary(tree: &Vec<Ast>, parent: usize) -> bool {
     match tree[parent].value {
-        AstNode::Assignment => tree[parent].children.clone().unwrap().len() < 2,
-        AstNode::Operator(_) => tree[parent].children.clone().unwrap().len() < 2,
-        AstNode::UnaryOp(_) => tree[parent].children.clone().unwrap_or(vec![]).len() == 0,
-        AstNode::Parentheses => tree[parent].children.clone().unwrap_or(vec![]).len() == 0,
+        AstNode::Assignment => get_len(&tree[parent].children) < 2,
+        AstNode::Operator(_) => get_len(&tree[parent].children) < 2,
+        AstNode::UnaryOp(_) => get_len(&tree[parent].children) == 0,
+        AstNode::Parentheses => get_len(&tree[parent].children) == 0,
+        AstNode::ColonParentheses => get_len(&tree[parent].children) == 0,
         _ => panic!("unexpected parent ({:?}) for operator", tree[parent].value)
     }
 }

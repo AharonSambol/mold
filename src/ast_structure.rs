@@ -21,11 +21,8 @@ impl Ast {
 
 #[derive(Clone, Debug)]
 pub enum AstNode {
-    Statement,
-    Expression,
     Module,             // children = all the functions/classes/enums..
-    Function(Function),
-    Class, Enum,
+    Function(Function), // children = the body
     Identifier(String), // no children
     Assignment,         // children[0] = var, children[1] = val
     FunctionCall,       // children[0] = func, children[1..] = param,
@@ -34,16 +31,14 @@ pub enum AstNode {
     Operator(OperatorType),   // children[0] = elem1, children[1] = elem2
     UnaryOp(OperatorType),    // children[0] = elem
     Parentheses,        // children[0] = inside
+    ColonParentheses,   // children[0] = inside
+    IfExpression,       // children[0] = condition, children[1] = body, children[2] = else?
 }
 
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            AstNode::Statement => write!(f, "Statement"),
-            AstNode::Expression => write!(f, "Expression"),
             AstNode::Module => write!(f, "Module"),
-            AstNode::Class => write!(f, "Class"),
-            AstNode::Enum => write!(f, "Enum"),
             AstNode::Function(func) => write!(f, "Func({})", func.to_string()),
             AstNode::FunctionCall =>
                 write!(f, "FuncCall()"),
@@ -56,6 +51,8 @@ impl Display for AstNode {
             AstNode::Operator(op) => write!(f, "{}", op),
             AstNode::UnaryOp(op) => write!(f, "Unary({})", op),
             AstNode::Parentheses => write!(f, "()"),
+            AstNode::ColonParentheses => write!(f, "():"),
+            AstNode::IfExpression => write!(f, "if"),
         }
     }
 }

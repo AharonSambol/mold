@@ -61,8 +61,8 @@ pub enum OperatorType {
     ShiftR, ShiftL,
     Returns
 }
+
 // todo is, in, not
-// todo unary
 impl Display for OperatorType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
@@ -312,6 +312,7 @@ fn str_to_op_type(st: &str) -> Option<OperatorType> {
         "|" => OperatorType::Or,    "&" => OperatorType::And,
         "^" => OperatorType::Xor,   "~" => OperatorType::BinNot,
         "|=" => OperatorType::OrEq, "&=" => OperatorType::AndEq,    "^=" => OperatorType::XorEq,
+        ">>" => OperatorType::ShiftR, "<<" => OperatorType::ShiftL,
         "->" => OperatorType::Returns,
         _ => return None
     })

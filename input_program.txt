@@ -1,5 +1,14 @@
 def main(x: int|str, y: None | bool) -> int:
-    x = 2 + ~-(1 + 6) * -4
+    x = 2 + -(1 + 6) * -4
     a = (1 +-4) * 5
     b = -3
     c = 3 * (4 + (-2 + 7)) / 4
+    if 2 > 1:
+        f = 1
+        if 3 > 5:
+            g = 2
+    elif 2 == 5:
+        dd = 3
+    else:
+        f = 22
+    e = 3
