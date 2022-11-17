@@ -1,5 +1,5 @@
 use crate::types::{Type, UNKNOWN_TYPE};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, write};
 use crate::mold_tokens::OperatorType;
 
 #[derive(Clone, Debug)]
@@ -32,7 +32,9 @@ pub enum AstNode {
     UnaryOp(OperatorType),    // children[0] = elem
     Parentheses,        // children[0] = inside
     ColonParentheses,   // children[0] = inside
-    IfExpression,       // children[0] = condition, children[1] = body, children[2] = else?
+    IfStatement, WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
+    Pass,
+    ListLiteral, // children = elements
 }
 
 impl Display for AstNode {
@@ -52,7 +54,10 @@ impl Display for AstNode {
             AstNode::UnaryOp(op) => write!(f, "Unary({})", op),
             AstNode::Parentheses => write!(f, "()"),
             AstNode::ColonParentheses => write!(f, "():"),
-            AstNode::IfExpression => write!(f, "if"),
+            AstNode::IfStatement => write!(f, "if"),
+            AstNode::WhileStatement => write!(f, "while"),
+            AstNode::Pass => write!(f, "pass"),
+            AstNode::ListLiteral => write!(f, "[LIST]")
         }
     }
 }

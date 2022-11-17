@@ -42,7 +42,7 @@ pub enum SolidToken {
     Word(String),
     Str(String), Char(char),
     Int(String), // Float(f32),
-    Operator(OperatorType),
+    Operator(OperatorType), UnaryOperator(OperatorType),
     Colon, Comma, Period,
     Tab, NewLine,
     Def, Class, Enum, Struct,
@@ -165,6 +165,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
         }
 
         let token = match c {
+            '`' => break,
             '#' => {
                 is_comment = true;
                 continue
@@ -266,17 +267,20 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                 let mut oper = String::new();
                 for c in input_code.chars().skip(*start).take(*end-*start) {
                     if !matches!(str_to_op_type(&(oper.clone() + &c.to_string())), Some(_)) {
-                        res.push(SolidToken::Operator(str_to_op_type(&oper).unwrap()));
+                        let op = str_to_op_type(&oper).unwrap_or_else(||
+                            panic!("invalid operator {}", &oper.parse::<String>().unwrap())
+                        );
+                        res.push(unary_or_bin(&res, op));
                         oper = c.to_string()
                     } else {
                         write!(&mut oper, "{}", c).unwrap();
                     }
                 }
-                SolidToken::Operator(if let Some(op) = str_to_op_type(&oper) {
-                    op
+                if let Some(op) = str_to_op_type(&oper) {
+                    unary_or_bin(&res, op)
                 } else {
                     panic!("invalid operator {}", &oper.parse::<String>().unwrap())
-                })
+                }
             },
             // Num { start, end } => parse_num(&input_code[*start..*end]),
             Num { start, end } => SolidToken::Int(
@@ -288,6 +292,27 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
         res.push(st);
     }
     res
+}
+
+fn unary_or_bin(res: &Vec<SolidToken>, op: OperatorType) -> SolidToken {
+    let mut idx = res.len() - 1;
+    while let SolidToken::Tab | SolidToken::NewLine = res[idx] {
+        if idx == 0 {
+            panic!("Unexpected operator at start of file")
+        }
+        idx -= 1;
+    }
+    if let SolidToken::Operator(_)
+    | SolidToken::UnaryOperator(_)
+    | SolidToken::Bracket(IsOpen::True)
+    | SolidToken::Brace(IsOpen::True)
+    | SolidToken::Parenthesis(IsOpen::True)
+    | SolidToken::Comma
+    | SolidToken::Colon = res[idx] {
+        SolidToken::UnaryOperator(op)
+    } else {
+        SolidToken::Operator(op)
+    }
 }
 
 // fn parse_num(num: &str) -> SolidToken {
