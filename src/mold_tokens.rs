@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 use std::fmt::Write;
-// use std::collections::HashSet;
 use crate::mold_tokens::Token::{
     Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char
 };
@@ -13,11 +12,6 @@ pub enum IsOpen { True, False }
 #[derive(Debug)]
 enum Token {
     Brace(IsOpen), Bracket(IsOpen), Parenthesis(IsOpen),
-    Word {
-        start: usize,
-        end: usize,
-        is_spaced: bool
-    },
     Str {
         start: usize,
         end: usize,
@@ -26,6 +20,12 @@ enum Token {
     Num {
         start: usize,
         end: usize,
+        is_spaced: bool
+    },
+    Word {
+        start: usize,
+        end: usize,
+        is_spaced: bool
     },
     Operator {
         start: usize,
@@ -127,11 +127,14 @@ impl OperatorType {
     }
 }
 
+enum Comment { None, Normal, Multiline(i8) }
+
+// TODO 1.2f32
 pub fn tokenize(input_code: String) -> Vec<SolidToken> {
     let mut tokens = Vec::new();
     let mut skip = 0;
     let mut is_str = false;
-    let mut is_comment = false;
+    let mut is_comment = Comment::None;
     let mut escaped = false;
     let mut open_braces = 0;
     let mut open_brackets = 0;
@@ -142,13 +145,26 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
             skip -= 1;
             continue
         }
-        if is_comment {
+        if let Comment::Normal = is_comment {
             if *c == '\n' {
-                is_comment = false;
-            } else {
-                continue
-            }
+                is_comment = Comment::None
+            } else { continue }
         }
+        if let Comment::Multiline(amount) = is_comment {
+            if *c == '#' {
+                if chars[i - 1] == '}' {
+                    if amount == 1 {
+                        is_comment = Comment::None;
+                    } else {
+                        is_comment = Comment::Multiline(amount - 1);
+                    }
+                } else if i + 1 < chars.len() && chars[i + 1] == '{' {
+                    is_comment = Comment::Multiline(amount + 1);
+                }
+            } 
+            continue
+        }
+
         if is_str {
             match c {
                 '"' => {
@@ -165,9 +181,13 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
         }
 
         let token = match c {
-            '`' => break,
             '#' => {
-                is_comment = true;
+                if i + 1 < chars.len() && chars[i + 1] == '{' {
+                    skip = 1;
+                    is_comment = Comment::Multiline(1);
+                } else {
+                    is_comment = Comment::Normal;
+                }
                 continue
             },
             ' ' => {
@@ -176,7 +196,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
             },
             '\t' => Tab,   '\n' => NewLine,
             ':' => Colon,   ',' => Comma,   '.' => Period,
-            '0'..='9' => Num { start: i, end: i + 1 },
+            '0'..='9' => Num { start: i, end: i + 1, is_spaced: false },
             // <editor-fold desc="+-*%">
             '+' | '-' | '*' | '&' | '^' | '%' | '!' | '|' | '/' | '=' | '>' | '<' | '~' => Operator {
                 start: i, end: i + 1, is_spaced: false
@@ -229,6 +249,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
         match token {
             Operator { is_spaced: false, .. } if join_op(&mut tokens, i + 1) => (),
             Word { is_spaced: false, .. } if join_to_word(&mut tokens, i + 1) => (),
+            Word { is_spaced: false, .. } if join_to_num(&mut tokens, i + 1) => (),
             Num {..} if join_num(&mut tokens, i + 1) => (),
             Period if join_num(&mut tokens, i + 1) => (),
             _ => tokens.push(token)
@@ -239,7 +260,11 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
 
 fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
     let mut res = Vec::with_capacity(tokens.len());
+    let mut is_empty_line = true;
     for token in tokens {
+        if !matches!(token, Tab | NewLine) {
+            is_empty_line = false;
+        }
         let st = match token {
             Brace(is_open) =>        SolidToken::Brace(is_open.clone()),
             Bracket(is_open) =>      SolidToken::Bracket(is_open.clone()),
@@ -283,11 +308,21 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                 }
             },
             // Num { start, end } => parse_num(&input_code[*start..*end]),
-            Num { start, end } => SolidToken::Int(
+            Num { start, end, .. } => SolidToken::Int(
                 String::from(&input_code[*start..*end])
             ),
             Colon => SolidToken::Colon, Comma => SolidToken::Comma, Period => SolidToken::Period,
-            Tab => SolidToken::Tab,     NewLine => SolidToken::NewLine
+            Tab => SolidToken::Tab,
+            NewLine => {
+                if is_empty_line {
+                    while let SolidToken::Tab = res.last().unwrap_or(&SolidToken::Colon) {
+                        res.pop();
+                    }
+                    continue
+                }
+                is_empty_line = true;
+                SolidToken::NewLine
+            }
         };
         res.push(st);
     }
@@ -309,7 +344,11 @@ fn unary_or_bin(res: &Vec<SolidToken>, op: OperatorType) -> SolidToken {
     | SolidToken::Parenthesis(IsOpen::True)
     | SolidToken::Comma
     | SolidToken::Colon = res[idx] {
-        SolidToken::UnaryOperator(op)
+        if let OperatorType::Minus | OperatorType::BinNot = op {
+            SolidToken::UnaryOperator(op)
+        } else {
+            panic!("Invalid unary operator")
+        }
     } else {
         SolidToken::Operator(op)
     }
@@ -378,11 +417,20 @@ fn space_prev_token(tokens: &mut Vec<Token>) {
         *is_spaced = true;
     } else if let Some(Word { is_spaced, .. }) = tokens.last_mut() {
         *is_spaced = true;
+    } else if let Some(Num { is_spaced, .. }) = tokens.last_mut() {
+        *is_spaced = true;
     }
 }
 
 fn join_to_word(tokens: &mut Vec<Token>, new_end: usize) -> bool {
     if let Some(Word { end, is_spaced: false, .. }) = tokens.last_mut() {
+        *end = new_end;
+        true
+    } else { false }
+}
+
+fn join_to_num(tokens: &mut Vec<Token>, new_end: usize) -> bool {
+    if let Some(Num { end, is_spaced: false, .. }) = tokens.last_mut() {
         *end = new_end;
         true
     } else { false }

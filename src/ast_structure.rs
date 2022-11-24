@@ -1,5 +1,5 @@
 use crate::types::{Type, UNKNOWN_TYPE};
-use std::fmt::{Display, Formatter, write};
+use std::fmt::{Display, Formatter};
 use crate::mold_tokens::OperatorType;
 
 #[derive(Clone, Debug)]
@@ -21,6 +21,7 @@ impl Ast {
 
 #[derive(Clone, Debug)]
 pub enum AstNode {
+    Body,
     Module,             // children = all the functions/classes/enums..
     Function(Function), // children = the body
     Identifier(String), // no children
@@ -35,12 +36,16 @@ pub enum AstNode {
     IfStatement, WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
     Pass,
     ListLiteral, // children = elements
+    Type(Type),
+    Index,      // child[0] = item, child[1] = index
+    Args,       // children = args
 }
 
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            AstNode::Module => write!(f, "Module"),
+            AstNode::Body => write!(f, "BODY"),
+            AstNode::Module => write!(f, "MODULE"),
             AstNode::Function(func) => write!(f, "Func({})", func.to_string()),
             AstNode::FunctionCall =>
                 write!(f, "FuncCall()"),
@@ -57,7 +62,10 @@ impl Display for AstNode {
             AstNode::IfStatement => write!(f, "if"),
             AstNode::WhileStatement => write!(f, "while"),
             AstNode::Pass => write!(f, "pass"),
-            AstNode::ListLiteral => write!(f, "[LIST]")
+            AstNode::ListLiteral => write!(f, "[LIST]"),
+            AstNode::Type(typ) => write!(f, "{}", typ),
+            AstNode::Index => write!(f, "[INDEX]"),
+            AstNode::Args => write!(f, "(ARGS)"),
         }
     }
 }
@@ -80,11 +88,11 @@ pub struct Function {
 
 impl Display for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let params = join(&self.params, ", ");
+        let params = join(&self.params, "\n\t\t");
         if let Some(rt) = &self.return_type {
-            write!(f, "\n\tname: {}\n\tparam({})\n\treturn type: {}\n", self.name, params, rt)
+            write!(f, "\n\tname: {}\n\tparam:\n\t\t{}\n\treturn type:\n\t\t{}\n", self.name, params, rt)
         } else {
-            write!(f, "\n\tname: {}\n\tparam: {}\n\tno return\n", self.name, params)
+            write!(f, "\n\tname: {}\n\tparam:\n\t\t{}\n\tno return\n", self.name, params)
         }
     }
 }

@@ -1,7 +1,7 @@
 use pretty_print_tree::PrettyPrintTree;
 use crate::ast_structure::{Ast, AstNode, Param};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{Type, UNKNOWN_TYPE};
+use crate::types::{Type, TypeKind, UNKNOWN_TYPE};
 
 // todo I think it allows to use any type of closing )}]
 
@@ -54,7 +54,7 @@ fn make_ast_statement(
                 }
                 let last = get_last(&mut tree[parent].children);
                 if let AstNode::IfStatement = tree[last].value {
-                    add_to_tree(last, &mut tree, Ast::new(AstNode::Module));
+                    add_to_tree(last, &mut tree, Ast::new(AstNode::Body));
                     let len = tree.len();
                     let (p, t) = make_ast_statement(
                         tokens, pos + 1, tree, len - 1, indent + 1, ppt
@@ -69,8 +69,10 @@ fn make_ast_statement(
                 add_to_tree(parent, &mut tree, Ast::new(AstNode::Pass));
             },
             SolidToken::Word(st) => {
-                // todo only if in correct context
-                add_to_tree(parent, &mut tree, Ast::new(AstNode::Identifier(st.clone())));
+                add_to_tree(
+                    parent, &mut tree,
+                    Ast::new(AstNode::Identifier(st.clone()))
+                );
 
                 loop {
                     pos += 1;
@@ -82,17 +84,47 @@ fn make_ast_statement(
                     let index = insert_as_parent_of_prev(&mut tree, parent, match next {
                         SolidToken::Period => AstNode::Property,
                         SolidToken::Parenthesis(IsOpen::True) => AstNode::FunctionCall,
-                        SolidToken::Operator(OperatorType::Eq) => AstNode::Assignment,
+                        SolidToken::Operator(OperatorType::Eq)
+                        | SolidToken::Colon => AstNode::Assignment,
                         _ => panic!("Unexpected token {:?}", next)
                     });
-
-                    if let SolidToken::Parenthesis(IsOpen::True) | SolidToken::Operator(OperatorType::Eq) = next {
+                    if let SolidToken::Colon = next {
+                        pos -= 1;
+                        let params = get_params(&tokens, &mut pos).remove(0); // 5 for now only taking the first
+                        add_to_tree(
+                            tree.len() - 1, &mut tree,
+                            Ast::new(AstNode::Type(params.typ))
+                        );
+                    }
+                    if let SolidToken::Operator(OperatorType::Eq)
+                        | SolidToken::Colon = next {
                         let (p, t) = make_ast_expression(
                             tokens, pos + 1, tree, index, ppt
                         );
                         pos = p - 1;
                         tree = t;
                         break
+                    } else if let SolidToken::Parenthesis(IsOpen::True) = next {
+                        add_to_tree(index, &mut tree, Ast{
+                            children: None,
+                            parent: Some(indent),
+                            value: AstNode::Args
+                        });
+                        let last = tree.len() - 1;
+                        let (p, t) = make_ast_expression(
+                            tokens, pos + 1, tree, last, ppt
+                        );
+                        pos = p;
+                        tree = t;
+                        while let SolidToken::Comma = tokens[pos] {
+                            let (p, t) = make_ast_expression(
+                                tokens, pos + 1, tree, last, ppt
+                            );
+                            pos = p;
+                            tree = t;
+                        }
+                        break
+                        // 5 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                     }
                 }
             }
@@ -106,6 +138,9 @@ fn make_ast_statement(
                 }
                 pos += tabs;
             },
+            // SolidToken::Int(num) => {
+            //     add_to_tree(parent, &mut tree, Ast::new(AstNode::Number(num.clone())));
+            // },
             _ => panic!("unexpected token `{:?}`", token)
         }
         pos += 1;
@@ -138,9 +173,13 @@ fn make_ast_expression(
                     | SolidToken::Brace(IsOpen::False)
                     | SolidToken::Str(_)
                     | SolidToken::Word(_) = &tokens[pos - 1] {
-                    //4 is index
+                    //1 index
+                    let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Index);
+                    let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, ppt);
+                    pos = p - 1;
+                    tree = t;
                 } else {
-                    //4 is list or comprehension
+                    //1 list-literal or comprehension
                     add_to_tree(parent, &mut tree, Ast::new(AstNode::ListLiteral));
                     let list_parent = tree.len() - 1;
                     while let SolidToken::Comma | SolidToken::Bracket(IsOpen::True) = &tokens[pos] {
@@ -154,7 +193,9 @@ fn make_ast_expression(
             SolidToken::Brace(IsOpen::True) => {
                 amount_of_open += 1;
             },
-            SolidToken::Parenthesis(IsOpen::False) | SolidToken::Bracket(IsOpen::False) | SolidToken::Brace(IsOpen::False) => {
+            SolidToken::Parenthesis(IsOpen::False)
+            | SolidToken::Bracket(IsOpen::False)
+            | SolidToken::Brace(IsOpen::False) => {
                 amount_of_open -= 1;
                 if amount_of_open == -1 { break }
             },
@@ -162,6 +203,9 @@ fn make_ast_expression(
             SolidToken::Colon | SolidToken::Comma => break,
             SolidToken::Int(num) => {
                 add_to_tree(parent, &mut tree, Ast::new(AstNode::Number(num.clone())));
+            },
+            SolidToken::Word(word) => {
+                add_to_tree(parent, &mut tree, Ast::new(AstNode::Identifier(word.clone())));
             },
             SolidToken::UnaryOperator(op) => {
                 add_to_tree(parent, &mut tree, Ast::new(AstNode::UnaryOp(op.clone())));
@@ -174,14 +218,14 @@ fn make_ast_expression(
                 let mut parent = parent;
                 while let AstNode::Operator(prev_op) | AstNode::UnaryOp(prev_op) = &tree[parent].value {
                     if !matches!(&tree[parent].value, AstNode::UnaryOp(_))
-                        && prev_op.get_priority() < op.get_priority() { break }
+                    && prev_op.get_priority() < op.get_priority() { break }
                     parent = tree[parent].parent.unwrap();
                 }
                 let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Operator(op.clone()));
                 let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, ppt);
                 pos = p - 1;
                 tree = t;
-            }
+            },
             _ => panic!("unexpected token {:?}", token)
         }
         pos += 1;
@@ -212,7 +256,7 @@ fn if_while_expression(
     );
     pos = p; tree = t;
     //4 body:
-    add_to_tree(len - 1, &mut tree, Ast::new(AstNode::Module));
+    add_to_tree(len - 1, &mut tree, Ast::new(AstNode::Body));
     let len = tree.len() + 0;
     let (p, t) = make_ast_statement(
         tokens, pos + 1, tree, len - 1, indent + 1, ppt
@@ -298,15 +342,19 @@ fn get_params(tokens: &Vec<SolidToken>, mut pos: &mut usize) -> Vec<Param> {
                         get_arg_typ(tokens, &mut pos)
                     } else { UNKNOWN_TYPE }
                 });
-                if let SolidToken::Parenthesis(IsOpen::False) = tokens[*pos] {
+                if let SolidToken::Parenthesis(IsOpen::False)
+                    | SolidToken::Operator(OperatorType::Eq) = tokens[*pos] {
                     return params
                 }
             },
+            SolidToken::Parenthesis(IsOpen::False)
+            | SolidToken::Operator(OperatorType::Eq) => return params,
             _ => panic!("unexpected token {:?}", tokens[*pos])
         }
         *pos += 1;
     }
 }
+
 
 // returns where pos is the index of the token after the end of the type
 // e.g.     x: int | bool, y: int | None) -> bool:
@@ -316,16 +364,38 @@ fn get_arg_typ(tokens: &Vec<SolidToken>, pos: &mut usize) -> Type {
     let mut res: Option<Type> = None;
     loop {
         match &tokens[*pos] {
-            SolidToken::Brace(IsOpen::True) | SolidToken::Bracket(IsOpen::True) | SolidToken::Parenthesis(IsOpen::True) => amount_of_open += 1,
-            SolidToken::Brace(IsOpen::False) | SolidToken::Bracket(IsOpen::False) | SolidToken::Parenthesis(IsOpen::False) => {
+            SolidToken::Bracket(IsOpen::True) => {
+                amount_of_open += 1;
+                if let Some(typ) = res {
+                    *pos += 1;
+                    let mut children = vec![typ, get_arg_typ(tokens, pos)];
+                    let mut typ = Type{
+                        kind: TypeKind::TypWithGenerics,
+                        children: None
+                    };
+                    while let SolidToken::Comma = &tokens[*pos] {
+                        *pos += 1;
+                        children.push(get_arg_typ(tokens, pos));
+                    }
+                    typ.children = Some(children);
+                    res = Some(typ);
+                    break
+                }
+            },
+            SolidToken::Brace(IsOpen::True)
+            | SolidToken::Parenthesis(IsOpen::True) => amount_of_open += 1,
+            SolidToken::Brace(IsOpen::False)
+            | SolidToken::Bracket(IsOpen::False)
+            | SolidToken::Parenthesis(IsOpen::False) => {
                 amount_of_open -= 1;
                 if amount_of_open == 0 { break }
             },
-            SolidToken::Comma | SolidToken::Colon => {
+            SolidToken::Comma
+            | SolidToken::Colon
+            | SolidToken::Operator(OperatorType::Eq)=> {
                 if amount_of_open == 1 { break }
                 else {
                     panic!("unexpected token {:?}, at {}", tokens[*pos], *pos)
-                    // TODO !!!!
                 }
             },
             SolidToken::Operator(OperatorType::Or) => {
@@ -333,11 +403,13 @@ fn get_arg_typ(tokens: &Vec<SolidToken>, pos: &mut usize) -> Type {
                     *pos += 1;
                     res = Some(typ.add_option(get_arg_typ(tokens, pos)));
                     break
+                } else {
+                    panic!("need a value before |")
                 }
             }
             SolidToken::Word(wrd) => {
                 if let Some(_) = res {
-                    panic!("unexpected type")
+                    panic!("unexpected type. res: {:?}, wrd: {}", res, wrd)
                 }
                 res = Some(Type::new(wrd.clone()));
             },
