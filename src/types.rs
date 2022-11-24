@@ -24,7 +24,7 @@ pub struct Type {
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            TypeKind::Unknown => panic!("Unknown Type"),
+            TypeKind::Unknown => if unsafe { IS_COMPILED } { panic!("Unknown Type") } else { write!(f, "")},
             TypeKind::Typ(st) => {
                 if unsafe { IS_COMPILED } {
                     write!(f, "{}", match st.as_str() {

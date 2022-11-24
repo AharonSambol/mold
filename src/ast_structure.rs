@@ -1,4 +1,4 @@
-use crate::types::{Type, UNKNOWN_TYPE};
+use crate::types::{Type, TypeKind};
 use std::fmt::{Display, Formatter};
 use crate::mold_tokens::OperatorType;
 
@@ -25,7 +25,7 @@ pub enum AstNode {
     Module,             // children = all the functions/classes/enums..
     Function(Function), // children = the body
     Identifier(String), // no children
-    Assignment,         // children[0] = var, children[1] = val
+    FirstAssignment, Assignment, // children[0] = var, children[1] = val
     FunctionCall,       // children[0] = func, children[1..] = param,
     Property,           // children[0] = obj, children[1] = prop
     Number(String),     // no children
@@ -39,6 +39,7 @@ pub enum AstNode {
     Type(Type),
     Index,      // child[0] = item, child[1] = index
     Args,       // children = args
+    Return      // children[0] = return val
 }
 
 impl Display for AstNode {
@@ -47,12 +48,10 @@ impl Display for AstNode {
             AstNode::Body => write!(f, "BODY"),
             AstNode::Module => write!(f, "MODULE"),
             AstNode::Function(func) => write!(f, "Func({})", func.to_string()),
-            AstNode::FunctionCall =>
-                write!(f, "FuncCall()"),
-            AstNode::Assignment =>
-                write!(f, "Assignment"),
-            AstNode::Property =>
-                write!(f, "Property"),
+            AstNode::FunctionCall => write!(f, "FuncCall()"),
+            AstNode::Assignment => write!(f, "="),
+            AstNode::FirstAssignment => write!(f, ":="),
+            AstNode::Property => write!(f, "Property"),
             AstNode::Identifier(st) => write!(f, "{}", st),
             AstNode::Number(num) => write!(f, "{}", num),
             AstNode::Operator(op) => write!(f, "{}", op),
@@ -66,6 +65,7 @@ impl Display for AstNode {
             AstNode::Type(typ) => write!(f, "{}", typ),
             AstNode::Index => write!(f, "[INDEX]"),
             AstNode::Args => write!(f, "(ARGS)"),
+            AstNode::Return => write!(f, "RETURN"),
         }
     }
 }
@@ -74,7 +74,7 @@ impl AstNode {
         AstNode::Function(Function {
             name: "".to_string(),
             params: vec![],
-            return_type: Some(UNKNOWN_TYPE),
+            return_type: None,
         })
     }
 }
@@ -109,6 +109,10 @@ pub struct Param {
 
 impl Display for Param {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.name, self.typ)
+        if let Type{ kind: TypeKind::Unknown, .. } = self.typ {
+            write!(f, "{}", self.name)
+        } else {
+            write!(f, "{}: {}", self.name, self.typ)
+        }
     }
 }

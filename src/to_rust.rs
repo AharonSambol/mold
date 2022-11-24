@@ -32,10 +32,14 @@ pub fn to_rust(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String,
             for par in &func.params {
                 make_enums(&par.typ, enums);
             }
+            let mut param = join(&func.params, ", mut ");
+            if param != "" {
+                param = format!("mut {}", param);
+            }
             if let Some(return_type) = &func.return_type {
-                write!(res, "fn {}({}) -> {} {{", func.name, join(&func.params, ", "), return_type).unwrap();
+                write!(res, "fn {}({}) -> {} {{", func.name, param, return_type).unwrap();
             } else {
-                write!(res, "fn {}({}) {{", func.name, join(&func.params, ", ")).unwrap();
+                write!(res, "fn {}({}) {{", func.name, param).unwrap();
             }
             for child in children {
                 write!(res, "\n{}", "\t".repeat(indentation + 1)).unwrap();
@@ -70,17 +74,20 @@ pub fn to_rust(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String,
             to_rust(ast, children[1], indentation + 1, res, enums);
         },
         AstNode::Assignment => {
-            if let Some(c) = &ast[children[0]].children {
-                write!(res, "let ").unwrap();
-                to_rust(ast, children[0], indentation, res, enums);
-                write!(res, ":").unwrap();
-                to_rust(ast, c[0], indentation, res, enums);
-            } else {
-                to_rust(ast, children[0], indentation, res, enums);
-            }
+            to_rust(ast, children[0], indentation, res, enums);
             write!(res, "=").unwrap();
             to_rust(ast, children[1], indentation, res, enums);
         },
+        AstNode::FirstAssignment => {
+            write!(res, "let mut ").unwrap();
+            to_rust(ast, children[0], indentation, res, enums);
+            if let Some(c) = &ast[children[0]].children {
+                write!(res, ": ").unwrap();
+                to_rust(ast, c[0], indentation, res, enums);
+            }
+            write!(res, " = ").unwrap();
+            to_rust(ast, children[1], indentation, res, enums);
+        }
         AstNode::Identifier(name) => {
             write!(res, "{}", name).unwrap();
         },
@@ -141,8 +148,17 @@ pub fn to_rust(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String,
             write!(res, "{}", typ).unwrap(); //todo
         },
         AstNode::FunctionCall => {
-            to_rust(ast, children[0], indentation, res, enums);
-            write!(res, "(").unwrap();
+            let is_print: fn(&AstNode) -> bool = |x| {
+                if let AstNode::Identifier(w) = x { if w == "print" {
+                    return true;
+                }} return false;
+            };
+            if is_print(&ast[children[0]].value) {
+                write!(res, "println!(\"{{}}\", ").unwrap();
+            } else {
+                to_rust(ast, children[0], indentation, res, enums);
+                write!(res, "(").unwrap();
+            }
             if children.len() > 1 {
                 to_rust(ast, children[1], indentation, res, enums);
             }
@@ -156,6 +172,12 @@ pub fn to_rust(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String,
             for child in children.iter().skip(1) {
                 write!(res, ",").unwrap();
                 to_rust(ast, *child, indentation, res, enums);
+            }
+        },
+        AstNode::Return => {
+            write!(res, "return ").unwrap();
+            if children.len() != 0 {
+                to_rust(ast, children[0], indentation, res, enums);
             }
         },
         _ => panic!("Unexpected AST {:?}", ast[pos].value)

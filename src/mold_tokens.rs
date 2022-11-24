@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::fmt::Write;
+use crate::IS_COMPILED;
 use crate::mold_tokens::Token::{
     Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char
 };
@@ -56,9 +57,10 @@ pub enum OperatorType {
     Eq, IsEq, Bigger, Smaller, NEq, BEq, SEq,
     Plus, Minus, Mul, Pow, Div, Mod, FloorDiv,
     PlusEq, MinusEq, MulEq, PowEq, DivEq, ModEq, FloorDivEq,
-    Or, And, Xor, BinNot,
+    BinOr, BinAnd, Xor, BinNot,
     OrEq, AndEq, XorEq,
     ShiftR, ShiftL,
+    And, Or, Not,
     Returns
 }
 
@@ -87,8 +89,8 @@ impl Display for OperatorType {
             OperatorType::DivEq => "/=",
             OperatorType::ModEq => "%=",
             OperatorType::FloorDivEq => "//=",
-            OperatorType::Or => "|",
-            OperatorType::And => "&",
+            OperatorType::BinOr => "|",
+            OperatorType::BinAnd => "&",
             OperatorType::Xor => "^",
             OperatorType::BinNot => "~",
             OperatorType::OrEq => "|=",
@@ -96,7 +98,10 @@ impl Display for OperatorType {
             OperatorType::XorEq => "^=",
             OperatorType::ShiftL => "<<",
             OperatorType::ShiftR => ">>",
-            OperatorType::Returns => "->"
+            OperatorType::Returns => "->",
+            OperatorType::And => if unsafe { IS_COMPILED } { "&&" } else { " and " },
+            OperatorType::Or => if unsafe { IS_COMPILED } { "||" } else { " or " },
+            OperatorType::Not => if unsafe { IS_COMPILED } { "!" } else { " not " },
         })
     }
 }
@@ -113,15 +118,18 @@ impl OperatorType {
             | OperatorType::Minus => 80,
             OperatorType::ShiftL
             | OperatorType::ShiftR => 70,
-            OperatorType::And => 60,
+            OperatorType::BinAnd => 60,
             OperatorType::Xor => 50,
-            OperatorType::Or => 40,
+            OperatorType::BinOr => 40,
             OperatorType::IsEq
             | OperatorType::Bigger
             | OperatorType::Smaller
             | OperatorType::NEq
             | OperatorType::BEq
             | OperatorType::SEq => 30,
+            OperatorType::Not => 25,
+            OperatorType::And => 20,
+            OperatorType::Or => 10,
             _ => -100
         }
     }
@@ -161,7 +169,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
                 } else if i + 1 < chars.len() && chars[i + 1] == '{' {
                     is_comment = Comment::Multiline(amount + 1);
                 }
-            } 
+            }
             continue
         }
 
@@ -281,6 +289,9 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                     "while" => SolidToken::While, "for" => SolidToken::For,
                     "break" => SolidToken::Break, "continue" => SolidToken::Continue,
                     "return" => SolidToken::Return, "pass" => SolidToken::Pass,
+                    "and" => SolidToken::Operator(OperatorType::And),
+                    "or" => SolidToken::Operator(OperatorType::Or),
+                    "not" => SolidToken::Operator(OperatorType::Not),
                     _ => SolidToken::Word(String::from(st))
                 }
             },
@@ -337,6 +348,11 @@ fn unary_or_bin(res: &Vec<SolidToken>, op: OperatorType) -> SolidToken {
         }
         idx -= 1;
     }
+    if let OperatorType::Eq = op {
+        if let SolidToken::Colon = res[idx] {
+            return SolidToken::Operator(op)
+        }
+    }
     if let SolidToken::Operator(_)
     | SolidToken::UnaryOperator(_)
     | SolidToken::Bracket(IsOpen::True)
@@ -347,7 +363,7 @@ fn unary_or_bin(res: &Vec<SolidToken>, op: OperatorType) -> SolidToken {
         if let OperatorType::Minus | OperatorType::BinNot = op {
             SolidToken::UnaryOperator(op)
         } else {
-            panic!("Invalid unary operator")
+            panic!("Invalid unary operator {}", op)
         }
     } else {
         SolidToken::Operator(op)
@@ -373,7 +389,7 @@ fn str_to_op_type(st: &str) -> Option<OperatorType> {
         "+=" => OperatorType::PlusEq,   "-=" => OperatorType::MinusEq,  "*=" => OperatorType::MulEq,
         "/=" => OperatorType::DivEq,    "//=" => OperatorType::FloorDivEq,
         "**=" => OperatorType::PowEq,   "%=" => OperatorType::ModEq,
-        "|" => OperatorType::Or,    "&" => OperatorType::And,
+        "|" => OperatorType::BinOr,    "&" => OperatorType::BinAnd,
         "^" => OperatorType::Xor,   "~" => OperatorType::BinNot,
         "|=" => OperatorType::OrEq, "&=" => OperatorType::AndEq,    "^=" => OperatorType::XorEq,
         ">>" => OperatorType::ShiftR, "<<" => OperatorType::ShiftL,

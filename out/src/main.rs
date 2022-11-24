@@ -1,15 +1,21 @@
 
 
 
-use std::io::stdin;
 
-fn main(){
-	let mut input_string = String::new();
-    stdin().read_line(&mut input_string)
-    	.ok()
-        .expect("Failed to read line");
-    println!("!!{}!!", input_string);
+fn main() {
+	let mut i = 0;
+	while i<10
+		{
+		println!("{}", fib(i));
+		i=i+1;
+		};
+	let mut res = fib(39);
+	println!("{}", res);
 }
-fn fun(a: i32, b: i32){
-	let a:i32=1;
+fn fib(mut x: i32) -> i32 {
+	if x==0||x==1
+		{
+		return x;
+		};
+	return fib(x-1)+fib(x-2);
 }
