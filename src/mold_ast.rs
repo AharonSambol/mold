@@ -40,22 +40,23 @@ fn make_ast_statement(
                 pos = temp.0; tree = temp.1;
                 vars.pop();
             },
+            SolidToken::For => {
+                let (p, t) = for_statement(tokens, pos + 1, tree, parent, indent, vars, ppt);
+                pos = p; tree = t;
+            },
             SolidToken::While => {
-                let (p, t) = if_while_expression(false, tokens, pos, tree, parent, indent, vars, ppt);
-                pos = p;
-                tree = t;
+                let (p, t) = if_while_statement(false, tokens, pos + 1, tree, parent, indent, vars, ppt);
+                pos = p; tree = t;
             },
             SolidToken::If => {
-                let (p, t) = if_while_expression(true, tokens, pos, tree, parent, indent, vars, ppt);
-                pos = p;
-                tree = t;
+                let (p, t) = if_while_statement(true, tokens, pos + 1, tree, parent, indent, vars, ppt);
+                pos = p; tree = t;
             },
             SolidToken::Elif => {
                 let last = get_last(&mut tree[parent].children);
                 if let AstNode::IfStatement = tree[last].value {
-                    let (p, t) = if_while_expression(true, tokens, pos, tree, last, indent, vars, ppt);
-                    pos = p;
-                    tree = t;
+                    let (p, t) = if_while_statement(true, tokens, pos + 1, tree, last, indent, vars, ppt);
+                    pos = p; tree = t;
                 } else {
                     panic!("elif to unknown if")
                 }
@@ -88,8 +89,7 @@ fn make_ast_statement(
                 let (p, t) = word_tok(
                     tokens, pos, tree, parent, indent, vars, ppt, st, false
                 );
-                pos = p;
-                tree = t;
+                pos = p; tree = t;
             }
             SolidToken::NewLine => {
                 let tabs = tokens.iter().skip(pos + 1)
@@ -116,7 +116,7 @@ fn make_ast_statement(
                     pos = p - 1;
                     tree = t;
                 }
-            }
+            },
             _ => panic!("unexpected token `{:?}`", token)
         }
         pos += 1;
@@ -161,8 +161,7 @@ fn make_ast_expression(
                     let list_parent = tree.len() - 1;
                     while let SolidToken::Comma | SolidToken::Bracket(IsOpen::True) = &tokens[pos] {
                         let (p, t) = make_ast_expression(tokens, pos + 1, tree, list_parent, vars, ppt);
-                        pos = p;
-                        tree = t;
+                        pos = p; tree = t;
                     }
                     pos -= 1;
                 }
@@ -180,9 +179,16 @@ fn make_ast_expression(
             SolidToken::Colon | SolidToken::Comma => {
                 break
             },
-            SolidToken::Int(num) => {
+            SolidToken::Num(num) => {
                 add_to_tree(parent, &mut tree, Ast::new(AstNode::Number(num.clone())));
             },
+            SolidToken::Str(str) => {
+                add_to_tree(parent, &mut tree, Ast::new(AstNode::String(str.clone())));
+            },
+            SolidToken::Char(ch) => {
+                add_to_tree(parent, &mut tree, Ast::new(AstNode::Char(ch.clone())));
+            },
+            // todo bool
             SolidToken::Word(wrd) => {
                 if !is_in_stack(vars, wrd) {
                     panic!("use of var before assignment `{}`", wrd)
@@ -190,15 +196,13 @@ fn make_ast_expression(
                 let (p, t) = word_tok(
                     tokens, pos, tree, parent, 0, vars, ppt, wrd, true
                 );
-                pos = p;
-                tree = t;
+                pos = p; tree = t;
             },
             SolidToken::UnaryOperator(op) => {
                 add_to_tree(parent, &mut tree, Ast::new(AstNode::UnaryOp(op.clone())));
                 let index = tree.len() - 1;
                 let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, vars, ppt);
-                pos = p - 1;
-                tree = t;
+                pos = p - 1; tree = t;
             },
             SolidToken::Operator(op) => {
                 let mut parent = parent;
@@ -209,8 +213,7 @@ fn make_ast_expression(
                 }
                 let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Operator(op.clone()));
                 let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, vars, ppt);
-                pos = p - 1;
-                tree = t;
+                pos = p - 1; tree = t;
             },
             _ => panic!("unexpected token {:?}", token)
         }
@@ -229,35 +232,25 @@ fn word_tok(
         parent, &mut tree,
         Ast::new(AstNode::Identifier(st.clone()))
     );
-
     loop {
         pos += 1;
-        let next = &tokens[pos];
-        if let SolidToken::NewLine = next {
-            return (pos - 1, tree);
-        }
-        let index = insert_as_parent_of_prev(&mut tree, parent, match next {
-            SolidToken::Period => AstNode::Property,
-            SolidToken::Parenthesis(IsOpen::True) => AstNode::FunctionCall,
+        match &tokens[pos] {
+            SolidToken::NewLine => { return (pos - 1, tree) },
             SolidToken::Operator(OperatorType::Eq) => {
                 if is_expression { return (pos - 1, tree) }
-                AstNode::Assignment
+                if !is_in_stack(vars, st) {
+                    panic!("var hasn't been initialized `{}`", st)
+                }
+
+                let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Assignment);
+                let (p, t) = make_ast_expression(
+                    tokens, pos + 1, tree, index, vars, ppt
+                );
+                pos = p; tree = t;
             },
             SolidToken::Colon => {
                 if is_expression { return (pos - 1, tree) }
-                AstNode::FirstAssignment
-            },
-            _ => {
-                if is_expression {
-                    return (pos - 1, tree);
-                } else {
-                    panic!("Unexpected token {:?}", next)
-                }
-            }
-        });
-        if let SolidToken::Operator(OperatorType::Eq)
-        | SolidToken::Colon = next {
-            if let SolidToken::Colon = next {
+                let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::FirstAssignment);
                 vars.last_mut().unwrap().insert(st.clone());
                 if let SolidToken::Operator(OperatorType::Eq) = tokens[pos + 1] {
                     pos += 1;
@@ -269,34 +262,44 @@ fn word_tok(
                         Ast::new(AstNode::Type(params.typ))
                     );
                 }
-            } else if !is_in_stack(vars, st) {
-                panic!("var hasn't been initialized `{}`", st)
-            }
 
-            let (p, t) = make_ast_expression(
-                tokens, pos + 1, tree, index, vars, ppt
-            );
-            return (p - 1, t);
-        } else if let SolidToken::Parenthesis(IsOpen::True) = next {
-            add_to_tree(index, &mut tree, Ast {
-                children: None,
-                parent: Some(indent),
-                value: AstNode::Args
-            });
-            let last = tree.len() - 1;
-            let (p, t) = make_ast_expression(
-                tokens, pos + 1, tree, last, vars, ppt
-            );
-            pos = p;
-            tree = t;
-            while let SolidToken::Comma = tokens[pos] {
+                let (p, t) = make_ast_expression(
+                    tokens, pos + 1, tree, index, vars, ppt
+                );
+                return (p - 1, t);
+            },
+            SolidToken::Parenthesis(IsOpen::True) => {
+                let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::FunctionCall);
+                add_to_tree(index, &mut tree, Ast {
+                    children: None,
+                    parent: Some(indent),
+                    value: AstNode::Args
+                });
+                let last = tree.len() - 1;
                 let (p, t) = make_ast_expression(
                     tokens, pos + 1, tree, last, vars, ppt
                 );
-                pos = p;
-                tree = t;
-            }
-            return (pos, tree);
+                pos = p; tree = t;
+                while let SolidToken::Comma = tokens[pos] {
+                    let (p, t) = make_ast_expression(
+                        tokens, pos + 1, tree, last, vars, ppt
+                    );
+                    pos = p;
+                    tree = t;
+                }
+                return (pos, tree);
+            },
+            SolidToken::Period => {
+                let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Property);
+                if let SolidToken::Word(st) = &tokens[pos + 1] {
+                    let(p, t) = word_tok(tokens, pos + 1, tree, index, indent, vars, ppt, st, is_expression);
+                    pos = p; tree = t;
+                } else {
+                    panic!("expected word after period")
+                }
+            },
+            _ if is_expression => return (pos - 1, tree),
+            _ => panic!("Unexpected token {:?}", tokens[pos]),
         }
     }
 }
@@ -321,7 +324,7 @@ fn get_last(arr: &mut Option<Vec<usize>>) -> usize{
     } else { panic!() }
 }
 
-fn if_while_expression(
+fn if_while_statement(
     is_if: bool, tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize,
     indent: usize,
     vars: &mut Vec<HashSet<String>>,
@@ -334,15 +337,61 @@ fn if_while_expression(
     //4 condition:
     add_to_tree(len - 1, &mut tree, Ast::new(AstNode::ColonParentheses));
     let (p, t) = make_ast_expression(
-        tokens, pos + 1, tree, len, vars, ppt
+        tokens, pos, tree, len, vars, ppt
     );
     pos = p; tree = t;
     //4 body:
     add_to_tree(len - 1, &mut tree, Ast::new(AstNode::Body));
     vars.push(HashSet::new());
-    let len = tree.len() + 0;
+    let len = tree.len();
     let (p, t) = make_ast_statement(
     tokens, pos + 1, tree, len - 1, indent + 1, vars, ppt
+    );
+    vars.pop();
+    (p - 1, t)
+}
+
+fn for_statement(
+    tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize,
+    indent: usize,
+    vars: &mut Vec<HashSet<String>>,
+ppt: &PrettyPrintTree<(Vec<Ast>, usize)>
+) -> (usize, Vec<Ast>) {
+    add_to_tree(parent, &mut tree, Ast::new(AstNode::ForStatement));
+    let loop_pos = tree.len() - 1;
+    add_to_tree(loop_pos, &mut tree, Ast::new(AstNode::ForVars));
+    add_to_tree(loop_pos, &mut tree, Ast::new(AstNode::ForIter));
+    add_to_tree(loop_pos, &mut tree, Ast::new(AstNode::Body));
+    let vars_pos = loop_pos + 1;
+    let iter_pos = loop_pos + 2;
+    let body_pos = loop_pos + 3;
+    vars.push(HashSet::new());
+    //4 vars:
+    loop {
+        if let SolidToken::Word(name) = &tokens[pos] {
+            add_to_tree(
+            vars_pos, &mut tree,
+            Ast::new(AstNode::Identifier(name.clone()))
+            );
+            vars.last_mut().unwrap().insert(name.clone());
+        } else {
+            panic!("expected identifier")
+        }
+        pos += 2;
+        match &tokens[pos - 1] {
+            SolidToken::Comma => continue,
+            SolidToken::In => break,
+            _ => panic!("expected `in` or `,`")
+        }
+    }
+    //4 iters:
+    let (p, t) = make_ast_expression(
+    tokens, pos, tree, iter_pos, vars, ppt
+    );
+    pos = p; tree = t;
+    //4 body:
+    let (p, t) = make_ast_statement(
+        tokens, pos + 1, tree, body_pos, indent + 1, vars, ppt
     );
     vars.pop();
     (p - 1, t)

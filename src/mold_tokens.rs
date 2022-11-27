@@ -42,7 +42,7 @@ pub enum SolidToken {
     Brace(IsOpen), Bracket(IsOpen), Parenthesis(IsOpen),
     Word(String),
     Str(String), Char(char),
-    Int(String), // Float(f32),
+    Num(String), // Float(f32),
     Operator(OperatorType), UnaryOperator(OperatorType),
     Colon, Comma, Period,
     Tab, NewLine,
@@ -50,6 +50,7 @@ pub enum SolidToken {
     If, Else, Elif,
     Match, Case, While, For,
     Break, Continue, Return, Pass,
+    In, Is
 }
 
 #[derive(Debug, Clone)]
@@ -292,6 +293,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                     "and" => SolidToken::Operator(OperatorType::And),
                     "or" => SolidToken::Operator(OperatorType::Or),
                     "not" => SolidToken::Operator(OperatorType::Not),
+                    "in" => SolidToken::In, "is" => SolidToken::Is,
                     _ => SolidToken::Word(String::from(st))
                 }
             },
@@ -319,7 +321,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                 }
             },
             // Num { start, end } => parse_num(&input_code[*start..*end]),
-            Num { start, end, .. } => SolidToken::Int(
+            Num { start, end, .. } => SolidToken::Num(
                 String::from(&input_code[*start..*end])
             ),
             Colon => SolidToken::Colon, Comma => SolidToken::Comma, Period => SolidToken::Period,

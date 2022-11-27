@@ -1,6 +1,8 @@
 def main():
-    res := fib(39)
-    print(res)
+    a := [1, 2, 3, 3]
+    for i in a:
+        print(i)
+#     print(res)
 
 def fib(x: int) -> int:
     if x == 0 or x == 1:

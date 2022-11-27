@@ -5,7 +5,10 @@ use crate::mold_tokens::OperatorType;
 use crate::types::{Type, TypeKind, unwrap, unwrap_u};
 
 
-pub fn to_rust(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String, enums: &mut HashMap<String, String>) {
+pub fn to_rust(
+    ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String, 
+    enums: &mut HashMap<String, String>
+) {
     let children = unwrap_u(&ast[pos].children);
 
     match &ast[pos].value {
@@ -20,13 +23,13 @@ pub fn to_rust(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String,
         },
         AstNode::Body => {
             let indent = "\t".repeat(indentation);
-            write!(res, "\n{}{{", indent).unwrap();
+            write!(res, " {{").unwrap();
             for child in children {
                 write!(res, "\n{}", indent).unwrap();
                 to_rust(ast, *child, indentation, res, enums);
                 write!(res, ";").unwrap();
             }
-            write!(res, "\n{}}}", indent).unwrap();
+            write!(res, "\n{}}}", "\t".repeat(indentation - 1)).unwrap();
         },
         AstNode::Function(func) => {
             for par in &func.params {
@@ -77,6 +80,7 @@ pub fn to_rust(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String,
             to_rust(ast, children[0], indentation, res, enums);
             write!(res, "=").unwrap();
             to_rust(ast, children[1], indentation, res, enums);
+            // todo return type of variable
         },
         AstNode::FirstAssignment => {
             write!(res, "let mut ").unwrap();
@@ -87,6 +91,7 @@ pub fn to_rust(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String,
             }
             write!(res, " = ").unwrap();
             to_rust(ast, children[1], indentation, res, enums);
+            // todo return type here
         }
         AstNode::Identifier(name) => {
             write!(res, "{}", name).unwrap();
@@ -104,13 +109,13 @@ pub fn to_rust(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String,
                 write!(res, ")").unwrap();
             } else {
                 to_rust(ast, children[0], indentation, res, enums);
-                write!(res, "{}", op.to_string()).unwrap();
+                write!(res, " {} ", op.to_string()).unwrap();
                 to_rust(ast, children[1], indentation, res, enums);
             }
         },
         AstNode::UnaryOp(op) => {
             let st = if let OperatorType::BinNot = op { String::from("!") } else { op.to_string() };
-            write!(res, "{}", st).unwrap();
+            write!(res, " {}", st).unwrap();
             to_rust(ast, children[0], indentation, res, enums);
         },
         AstNode::Parentheses => {
@@ -180,6 +185,30 @@ pub fn to_rust(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String,
                 to_rust(ast, children[0], indentation, res, enums);
             }
         },
+        AstNode::String(str) => write!(res, "{}", str).unwrap(),
+        AstNode::Char(chr) => write!(res, "{}", chr).unwrap(),
+        AstNode::Property => {
+            to_rust(ast, children[0], indentation, res, enums);
+            write!(res, ".").unwrap();
+            to_rust(ast, children[1], indentation, res, enums);
+        },
+        AstNode::ForStatement => {
+            write!(res, "for ").unwrap();
+            to_rust(ast, children[0], indentation, res, enums);
+            write!(res, " in ").unwrap();
+            to_rust(ast, children[1], indentation, res, enums);
+            to_rust(ast, children[2], indentation + 1, res, enums);
+        },
+        AstNode::ForVars => {
+            to_rust(ast, children[0], indentation, res, enums);
+            for child in children.iter().skip(1) {
+                write!(res, ", ").unwrap();
+                to_rust(ast, *child, indentation, res, enums);
+            }
+        },
+        AstNode::ForIter => {
+            to_rust(ast, children[0], indentation, res, enums);
+        }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }

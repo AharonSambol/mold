@@ -56,11 +56,11 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         },
         AstNode::Operator(op) => {
             to_python(ast, children[0], indentation, res);
-            write!(res, "{}", op.to_string()).unwrap();
+            write!(res, " {} ", op.to_string()).unwrap();
             to_python(ast, children[1], indentation, res);
         },
         AstNode::UnaryOp(op) => {
-            write!(res, "{}", op.to_string()).unwrap();
+            write!(res, " {}", op.to_string()).unwrap();
             to_python(ast, children[0], indentation, res);
         },
         AstNode::Parentheses => {
@@ -79,6 +79,8 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             write!(res, "]").unwrap();
         },
         AstNode::Number(num) => write!(res, "{}", num).unwrap(),
+        AstNode::String(str) => write!(res, "{}", str).unwrap(),
+        AstNode::Char(chr) => write!(res, "{}", chr).unwrap(),
         AstNode::ListLiteral => {
             write!(res, "[").unwrap();
             for (i, child) in children.iter().enumerate() {
@@ -119,6 +121,11 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             if children.len() != 0 {
                 to_python(ast, children[0], indentation, res);
             }
+        },
+        AstNode::Property => {
+            to_python(ast, children[0], indentation, res);
+            write!(res, ".").unwrap();
+            to_python(ast, children[1], indentation, res);
         },
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }

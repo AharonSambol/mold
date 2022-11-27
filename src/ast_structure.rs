@@ -28,12 +28,13 @@ pub enum AstNode {
     FirstAssignment, Assignment, // children[0] = var, children[1] = val
     FunctionCall,       // children[0] = func, children[1..] = param,
     Property,           // children[0] = obj, children[1] = prop
-    Number(String),     // no children
+    Number(String), Char(char), String(String),     // no children
     Operator(OperatorType),   // children[0] = elem1, children[1] = elem2
     UnaryOp(OperatorType),    // children[0] = elem
     Parentheses,        // children[0] = inside
     ColonParentheses,   // children[0] = inside
     IfStatement, WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
+    ForStatement, ForVars, ForIter,
     Pass,
     ListLiteral, // children = elements
     Type(Type),
@@ -47,20 +48,25 @@ impl Display for AstNode {
         match &self {
             AstNode::Body => write!(f, "BODY"),
             AstNode::Module => write!(f, "MODULE"),
-            AstNode::Function(func) => write!(f, "Func({})", func.to_string()),
-            AstNode::FunctionCall => write!(f, "FuncCall()"),
+            AstNode::Function(func) => write!(f, "FUNC({})", func.to_string()),
+            AstNode::FunctionCall => write!(f, "FUNC_CALL"),
             AstNode::Assignment => write!(f, "="),
             AstNode::FirstAssignment => write!(f, ":="),
-            AstNode::Property => write!(f, "Property"),
+            AstNode::Property => write!(f, "PROPERTY"),
             AstNode::Identifier(st) => write!(f, "{}", st),
             AstNode::Number(num) => write!(f, "{}", num),
+            AstNode::String(str) => write!(f, "{}", str),
+            AstNode::Char(chr) => write!(f, "{}", chr),
             AstNode::Operator(op) => write!(f, "{}", op),
-            AstNode::UnaryOp(op) => write!(f, "Unary({})", op),
+            AstNode::UnaryOp(op) => write!(f, "UNARY({})", op),
             AstNode::Parentheses => write!(f, "()"),
             AstNode::ColonParentheses => write!(f, "():"),
-            AstNode::IfStatement => write!(f, "if"),
-            AstNode::WhileStatement => write!(f, "while"),
-            AstNode::Pass => write!(f, "pass"),
+            AstNode::IfStatement => write!(f, "IF"),
+            AstNode::WhileStatement => write!(f, "WHILE"),
+            AstNode::ForStatement => write!(f, "FOR"),
+            AstNode::ForIter => write!(f, "ITER"),
+            AstNode::ForVars => write!(f, "VARS"),
+            AstNode::Pass => write!(f, "PASS"),
             AstNode::ListLiteral => write!(f, "[LIST]"),
             AstNode::Type(typ) => write!(f, "{}", typ),
             AstNode::Index => write!(f, "[INDEX]"),

@@ -1,4 +1,4 @@
-extern crate core;
+// extern crate core;
 
 use pretty_print_tree::PrettyPrintTree;
 
@@ -8,6 +8,7 @@ mod ast_structure;
 mod types;
 mod to_python;
 mod to_rust;
+mod play_ground;
 
 use std::collections::HashMap;
 use std::process::Command;
@@ -20,7 +21,11 @@ use crate::ast_structure::join;
 
 static mut IS_COMPILED: bool = false;
 
+
 fn main() {
+    // todo remove
+    unsafe { IS_COMPILED = true; }
+
     for argument in env::args() {
         if argument == "compile" {
             unsafe { IS_COMPILED = true; }
@@ -51,8 +56,8 @@ fn main() {
         let mut rs = String::new();
         let mut enums = HashMap::new();
         to_rust::to_rust(&_ast, 0, 0, &mut rs, &mut enums);
-        // println!("\n{}", join(&enums.values().collect(), "\n\n"));
-        // println!("\n{}", rs);
+        println!("\n{}", join(&enums.values().collect(), "\n\n"));
+        println!("\n{}", rs);
 
         if !Path::new("/out").exists() {
             Command::new("cargo").arg("new").arg("out")
@@ -89,7 +94,7 @@ fn main() {
         let mut py = String::new();
         to_python::to_python(&_ast, 0, 0, &mut py);
         py = format!("from typing import *\n\n{}\n\nif __name__ == '__main__':\n\tmain()", py);
-        // println!("{}", py);
+        println!("{}", py);
         println!("\n\x1b[100m\x1b[1m\x1b[92m OUTPUT: \x1b[0m");
 
         let mut output = Command::new("python3")
