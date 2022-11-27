@@ -359,12 +359,14 @@ ppt: &PrettyPrintTree<(Vec<Ast>, usize)>
 ) -> (usize, Vec<Ast>) {
     add_to_tree(parent, &mut tree, Ast::new(AstNode::ForStatement));
     let loop_pos = tree.len() - 1;
-    add_to_tree(loop_pos, &mut tree, Ast::new(AstNode::ForVars));
-    add_to_tree(loop_pos, &mut tree, Ast::new(AstNode::ForIter));
+    let pars_pos = loop_pos + 1;
+    let vars_pos = loop_pos + 2;
+    let iter_pos = loop_pos + 3;
+    let body_pos = loop_pos + 4;
+    add_to_tree(loop_pos, &mut tree, Ast::new(AstNode::ColonParentheses));
+    add_to_tree(pars_pos, &mut tree, Ast::new(AstNode::ForVars));
+    add_to_tree(pars_pos, &mut tree, Ast::new(AstNode::ForIter));
     add_to_tree(loop_pos, &mut tree, Ast::new(AstNode::Body));
-    let vars_pos = loop_pos + 1;
-    let iter_pos = loop_pos + 2;
-    let body_pos = loop_pos + 3;
     vars.push(HashSet::new());
     //4 vars:
     loop {
@@ -386,7 +388,7 @@ ppt: &PrettyPrintTree<(Vec<Ast>, usize)>
     }
     //4 iters:
     let (p, t) = make_ast_expression(
-    tokens, pos, tree, iter_pos, vars, ppt
+        tokens, pos, tree, iter_pos, vars, ppt
     );
     pos = p; tree = t;
     //4 body:

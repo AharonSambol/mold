@@ -34,7 +34,9 @@ pub enum AstNode {
     Parentheses,        // children[0] = inside
     ColonParentheses,   // children[0] = inside
     IfStatement, WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
-    ForStatement, ForVars, ForIter,
+    ForStatement, // children[0] = colon_parentheses(ForVars, ForIter)
+    ForVars,    // children = vars
+    ForIter,    // children[0] = iter
     Pass,
     ListLiteral, // children = elements
     Type(Type),

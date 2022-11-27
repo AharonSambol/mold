@@ -124,7 +124,9 @@ pub fn to_rust(
             write!(res, ")").unwrap();
         },
         AstNode::ColonParentheses => {
-            to_rust(ast, children[0], indentation, res, enums);
+            for child in children {
+                to_rust(ast, *child, indentation, res, enums);
+            }
         },
         AstNode::Index => {
             to_rust(ast, children[0], indentation, res, enums);
@@ -195,9 +197,7 @@ pub fn to_rust(
         AstNode::ForStatement => {
             write!(res, "for ").unwrap();
             to_rust(ast, children[0], indentation, res, enums);
-            write!(res, " in ").unwrap();
-            to_rust(ast, children[1], indentation, res, enums);
-            to_rust(ast, children[2], indentation + 1, res, enums);
+            to_rust(ast, children[1], indentation + 1, res, enums);
         },
         AstNode::ForVars => {
             to_rust(ast, children[0], indentation, res, enums);
@@ -207,6 +207,7 @@ pub fn to_rust(
             }
         },
         AstNode::ForIter => {
+            write!(res, " in ").unwrap();
             to_rust(ast, children[0], indentation, res, enums);
         }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)

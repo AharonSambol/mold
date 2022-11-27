@@ -69,7 +69,9 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             write!(res, ")").unwrap();
         },
         AstNode::ColonParentheses => {
-            to_python(ast, children[0], indentation, res);
+            for child in children {
+                to_python(ast, *child, indentation, res);
+            }
             write!(res, ":").unwrap();
         },
         AstNode::Index => {
@@ -127,6 +129,22 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             write!(res, ".").unwrap();
             to_python(ast, children[1], indentation, res);
         },
+        AstNode::ForStatement => {
+            write!(res, "for ").unwrap();
+            to_python(ast, children[0], indentation, res);
+            to_python(ast, children[1], indentation + 1, res);
+        },
+        AstNode::ForVars => {
+            to_python(ast, children[0], indentation, res);
+            for child in children.iter().skip(1) {
+                write!(res, ", ").unwrap();
+                to_python(ast, *child, indentation, res);
+            }
+        },
+        AstNode::ForIter => {
+            write!(res, " in ").unwrap();
+            to_python(ast, children[0], indentation, res);
+        }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }
