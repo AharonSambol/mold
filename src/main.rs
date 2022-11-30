@@ -21,7 +21,7 @@ static mut IS_COMPILED: bool = false;
 
 fn main() {
     // todo remove
-    // unsafe { IS_COMPILED = true; }
+    unsafe { IS_COMPILED = true; }
 
     for argument in env::args() {
         if argument == "compile" {
@@ -62,9 +62,9 @@ fn main() {
     }
 }
 
-fn interpret(_ast: &Vec<Ast>) {
+fn interpret(ast: &Vec<Ast>) {
     let mut py = String::new();
-    to_python::to_python(&_ast, 0, 0, &mut py);
+    to_python::to_python(&ast, 0, 0, &mut py);
     py = format!("from typing import *\n\n{}\n\nif __name__ == '__main__':\n\tmain()", py);
     println!("{}", py);
     println!("\n\x1b[100m\x1b[1m\x1b[92m OUTPUT: \x1b[0m");
@@ -77,10 +77,10 @@ fn interpret(_ast: &Vec<Ast>) {
     output.wait().unwrap();
 }
 
-fn compile(_ast: &Vec<Ast>) {
+fn compile(ast: &Vec<Ast>) {
     let mut rs = String::new();
     let mut enums = HashMap::new();
-    to_rust::to_rust(&_ast, 0, 0, &mut rs, &mut enums);
+    to_rust::to_rust(&ast, 0, 0, &mut rs, &mut enums);
     println!("\n{}", join(&enums.values().collect(), "\n\n"));
     println!("\n{}", rs);
 

@@ -3,20 +3,23 @@ use pretty_print_tree::PrettyPrintTree;
 use crate::ast_structure::{Ast, AstNode, Param};
 use crate::IS_COMPILED;
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{GenericType, INT_TYPE, ITER_TYPE, Type, TypeKind, UNKNOWN_TYPE};
+use crate::types::{GenericType, INT_TYPE, ITER_TYPE, STR_TYPE, Type, TypeKind, UNKNOWN_TYPE, unwrap, unwrap_u};
 use crate::ast_add_types::add_types;
 
 
+pub type StructTypes = HashMap<String, usize>;
 pub type FuncTypes = HashMap<String, FuncType>;
 pub type VarTypes = Vec<HashMap<String, usize>>;
 pub type PPT = PrettyPrintTree<(Vec<Ast>, usize)>;
-// todo types
+
 // todo I think it allows to use any type of closing )}]
 
+#[derive(Clone, Debug)]
 pub struct FuncType {
     pub input: Option<Vec<Type>>,
     pub output: Option<Type>
 }
+
 pub fn construct_ast(
 tokens: &Vec<SolidToken>, pos: usize, ppt: &PPT
 ) -> (usize, Vec<Ast>) {
@@ -96,52 +99,63 @@ tokens: &Vec<SolidToken>, pos: usize, ppt: &PPT
     let mut funcs = HashMap::from([
         (String::from("range"),     FuncType{ input: Some(range_param), output: Some(int_iter) }),
         (String::from("print"),     FuncType{ input: Some(print_param), output: None }),
+        (String::from("str"),     FuncType{
+            input: Some(vec![Type{ kind: TypeKind::Implements, children: Some(vec![Type::new(String::from("Display"))]) }]),
+            output: Some(STR_TYPE)
+        }),
         (String::from("dprint"),    FuncType{ input: Some(dprint_param), output: None }),
         (String::from("rev"),       FuncType{ input: Some(vec![generic_iter.clone()]), output: Some(generic_iter.clone()) }),
         (String::from("enumerate"), FuncType{ input: Some(vec![generic_iter]), output: Some(enum_iter) }),
-    ]);
 
+    ]);
+    let mut structs = HashMap::new();
+    
     let mut res = make_ast_statement(
         tokens, pos, vec![Ast::new(AstNode::Module)], 0, 0,
-        &mut vec![HashMap::new()], &mut funcs, ppt
+        &mut vec![HashMap::new()], &mut funcs, &mut structs, ppt
     );
     println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
-    add_types(&mut res.1, 0, &mut vec![HashMap::new()], &funcs, ppt);
+    add_types(&mut res.1, 0, &mut vec![HashMap::new()], &funcs, &structs, ppt);
     println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
     res
 }
 
 fn make_ast_statement(
     tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize, indent: usize,
-    vars: &mut VarTypes, funcs: &mut FuncTypes,
+    vars: &mut VarTypes, funcs: &mut FuncTypes, structs: &mut StructTypes,
     ppt: &PPT
 ) -> (usize, Vec<Ast>) {
     while pos < tokens.len() {
         let token = &tokens[pos];
         match token {
-            SolidToken::Struct => {},
+            SolidToken::Struct => {
+                vars.push(HashMap::new());
+                let temp = make_struct(tokens, pos + 1, tree, parent, indent, structs, ppt);
+                pos = temp.0; tree = temp.1;
+                vars.pop();
+            },
             SolidToken::Def => {
                 vars.push(HashMap::new());
-                let temp = make_func(tokens, pos + 1, tree, parent, indent, vars, funcs, ppt);
+                let temp = make_func(tokens, pos + 1, tree, parent, indent, vars, funcs, structs, ppt);
                 pos = temp.0; tree = temp.1;
                 vars.pop();
             },
             SolidToken::For => {
-                let (p, t) = for_statement(tokens, pos + 1, tree, parent, indent, vars, funcs, ppt);
+                let (p, t) = for_statement(tokens, pos + 1, tree, parent, indent, vars, funcs, structs, ppt);
                 pos = p; tree = t;
             },
             SolidToken::While => {
-                let (p, t) = if_while_statement(false, tokens, pos + 1, tree, parent, indent, vars, funcs, ppt);
+                let (p, t) = if_while_statement(false, tokens, pos + 1, tree, parent, indent, vars, funcs, structs, ppt);
                 pos = p; tree = t;
             },
             SolidToken::If => {
-                let (p, t) = if_while_statement(true, tokens, pos + 1, tree, parent, indent, vars, funcs, ppt);
+                let (p, t) = if_while_statement(true, tokens, pos + 1, tree, parent, indent, vars, funcs, structs, ppt);
                 pos = p; tree = t;
             },
             SolidToken::Elif => {
                 let last = get_last(&mut tree[parent].children);
                 if let AstNode::IfStatement = tree[last].value {
-                    let (p, t) = if_while_statement(true, tokens, pos + 1, tree, last, indent, vars, funcs, ppt);
+                    let (p, t) = if_while_statement(true, tokens, pos + 1, tree, last, indent, vars, funcs, structs, ppt);
                     pos = p; tree = t;
                 } else {
                     panic!("elif to unknown if")
@@ -159,10 +173,9 @@ fn make_ast_statement(
                     vars.push(HashMap::new());
                     let len = tree.len();
                     let (p, t) = make_ast_statement(
-                        tokens, pos + 1, tree, len - 1, indent + 1, vars, funcs, ppt
+                        tokens, pos + 1, tree, len - 1, indent + 1, vars, funcs, structs, ppt
                     );
-                    pos = p - 1;
-                    tree = t;
+                    pos = p - 1; tree = t;
                     vars.pop();
                 } else {
                     panic!("else to unknown if")
@@ -173,7 +186,7 @@ fn make_ast_statement(
             },
             SolidToken::Word(st) => {
                 let (p, t) = word_tok(
-                    tokens, pos, tree, parent, indent, vars, funcs, ppt, st, false
+                    tokens, pos, tree, parent, indent, vars, funcs, structs, ppt, st, false
                 );
                 pos = p; tree = t;
             }
@@ -194,7 +207,7 @@ fn make_ast_statement(
                 } else {
                     let len = tree.len();
                     let (p, t) = make_ast_expression(
-                        tokens, pos + 1, tree, len - 1, vars, funcs, ppt
+                        tokens, pos + 1, tree, len - 1, vars, funcs, structs, ppt
                     );
                     pos = p - 1;
                     tree = t;
@@ -209,7 +222,7 @@ fn make_ast_statement(
 
 fn make_ast_expression(
     tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize,
-    vars: &mut VarTypes, funcs: &mut FuncTypes,
+    vars: &mut VarTypes, funcs: &mut FuncTypes, structs: &mut StructTypes,
     ppt: &PPT
 ) -> (usize, Vec<Ast>) {
     // println!("{}\n", ppt.to_str(&(tree.clone(), 0)));
@@ -221,7 +234,7 @@ fn make_ast_expression(
                 amount_of_open += 1;
                 add_to_tree(parent, &mut tree, Ast::new(AstNode::Parentheses));
                 let par_pos = tree.len() - 1;
-                let (p, t) = make_ast_expression(tokens, pos + 1, tree, par_pos, vars, funcs, ppt);
+                let (p, t) = make_ast_expression(tokens, pos + 1, tree, par_pos, vars, funcs, structs, ppt);
                 pos = p - 1; tree = t;
                 // tree[par_pos].typ = tree[unwrap_u(&tree[par_pos].children)[0]].typ.clone();
             },
@@ -234,14 +247,14 @@ fn make_ast_expression(
                 | SolidToken::Word(_) = &tokens[pos - 1] {
                     //1 index
                     let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Index);
-                    let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, vars, funcs, ppt);
+                    let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, vars, funcs, structs, ppt);
                     pos = p - 1; tree = t;
                 } else {
                     //1 list-literal or comprehension
                     add_to_tree(parent, &mut tree, Ast::new(AstNode::ListLiteral));
                     let list_parent = tree.len() - 1;
                     while let SolidToken::Comma | SolidToken::Bracket(IsOpen::True) = &tokens[pos] {
-                        let (p, t) = make_ast_expression(tokens, pos + 1, tree, list_parent, vars, funcs, ppt);
+                        let (p, t) = make_ast_expression(tokens, pos + 1, tree, list_parent, vars, funcs, structs, ppt);
                         pos = p; tree = t;
                     }
                     pos -= 1;
@@ -269,17 +282,20 @@ fn make_ast_expression(
             SolidToken::Char(ch) => {
                 add_to_tree(parent, &mut tree, Ast::new(AstNode::Char(ch.clone())));
             },
+            SolidToken::Bool(bl) => {
+                add_to_tree(parent, &mut tree, Ast::new(AstNode::Bool(bl.clone())));
+            },
             // todo bool
             SolidToken::Word(wrd) => {
                 let (p, t) = word_tok(
-                    tokens, pos, tree, parent, 0, vars, funcs, ppt, wrd, true
+                    tokens, pos, tree, parent, 0, vars, funcs, structs, ppt, wrd, true
                 );
                 pos = p; tree = t;
             },
             SolidToken::UnaryOperator(op) => {
                 add_to_tree(parent, &mut tree, Ast::new(AstNode::UnaryOp(op.clone())));
                 let index = tree.len() - 1;
-                let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, vars, funcs, ppt);
+                let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, vars, funcs, structs, ppt);
                 pos = p - 1; tree = t;
             },
             SolidToken::Operator(op) => {
@@ -290,7 +306,7 @@ fn make_ast_expression(
                     parent = tree[parent].parent.unwrap();
                 }
                 let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Operator(op.clone()));
-                let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, vars, funcs, ppt);
+                let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, vars, funcs, structs, ppt);
                 pos = p - 1; tree = t;
             },
             _ => panic!("unexpected token {:?}", token)
@@ -302,7 +318,7 @@ fn make_ast_expression(
 
 fn word_tok(
     tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize, indent: usize,
-    vars: &mut VarTypes, funcs: &mut FuncTypes,
+    vars: &mut VarTypes, funcs: &mut FuncTypes, structs: &mut StructTypes,
     ppt: &PPT, st: &String,
     is_expression: bool
 ) -> (usize, Vec<Ast>) {
@@ -323,7 +339,7 @@ fn word_tok(
 
                 let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Assignment);
                 let (p, t) = make_ast_expression(
-                    tokens, pos + 1, tree, index, vars, funcs, ppt
+                    tokens, pos + 1, tree, index, vars, funcs, structs, ppt
                 );
                 return (p - 1, t);
             },
@@ -342,29 +358,26 @@ fn word_tok(
                     // tree[identifier_pos].typ = Some(param.typ);
                 }
                 let (p, t) = make_ast_expression(
-                    tokens, pos + 1, tree, index, vars, funcs, ppt
+                    tokens, pos + 1, tree, index, vars, funcs, structs, ppt
                 );
                 if infer_typ {
                     // todo get the type
                 }
                 return (p - 1, t);
             },
-            SolidToken::Parenthesis(IsOpen::True) => {
-                let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::FunctionCall);
-                add_to_tree(index, &mut tree, Ast {
-                    children: None,
-                    parent: Some(indent),
-                    value: AstNode::Args,
-                    typ: None
-                });
+            SolidToken::Brace(IsOpen::True)
+            | SolidToken::Parenthesis(IsOpen::True) => {
+                let type_call = if let SolidToken::Brace(_) = tokens[pos] { AstNode::StructInit } else { AstNode::FunctionCall };
+                let index = insert_as_parent_of_prev(&mut tree, parent, type_call);
+                add_to_tree(index, &mut tree, Ast::new(AstNode::Args));
                 let last = tree.len() - 1;
                 let (p, t) = make_ast_expression(
-                    tokens, pos + 1, tree, last, vars, funcs, ppt
+                    tokens, pos + 1, tree, last, vars, funcs, structs, ppt
                 );
                 pos = p; tree = t;
                 while let SolidToken::Comma = tokens[pos] {
                     let (p, t) = make_ast_expression(
-                        tokens, pos + 1, tree, last, vars, funcs, ppt
+                        tokens, pos + 1, tree, last, vars, funcs, structs, ppt
                     );
                     pos = p; tree = t;
                 }
@@ -373,7 +386,7 @@ fn word_tok(
             SolidToken::Period => {
                 let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Property);
                 if let SolidToken::Word(st) = &tokens[pos + 1] {
-                    let(p, t) = word_tok(tokens, pos + 1, tree, index, indent, vars, funcs, ppt, st, is_expression);
+                    let(p, t) = word_tok(tokens, pos + 1, tree, index, indent, vars, funcs, structs, ppt, st, is_expression);
                     pos = p; tree = t;
                 } else {
                     panic!("expected word after period")
@@ -408,7 +421,7 @@ fn get_last(arr: &mut Option<Vec<usize>>) -> usize{
 fn if_while_statement(
     is_if: bool, tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize,
     indent: usize,
-    vars: &mut VarTypes, funcs: &mut FuncTypes,
+    vars: &mut VarTypes, funcs: &mut FuncTypes, structs: &mut StructTypes,
     ppt: &PPT
 ) -> (usize, Vec<Ast>) {
     add_to_tree(parent, &mut tree, Ast::new(
@@ -418,7 +431,7 @@ fn if_while_statement(
     //4 condition:
     add_to_tree(len - 1, &mut tree, Ast::new(AstNode::ColonParentheses));
     let (p, t) = make_ast_expression(
-        tokens, pos, tree, len, vars, funcs, ppt
+        tokens, pos, tree, len, vars, funcs, structs, ppt
     );
     pos = p; tree = t;
     //4 body:
@@ -426,7 +439,7 @@ fn if_while_statement(
     vars.push(HashMap::new());
     let len = tree.len();
     let (p, t) = make_ast_statement(
-        tokens, pos + 1, tree, len - 1, indent + 1, vars, funcs, ppt
+        tokens, pos + 1, tree, len - 1, indent + 1, vars, funcs, structs, ppt
     );
     vars.pop();
     (p - 1, t)
@@ -435,7 +448,7 @@ fn if_while_statement(
 fn for_statement(
     tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize,
     indent: usize,
-    vars: &mut VarTypes, funcs: &mut FuncTypes,
+    vars: &mut VarTypes, funcs: &mut FuncTypes, structs: &mut StructTypes,
     ppt: &PPT
 ) -> (usize, Vec<Ast>) {
     add_to_tree(parent, &mut tree, Ast::new(AstNode::ForStatement));
@@ -469,12 +482,12 @@ fn for_statement(
     }
     //4 iters:
     let (p, t) = make_ast_expression(
-        tokens, pos, tree, iter_pos, vars, funcs, ppt
+        tokens, pos, tree, iter_pos, vars, funcs, structs, ppt
     );
     pos = p; tree = t;
     //4 body:
     let (p, t) = make_ast_statement(
-        tokens, pos + 1, tree, body_pos, indent + 1, vars, funcs, ppt
+        tokens, pos + 1, tree, body_pos, indent + 1, vars, funcs, structs, ppt
     );
     vars.pop();
     (p - 1, t)
@@ -502,7 +515,7 @@ fn insert_as_parent_of_prev(tree: &mut Vec<Ast>, parent: usize, value: AstNode) 
     index
 }
 
-fn add_to_tree(parent: usize, tree: &mut Vec<Ast>, mut new_node: Ast) {
+pub fn add_to_tree(parent: usize, tree: &mut Vec<Ast>, mut new_node: Ast) {
     new_node.parent = Some(parent);
     tree.push(new_node);
     let pos = tree.len() - 1;
@@ -515,7 +528,7 @@ fn add_to_tree(parent: usize, tree: &mut Vec<Ast>, mut new_node: Ast) {
 
 fn make_func(
     tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize, indent: usize,
-    vars: &mut VarTypes, funcs: &mut FuncTypes,
+    vars: &mut VarTypes, funcs: &mut FuncTypes, structs: &mut StructTypes,
     ppt: &PPT
 ) -> (usize, Vec<Ast>) {
     let name =
@@ -562,7 +575,62 @@ fn make_func(
         input: Some(params.iter().map(|x| x.typ.clone()).collect()),
         output: tree[return_pos].typ.clone(),
     });
-    make_ast_statement(tokens, pos, tree, body_pos, indent + 1, vars, funcs, ppt)
+    make_ast_statement(tokens, pos, tree, body_pos, indent + 1, vars, funcs, structs, ppt)
+}
+
+fn make_struct(
+    tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize, indent: usize,
+    structs: &mut StructTypes,
+    ppt: &PPT
+) -> (usize, Vec<Ast>) {
+    let name =
+    if let SolidToken::Word(name) = &tokens[pos] { name.clone() }
+    else { panic!("Invalid name for function {:?}", tokens[pos]) };
+
+    add_to_tree(parent, &mut tree, Ast::new(AstNode::Struct(name.clone())));
+    let index = tree.len() - 1;
+    structs.insert(name, index);
+
+    pos += 1;
+    add_to_tree(index, &mut tree, Ast::new(AstNode::ArgsDef));
+    add_to_tree(index, &mut tree, Ast::new(AstNode::Functions(vec![])));
+    add_to_tree(index, &mut tree, Ast::new(AstNode::Module));
+    let args_pos = tree.len() - 3;
+    let funcs_pos = args_pos + 1;
+    let body_pos = args_pos + 2;
+
+    if let SolidToken::Colon = tokens[pos] {} else {
+        panic!("expected colon")
+    }
+    pos += 3 + indent;
+    while let SolidToken::Word(word) = &tokens[pos] {
+        println!("w {}", word);
+        pos += 1;
+        if let SolidToken::Colon = &tokens[pos] {
+            pos += 1;
+            let typ = get_arg_typ(tokens, &mut pos);
+            add_to_tree(args_pos, &mut tree, Ast::new(AstNode::Identifier(word.clone())));
+            tree.last_mut().unwrap().typ = Some(typ);
+            pos += 2 + indent;
+        } else {
+            add_to_tree(args_pos, &mut tree, Ast::new(AstNode::Identifier(word.clone())));
+            pos += 1 + indent;
+        }
+    }
+
+    let mut struct_funcs: FuncTypes = HashMap::new();
+    let (p, t) = make_ast_statement(
+        tokens, pos, tree, body_pos, indent + 1,
+        &mut vec![], &mut struct_funcs, &mut HashMap::new(), ppt
+    );
+    pos = p; tree = t;
+
+    if let AstNode::Functions(v) = &mut tree[funcs_pos].value {
+        for fnc in struct_funcs {
+            v.push(fnc);
+        }
+    }
+    (pos, tree)
 }
 
 // returns where pos = the index of the closing brace
@@ -631,6 +699,7 @@ fn get_arg_typ(tokens: &Vec<SolidToken>, pos: &mut usize) -> Type {
             },
             SolidToken::Comma
             | SolidToken::Colon
+            | SolidToken::NewLine
             | SolidToken::Operator(OperatorType::Eq)=> {
                 if amount_of_open == 1 { break }
                 else {

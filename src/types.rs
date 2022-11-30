@@ -12,6 +12,10 @@ pub const STR_TYPE: Type = Type {
     kind: TypeKind::Typ(TypName::Static("String")),
     children: None
 };
+pub const BOOL_TYPE: Type = Type {
+    kind: TypeKind::Typ(TypName::Static("bool")),
+    children: None
+};
 pub const INT_TYPE: Type = Type {
     kind: TypeKind::Typ(TypName::Static("i32")),
     children: None

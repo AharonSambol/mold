@@ -1,5 +1,6 @@
 use crate::types::{Type, TypeKind};
 use std::fmt::{Display, Formatter};
+use crate::mold_ast::{FuncType, FuncTypes};
 use crate::mold_tokens::OperatorType;
 
 #[derive(Clone, Debug)]
@@ -26,11 +27,14 @@ pub enum AstNode {
     Body,
     Module,             // children = all the functions/classes/enums..
     Function(String), // children[0] = args, children[1] = returnType, children[2] = body
+    Struct(String),     // children[0] = args, children[1] = functions, children[2] = body
+    Functions(Vec<(String, FuncType)>),
     Identifier(String), // children[0] = type
     FirstAssignment, Assignment, // children[0] = var, children[1] = val
     FunctionCall,       // children[0] = func, children[1] = Args,
+    StructInit,         // children[0] = struct, children[1] = Args,
     Property,           // children[0] = obj, children[1] = prop
-    Number(String), Char(char), String(String),     // no children
+    Number(String), Char(char), String(String), Bool(bool),    // no children
     Operator(OperatorType),   // children[0] = elem1, children[1] = elem2
     UnaryOp(OperatorType),    // children[0] = elem
     Parentheses,        // children[0] = inside
@@ -41,7 +45,6 @@ pub enum AstNode {
     ForIter,    // children[0] = iter
     Pass,
     ListLiteral, // children = elements
-    // Type(Type),
     Index,      // child[0] = item, child[1] = index
     ArgsDef, Args,       // children = args
     ReturnType, // children[0] = type
@@ -55,6 +58,7 @@ impl Display for AstNode {
             AstNode::Module => write!(f, "MODULE"),
             AstNode::Function(func) => write!(f, "FUNC({})", func.to_string()),
             AstNode::FunctionCall => write!(f, "FUNC_CALL"),
+            AstNode::StructInit => write!(f, "STRUCT_INIT"),
             AstNode::Assignment => write!(f, "="),
             AstNode::FirstAssignment => write!(f, ":="),
             AstNode::Property => write!(f, "PROPERTY"),
@@ -79,7 +83,9 @@ impl Display for AstNode {
             AstNode::ArgsDef => write!(f, "(ARGS_DEF)"),
             AstNode::Return => write!(f, "RETURN"),
             AstNode::ReturnType => write!(f, "RETURNS"),
-
+            AstNode::Struct(name) => write!(f, "STRUCT({})", name),
+            AstNode::Functions(funcs) => write!(f, "FUNCS({:?})", funcs),
+            AstNode::Bool(b) => write!(f, "{}", b),
         }
     }
 }

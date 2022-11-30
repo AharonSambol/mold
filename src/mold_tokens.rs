@@ -43,6 +43,7 @@ pub enum SolidToken {
     Word(String),
     Str(String), Char(char),
     Num(String), // Float(f32),
+    Bool(bool),
     Operator(OperatorType), UnaryOperator(OperatorType),
     Colon, Comma, Period,
     Tab, NewLine,
@@ -259,6 +260,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
             Word { is_spaced: false, .. } if join_to_word(&mut tokens, i + 1) => (),
             Word { is_spaced: false, .. } if join_to_num(&mut tokens, i + 1) => (),
             Num {..} if join_num(&mut tokens, i + 1) => (),
+            Num {..} if join_num_to_word(&mut tokens, i + 1) => (),
             Period if join_num(&mut tokens, i + 1) => (),
             _ => tokens.push(token)
         };
@@ -293,6 +295,8 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                     "or" => SolidToken::Operator(OperatorType::Or),
                     "not" => SolidToken::Operator(OperatorType::Not),
                     "in" => SolidToken::In, "is" => SolidToken::Is,
+                    "True" | "true" => SolidToken::Bool(true),
+                    "False" | "false" => SolidToken::Bool(false),
                     _ => SolidToken::Word(String::from(st))
                 }
             },
@@ -337,6 +341,11 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
             }
         };
         res.push(st);
+    }
+    if res.len() > 0{
+        if let SolidToken::NewLine = res.last().unwrap() {} else {
+            res.push(SolidToken::NewLine)
+        }
     }
     res
 }
@@ -412,6 +421,13 @@ fn make_char(tokens: &mut Vec<Token>, skip: &mut i32, chars: &Vec<char>, i: usiz
 
 fn join_num(tokens: &mut Vec<Token>, new_end: usize) -> bool {
     if let Some(Num { end, .. }) = tokens.last_mut() {
+        *end = new_end;
+        true
+    } else { false }
+}
+
+fn join_num_to_word(tokens: &mut Vec<Token>, new_end: usize) -> bool {
+    if let Some(Word { end, is_spaced: false, .. }) = tokens.last_mut() {
         *end = new_end;
         true
     } else { false }

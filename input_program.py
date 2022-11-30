@@ -1,5 +1,6 @@
 def main():
     a := [4, 1, 2, 3, 3, 1]
+    st := St { 1, false }
 #     a.sort()
     dprint(a)
     for i in enumerate(range(10, 13)):
@@ -16,7 +17,8 @@ def fib(x: int) -> int:
         return x
     return fib(x - 1) + fib(x - 2)
 
-struct St {
-    a: int,
-    b: bool
-}
+struct St:
+    param: int
+    par2: bool
+    def to_str(a: int, b: int) -> int:
+        return a

@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use crate::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
+use std::iter::zip;
+use crate::mold_ast::StructTypes;
 use crate::mold_tokens::OperatorType;
 use crate::types::{Type, TypeKind, unwrap, unwrap_u};
 
+// TODO types with |
 
 pub fn to_rust(
     ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String, 
@@ -38,7 +41,7 @@ pub fn to_rust(
             // let body = &ast[children[2]];
             for par in unwrap_u(&param.children) {
                 let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
-                make_enums(typ, enums);
+                make_enums(typ,  enums);
             }
             let mut param = join(
                 &unwrap_u(&param.children).iter()
@@ -100,6 +103,7 @@ pub fn to_rust(
             write!(res, "let mut ").unwrap();
             to_rust(ast, children[0], indentation, res, enums);
             if let Some(c) = &ast[children[0]].typ {
+                make_enums(c, enums);
                 write!(res, ": {}", c).unwrap();
             }
             write!(res, " = ").unwrap();
@@ -267,6 +271,43 @@ pub fn to_rust(
         AstNode::ForIter => {
             write!(res, " in ").unwrap();
             to_rust(ast, children[0], indentation, res, enums);
+        },
+        AstNode::Struct(name) => {
+            let param = &ast[children[0]];
+            // let funcs = if let AstNode::Functions(v) = &ast[children[1]].value { v } else { panic!() };
+            for par in unwrap_u(&param.children) {
+                let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
+                make_enums(typ, enums);
+            }
+            let param = join(
+                &unwrap_u(&param.children).iter()
+                    .map(|&x|
+                        format!("{}: {}",
+                            if let AstNode::Identifier(n) = &ast[x].value { n } else { panic!() },
+                            if let Some(t) = &ast[x].typ { t } else { panic!() }
+                        )
+                    ).collect(),
+                ", "
+            );
+            write!(res, "struct {} {{ {} }}\nimpl {} {{", name, param, name).unwrap();
+            to_rust(ast, children[2], indentation + 1, res, enums);
+            write!(res, "\n{}}}", "\t".repeat(indentation)).unwrap();
+        },
+        AstNode::StructInit => {
+            to_rust(ast, children[0], indentation, res, enums);
+            write!(res, "{{ ").unwrap();
+            let arg_vals = unwrap_u(&ast[children[1]].children);
+            let arg_names = unwrap_u(&ast[children[2]].children);
+            for (val, name) in zip(arg_vals, arg_names) {
+                to_rust(ast, *name, indentation, res, enums);
+                write!(res, ": ").unwrap();
+                to_rust(ast, *val, indentation, res, enums);
+                write!(res, ", ").unwrap();
+            }
+            write!(res, "}}").unwrap();
+        }
+        AstNode::Bool(b) => {
+            write!(res, "{}", b).unwrap();
         }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
