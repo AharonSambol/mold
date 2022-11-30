@@ -1,5 +1,6 @@
-use crate::ast_structure::{Ast, AstNode, join};
+use crate::ast_structure::{Ast, AstNode};
 use std::fmt::Write;
+use crate::to_rust::{BIFunc, is_bif};
 use crate::types::{unwrap_u};
 
 
@@ -13,13 +14,16 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
                 to_python(ast, *child, indentation, res);
             }
         },
-        AstNode::Function(func) => {
-            write!(res, "def {}({}):", func.name, join(&func.params, ", ")).unwrap();
-            for child in children {
-                write!(res, "\n{}", "\t".repeat(indentation + 1)).unwrap();
-                to_python(ast, *child, indentation + 1, res);
-            }
+        AstNode::Function(name) => {
+            write!(res, "def {}", name).unwrap();
+            write!(res, "(").unwrap();
+            to_python(ast, children[0], indentation, res); // param
+            write!(res, ")").unwrap();
+            to_python(ast, children[1], indentation, res); // return
+            write!(res, ":").unwrap();
+            to_python(ast, children[2], indentation + 1, res); // body
         },
+        AstNode::ReturnType => {},
         AstNode::IfStatement => {
             write!(res, "if ").unwrap();
             to_python(ast, children[0], indentation, res);
@@ -97,18 +101,21 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         AstNode::Pass => {
             write!(res, "pass").unwrap();
         },
-        AstNode::Type(typ) => {
-            write!(res, "{}", typ).unwrap(); //todo
-        },
         AstNode::FunctionCall => {
-            to_python(ast, children[0], indentation, res);
-            write!(res, "(").unwrap();
+            match is_bif(&ast[children[0]].value) {
+                Some(BIFunc::Rev) => write!(res, "reversed(").unwrap(),
+                Some(BIFunc::DPrint) => write!(res, "print(").unwrap(),
+                _ => {
+                    to_python(ast, children[0], indentation, res);
+                    write!(res, "(").unwrap();
+                }
+            }
             if children.len() > 1 {
                 to_python(ast, children[1], indentation, res);
             }
             write!(res, ")").unwrap();
         },
-        AstNode::Args => {
+        AstNode::Args | AstNode::ArgsDef => {
             if children.len() == 0 {
                 return;
             }

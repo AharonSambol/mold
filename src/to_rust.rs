@@ -31,25 +31,40 @@ pub fn to_rust(
             }
             write!(res, "\n{}}}", "\t".repeat(indentation - 1)).unwrap();
         },
-        AstNode::Function(func) => {
-            for par in &func.params {
-                make_enums(&par.typ, enums);
+        AstNode::Function(name) => {
+            println!("{}", name);
+            let param = &ast[children[0]];
+            let return_typ = &ast[children[1]];
+            // let body = &ast[children[2]];
+            for par in unwrap_u(&param.children) {
+                let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
+                make_enums(typ, enums);
             }
-            let mut param = join(&func.params, ", mut ");
+            let mut param = join(
+                &unwrap_u(&param.children).iter()
+                    .map(|&x|
+                        format!("{}: {}",
+                                if let AstNode::Identifier(n) = &ast[x].value { n } else { panic!() },
+                                if let Some(t) = &ast[x].typ { t } else { panic!() }
+                        )
+                    ).collect(),
+                ", mut "
+            );
             if param != "" {
                 param = format!("mut {}", param);
             }
-            if let Some(return_type) = &func.return_type {
-                write!(res, "fn {}({}) -> {} {{", func.name, param, return_type).unwrap();
+            if let Some(t) = &return_typ.typ {
+                write!(res, "fn {}({}) -> {}", name, param, t).unwrap();
             } else {
-                write!(res, "fn {}({}) {{", func.name, param).unwrap();
+                write!(res, "fn {}({})", name, param).unwrap();
             }
-            for child in children {
-                write!(res, "\n{}", "\t".repeat(indentation + 1)).unwrap();
-                to_rust(ast, *child, indentation + 1, res, enums);
-                write!(res, ";").unwrap();
-            }
-            write!(res, "\n{}}}", "\t".repeat(indentation)).unwrap();
+            to_rust(ast, children[2], indentation + 1, res, enums);
+            // for child in children {
+            //     write!(res, "\n{}", "\t".repeat(indentation + 1)).unwrap();
+            //     to_rust(ast, *child, indentation + 1, res, enums);
+            //     write!(res, ";").unwrap();
+            // }
+            // write!(res, "\n{}}}", "\t".repeat(indentation)).unwrap();
         },
         AstNode::IfStatement => {
             write!(res, "if ").unwrap();
@@ -78,20 +93,17 @@ pub fn to_rust(
         },
         AstNode::Assignment => {
             to_rust(ast, children[0], indentation, res, enums);
-            write!(res, "=").unwrap();
+            write!(res, " = ").unwrap();
             to_rust(ast, children[1], indentation, res, enums);
-            // todo return type of variable
         },
         AstNode::FirstAssignment => {
             write!(res, "let mut ").unwrap();
             to_rust(ast, children[0], indentation, res, enums);
-            if let Some(c) = &ast[children[0]].children {
-                write!(res, ": ").unwrap();
-                to_rust(ast, c[0], indentation, res, enums);
+            if let Some(c) = &ast[children[0]].typ {
+                write!(res, ": {}", c).unwrap();
             }
             write!(res, " = ").unwrap();
             to_rust(ast, children[1], indentation, res, enums);
-            // todo return type here
         }
         AstNode::Identifier(name) => {
             write!(res, "{}", name).unwrap();
@@ -149,29 +161,75 @@ pub fn to_rust(
         AstNode::Pass => {
             write!(res, "()").unwrap();
         },
-        // 5 !!!!!!!!!!!!!!!!!!!!
-        AstNode::Type(typ) => {
-            make_enums(typ, enums);
-            write!(res, "{}", typ).unwrap(); //todo
-        },
         AstNode::FunctionCall => {
-            let is_print: fn(&AstNode) -> bool = |x| {
-                if let AstNode::Identifier(w) = x { if w == "print" {
-                    return true;
-                }} return false;
-            };
-            if is_print(&ast[children[0]].value) {
-                write!(res, "println!(\"{{}}\", ").unwrap();
-            } else {
-                to_rust(ast, children[0], indentation, res, enums);
-                write!(res, "(").unwrap();
+            match is_bif(&ast[children[0]].value) {
+                Some(BIFunc::Print) => {
+                    write!(res, "{}",
+                           format!("println!(\"{}\", ",
+                                   "{} ".repeat(
+                                       unwrap_u(&ast[children[1]].children).len()
+                                   ).strip_suffix(' ').unwrap()
+                           )
+                    ).unwrap()
+                },
+                Some(BIFunc::DPrint) => {
+                    write!(res, "{}",
+                           format!("println!(\"{}\", ",
+                                   "{:?} ".repeat(
+                                       unwrap_u(&ast[children[1]].children).len()
+                                   ).strip_suffix(' ').unwrap()
+                           )
+                    ).unwrap()
+                }
+                Some(BIFunc::Range) => {
+                    let args = unwrap_u(&ast[children[1]].children);
+                    match args.len() {
+                        1 => {
+                            write!(res, "(0..").unwrap();
+                            to_rust(ast, args[0], indentation, res, enums);
+                            write!(res, ")").unwrap();
+                        },
+                        2 => {
+                            write!(res, "(").unwrap();
+                            to_rust(ast, args[0], indentation, res, enums);
+                            write!(res, "..").unwrap();
+                            to_rust(ast, args[1], indentation, res, enums);
+                            write!(res, ")").unwrap();
+                        },
+                        3 => {
+                            write!(res, "(").unwrap();
+                            to_rust(ast, args[0], indentation, res, enums);
+                            write!(res, "..").unwrap();
+                            to_rust(ast, args[1], indentation, res, enums);
+                            write!(res, ").step_by(").unwrap();
+                            to_rust(ast, args[2], indentation, res, enums);
+                            write!(res, ")").unwrap();
+                        },
+                        _ => panic!("too many args passed to range, expected 1-3 found {}", children.len())
+                    }
+                    return;
+                },
+                Some(BIFunc::Rev) => {
+                    to_rust(ast, children[1], indentation, res, enums);
+                    write!(res, ".rev()").unwrap();
+                    return;
+                },
+                Some(BIFunc::Enumerate) => {
+                    to_rust(ast, children[1], indentation, res, enums);
+                    write!(res, ".enumerate()").unwrap();
+                    return;
+                },
+                _ => {
+                    to_rust(ast, children[0], indentation, res, enums);
+                    write!(res, "(").unwrap();
+                }
             }
             if children.len() > 1 {
                 to_rust(ast, children[1], indentation, res, enums);
             }
             write!(res, ")").unwrap();
         },
-        AstNode::Args => {
+        AstNode::Args | AstNode::ArgsDef => {
             if children.len() == 0 {
                 return;
             }
@@ -216,6 +274,12 @@ pub fn to_rust(
 
 fn make_enums(typ: &Type, enums: &mut HashMap<String, String>){
     match &typ.kind {
+        TypeKind::Trait(_trt) => todo!(),
+        TypeKind::Args => todo!(),
+        TypeKind::Implements => todo!(),
+        TypeKind::Tuple => todo!(),
+        TypeKind::Generic(_gen) => todo!(),
+        TypeKind::Optional => todo!(),
         TypeKind::Unknown | TypeKind::Typ(_) => (),
         TypeKind::OneOf => {
             let types = unwrap(&typ.children);
@@ -231,10 +295,28 @@ fn make_enums(typ: &Type, enums: &mut HashMap<String, String>){
                 );
             }
         },
-        TypeKind::TypWithGenerics => {
+        TypeKind::TypWithSubTypes => {
             for child in unwrap(&typ.children).iter().skip(1) {
                 make_enums(child, enums)
             }
         }
+        TypeKind::Struct(_) => todo!(),
+        TypeKind::Class(_) => todo!(),
     }
+}
+
+pub enum BIFunc {
+    Print, DPrint, Range, Rev, Enumerate
+}
+pub fn is_bif(x: &AstNode) -> Option<BIFunc> {
+    return if let AstNode::Identifier(w) = x {
+        match w.as_str() {
+            "print" => Some(BIFunc::Print),
+            "dprint" => Some(BIFunc::DPrint),
+            "range" => Some(BIFunc::Range),
+            "rev" => Some(BIFunc::Rev),
+            "enumerate" => Some(BIFunc::Enumerate),
+            _ => None
+        }
+    } else { None }
 }

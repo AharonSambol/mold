@@ -7,6 +7,7 @@ pub struct Ast {
     pub children: Option<Vec<usize>>,
     pub parent: Option<usize>,
     pub value: AstNode,
+    pub typ: Option<Type>,
 }
 
 impl Ast {
@@ -14,6 +15,7 @@ impl Ast {
         Ast {
             children: None,
             parent: None,
+            typ: None,
             value: typ
         }
     }
@@ -23,10 +25,10 @@ impl Ast {
 pub enum AstNode {
     Body,
     Module,             // children = all the functions/classes/enums..
-    Function(Function), // children = the body
-    Identifier(String), // no children
+    Function(String), // children[0] = args, children[1] = returnType, children[2] = body
+    Identifier(String), // children[0] = type
     FirstAssignment, Assignment, // children[0] = var, children[1] = val
-    FunctionCall,       // children[0] = func, children[1..] = param,
+    FunctionCall,       // children[0] = func, children[1] = Args,
     Property,           // children[0] = obj, children[1] = prop
     Number(String), Char(char), String(String),     // no children
     Operator(OperatorType),   // children[0] = elem1, children[1] = elem2
@@ -39,9 +41,10 @@ pub enum AstNode {
     ForIter,    // children[0] = iter
     Pass,
     ListLiteral, // children = elements
-    Type(Type),
+    // Type(Type),
     Index,      // child[0] = item, child[1] = index
-    Args,       // children = args
+    ArgsDef, Args,       // children = args
+    ReturnType, // children[0] = type
     Return      // children[0] = return val
 }
 
@@ -70,40 +73,17 @@ impl Display for AstNode {
             AstNode::ForVars => write!(f, "VARS"),
             AstNode::Pass => write!(f, "PASS"),
             AstNode::ListLiteral => write!(f, "[LIST]"),
-            AstNode::Type(typ) => write!(f, "{}", typ),
+            // AstNode::Type(typ) => write!(f, "{}", typ),
             AstNode::Index => write!(f, "[INDEX]"),
             AstNode::Args => write!(f, "(ARGS)"),
+            AstNode::ArgsDef => write!(f, "(ARGS_DEF)"),
             AstNode::Return => write!(f, "RETURN"),
+            AstNode::ReturnType => write!(f, "RETURNS"),
+
         }
     }
 }
-impl AstNode {
-    pub fn new_func() -> AstNode {
-        AstNode::Function(Function {
-            name: "".to_string(),
-            params: vec![],
-            return_type: None,
-        })
-    }
-}
 
-#[derive(Clone, Debug)]
-pub struct Function {
-    pub name: String,
-    pub params: Vec<Param>,
-    pub return_type: Option<Type>,
-}
-
-impl Display for Function {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let params = join(&self.params, "\n\t\t");
-        if let Some(rt) = &self.return_type {
-            write!(f, "\n\tname: {}\n\tparam:\n\t\t{}\n\treturn type:\n\t\t{}\n", self.name, params, rt)
-        } else {
-            write!(f, "\n\tname: {}\n\tparam:\n\t\t{}\n\tno return\n", self.name, params)
-        }
-    }
-}
 
 pub fn join<T: Display>(lst: &Vec<T>, sep: &str) -> String {
     lst.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(sep)

@@ -138,7 +138,6 @@ impl OperatorType {
 
 enum Comment { None, Normal, Multiline(i8) }
 
-// TODO 1.2f32
 pub fn tokenize(input_code: String) -> Vec<SolidToken> {
     let mut tokens = Vec::new();
     let mut skip = 0;
@@ -371,14 +370,6 @@ fn unary_or_bin(res: &Vec<SolidToken>, op: OperatorType) -> SolidToken {
         SolidToken::Operator(op)
     }
 }
-
-// fn parse_num(num: &str) -> SolidToken {
-//     if num.contains('.') {
-//         SolidToken::Float(num.parse::<f32>().unwrap())
-//     } else {
-//         SolidToken::Int(num.parse::<i32>().unwrap())
-//     }
-// }
 
 fn str_to_op_type(st: &str) -> Option<OperatorType> {
     Some(match st {

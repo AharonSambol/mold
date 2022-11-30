@@ -1,5 +1,5 @@
-fn a(){
+fn _a(){
     let b = "wow";
-    let c = format!("{}{}", b, "1");
+    let _c = format!("{}{}", b, "1");
 
 }
