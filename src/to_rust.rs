@@ -34,11 +34,9 @@ pub fn to_rust(
             }
             write!(res, "\n{}}}", "\t".repeat(indentation - 1)).unwrap();
         },
-        AstNode::Function(name) => {
-            println!("{}", name);
+        AstNode::Function(name) | AstNode::StaticFunction(name) => {
             let param = &ast[children[0]];
             let return_typ = &ast[children[1]];
-            // let body = &ast[children[2]];
             for par in unwrap_u(&param.children) {
                 let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
                 make_enums(typ,  enums);
@@ -62,12 +60,6 @@ pub fn to_rust(
                 write!(res, "fn {}({})", name, param).unwrap();
             }
             to_rust(ast, children[2], indentation + 1, res, enums);
-            // for child in children {
-            //     write!(res, "\n{}", "\t".repeat(indentation + 1)).unwrap();
-            //     to_rust(ast, *child, indentation + 1, res, enums);
-            //     write!(res, ";").unwrap();
-            // }
-            // write!(res, "\n{}}}", "\t".repeat(indentation)).unwrap();
         },
         AstNode::IfStatement => {
             write!(res, "if ").unwrap();
@@ -165,7 +157,7 @@ pub fn to_rust(
         AstNode::Pass => {
             write!(res, "()").unwrap();
         },
-        AstNode::FunctionCall => {
+        AstNode::FunctionCall(_) => {
             match is_bif(&ast[children[0]].value) {
                 Some(BIFunc::Print) => {
                     write!(res, "{}",
@@ -252,12 +244,15 @@ pub fn to_rust(
         AstNode::String(str) => write!(res, "{}", str).unwrap(),
         AstNode::Char(chr) => write!(res, "{}", chr).unwrap(),
         AstNode::Property => {
-            if let AstNode::FunctionCall = ast[children[1]].value {
-                // TODO Struct::func()
+            if let AstNode::FunctionCall(true) = ast[children[1]].value {
+                to_rust(ast, children[0], indentation, res, enums);
+                write!(res, "::").unwrap();
+                to_rust(ast, children[1], indentation, res, enums);
+            } else {
+                to_rust(ast, children[0], indentation, res, enums);
+                write!(res, ".").unwrap();
+                to_rust(ast, children[1], indentation, res, enums);
             }
-            to_rust(ast, children[0], indentation, res, enums);
-            write!(res, ".").unwrap();
-            to_rust(ast, children[1], indentation, res, enums);
         },
         AstNode::ForStatement => {
             write!(res, "for ").unwrap();
@@ -310,7 +305,7 @@ pub fn to_rust(
             write!(res, "}}").unwrap();
         }
         AstNode::Bool(b) => {
-            write!(res, "{}", b).unwrap();
+            write!(res, "{}", if *b { "true" } else { "false" }).unwrap();
         }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
@@ -344,10 +339,13 @@ fn make_enums(typ: &Type, enums: &mut HashMap<String, String>){
                 make_enums(child, enums)
             }
         }
-        TypeKind::Struct(..) => {
+        TypeKind::Struct(_) => {
             // todo for typ in arg-types and func-types
         },
-        TypeKind::Class(..) => todo!(),
+        TypeKind::Function(_) => {
+            // todo for typ in arg-types and func-types
+        },
+        TypeKind::Class(_) => todo!(),
         TypeKind::Pointer => (),
     }
 }

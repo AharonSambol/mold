@@ -27,12 +27,13 @@ pub enum AstNode {
     Body,
     Module,           // children = all the functions/classes/enums..
     Function(String), // children[0] = args, children[1] = returnType, children[2] = body
+    StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
     Struct(String),   // children[0] = args, children[1] = functions, children[2] = body
     Functions(Vec<(String, FuncType)>),
     Identifier(String), // children[0] = type
     FirstAssignment,
     Assignment,   // children[0] = var, children[1] = val
-    FunctionCall, // children[0] = func, children[1] = Args,
+    FunctionCall(bool), // bool = is_static, children[0] = func, children[1] = Args,
     StructInit,   // children[0] = struct, children[1] = Args,
     Property,     // children[0] = obj, children[1] = prop
     Number(String),
@@ -61,7 +62,7 @@ impl AstNode {
     pub fn is_expression(&self) -> bool {
         match self {
             AstNode::Identifier(_)
-            | AstNode::FunctionCall
+            | AstNode::FunctionCall(_)
             | AstNode::StructInit
             | AstNode::Property
             | AstNode::Number(_)
@@ -80,6 +81,7 @@ impl AstNode {
             | AstNode::Functions(_)
             | AstNode::Module
             | AstNode::Function(_)
+            | AstNode::StaticFunction(_)
             | AstNode::Struct(_)
             | AstNode::ColonParentheses
             | AstNode::IfStatement
@@ -101,7 +103,8 @@ impl Display for AstNode {
             AstNode::Body => write!(f, "BODY"),
             AstNode::Module => write!(f, "MODULE"),
             AstNode::Function(func) => write!(f, "FUNC({})", func.to_string()),
-            AstNode::FunctionCall => write!(f, "FUNC_CALL"),
+            AstNode::StaticFunction(func) => write!(f, "STATIC_FUNC({})", func.to_string()),
+            AstNode::FunctionCall(s) => write!(f, "{}", if *s { "STATIC_FUNC_CALL" } else { "FUNC_CALL" }),
             AstNode::StructInit => write!(f, "STRUCT_INIT"),
             AstNode::Assignment => write!(f, "="),
             AstNode::FirstAssignment => write!(f, ":="),

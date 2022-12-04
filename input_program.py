@@ -1,8 +1,8 @@
 def main():
 #     a := [4, 1, 2, 3, 3, 1]
     st := St { 1, Inner { 2, true } }
-    a := st.par2.a()
-    wow()
+    st.wow()
+#     wow()
 #     a.sort()
 #     dprint(a)
 #     for i in enumerate(range(10, 13)):
@@ -10,8 +10,8 @@ def main():
 #     c := 1
 #     c = wow(1, 2)
 
-def wow():
-    return
+# def wow():
+#     return
 #
 # def fib(x: int) -> int:
 #     s := x + x
@@ -28,7 +28,7 @@ struct Inner:
 struct St:
     param: int
     par2: Inner
-    def to_str(a: int, b: int) -> int:
+    static def to_str(a: int, b: int) -> int:
         return a
 
     def wow():

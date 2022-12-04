@@ -155,9 +155,9 @@ fn make_ast_statement(
                 pos = temp.0; tree = temp.1;
                 vars.pop();
             },
-            SolidToken::Def => {
+            SolidToken::Def | SolidToken::Static  => {
                 vars.push(HashMap::new());
-                let temp = make_func(tokens, pos + 1, tree, parent, indent, vars, funcs, structs, ppt);
+                let temp = make_func(tokens, pos, tree, parent, indent, vars, funcs, structs, ppt);
                 pos = temp.0 - 1; tree = temp.1;
                 vars.pop();
             },
@@ -388,7 +388,7 @@ fn word_tok(
             },
             SolidToken::Brace(IsOpen::True)
             | SolidToken::Parenthesis(IsOpen::True) => {
-                let type_call = if let SolidToken::Brace(_) = tokens[pos] { AstNode::StructInit } else { AstNode::FunctionCall };
+                let type_call = if let SolidToken::Brace(_) = tokens[pos] { AstNode::StructInit } else { AstNode::FunctionCall(false) };
                 let index = insert_as_parent_of_prev(&mut tree, parent, type_call);
                 add_to_tree(index, &mut tree, Ast::new(AstNode::Args));
                 let last = tree.len() - 1;
@@ -556,11 +556,19 @@ fn make_func(
     vars: &mut VarTypes, funcs: &mut FuncTypes, structs: &mut StructTypes,
     ppt: &PPT
 ) -> (usize, Vec<Ast>) {
+    let is_static = matches!(&tokens[pos], SolidToken::Static);
+    pos += if is_static { 2 } else { 1 };
     let name =
         if let SolidToken::Word(name) = &tokens[pos] { name.clone() }
         else { panic!("Invalid name for function {:?}", tokens[pos]) };
 
-    add_to_tree(parent, &mut tree, Ast::new(AstNode::Function(name.clone())));
+    add_to_tree(parent, &mut tree, Ast::new(
+        if is_static {
+            AstNode::StaticFunction(name.clone())
+        } else {
+            AstNode::Function(name.clone())
+        }
+    ));
     let index = tree.len() - 1;
 
     pos += 1;
@@ -657,34 +665,35 @@ fn make_struct(
     println!("TOK: {:?}", tokens[pos]);
     let mut struct_funcs: FuncTypes = HashMap::new();
     let mut vars = vec![]; // todo insert the properties of the struct
-    while let SolidToken::Def = tokens[pos] {
+    while let SolidToken::Def | SolidToken::Static = tokens[pos] {
         vars.push(HashMap::new());
-        let temp = make_func(tokens, pos + 1, tree, body_pos, indent + 1, &mut vars, &mut struct_funcs, &mut HashMap::new(), ppt);
+        let temp = make_func(tokens, pos, tree, body_pos, indent + 1, &mut vars, &mut struct_funcs, &mut HashMap::new(), ppt);
         vars.pop();
         pos = temp.0; tree = temp.1;
 
         let func = &tree[*unwrap_u(&tree[body_pos].children).last().unwrap()];
-        let args_def_pos = unwrap_u(&func.children)[0];
-        tree.push(Ast {
-            children: None,
-            parent: Some(args_def_pos),
-            value: AstNode::Identifier(String::from("self")),
-            typ: Some(Type {
-                kind: TypeKind::Pointer,
-                children: Some(vec![Type{
-                    kind: TypeKind::Struct(name.clone()),
-                    children: None,
-                }])
-            }),
-        });
-        let self_pos = tree.len() - 1;
-        let args_def = &mut tree[args_def_pos];
-        if let Some(children) = &mut args_def.children {
-            children.insert(0, self_pos);
-        } else {
-            args_def.children = Some(vec![self_pos]);
+        if let AstNode::Function(_) = func.value {
+            let args_def_pos = unwrap_u(&func.children)[0];
+            tree.push(Ast {
+                children: None,
+                parent: Some(args_def_pos),
+                value: AstNode::Identifier(String::from("self")),
+                typ: Some(Type {
+                    kind: TypeKind::Pointer,
+                    children: Some(vec![Type {
+                        kind: TypeKind::Struct(name.clone()),
+                        children: None,
+                    }])
+                }),
+            });
+            let self_pos = tree.len() - 1;
+            let args_def = &mut tree[args_def_pos];
+            if let Some(children) = &mut args_def.children {
+                children.insert(0, self_pos);
+            } else {
+                args_def.children = Some(vec![self_pos]);
+            }
         }
-
         pos += indent + 2;
         if pos > tokens.len() { break; }
     }

@@ -51,7 +51,8 @@ pub enum SolidToken {
     If, Else, Elif,
     Match, Case, While, For,
     Break, Continue, Return, Pass,
-    In, Is
+    In, Is,
+    Static
 }
 
 #[derive(Debug, Clone)]
@@ -297,6 +298,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                     "in" => SolidToken::In, "is" => SolidToken::Is,
                     "True" | "true" => SolidToken::Bool(true),
                     "False" | "false" => SolidToken::Bool(false),
+                    "static" => SolidToken::Static,
                     _ => SolidToken::Word(String::from(st))
                 }
             },

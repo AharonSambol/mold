@@ -42,7 +42,7 @@ pub fn add_types(
             add_types(ast, children[1], vars, funcs, structs, ppt);
             vars.pop();
         }
-        AstNode::Function(_) | AstNode::WhileStatement | AstNode::IfStatement
+        AstNode::Function(_) | AstNode::StaticFunction(_) | AstNode::WhileStatement | AstNode::IfStatement
         => {
             vars.push(HashMap::new());
             for child in children {
@@ -71,6 +71,20 @@ pub fn add_types(
                     return;
                 }
             }
+            if structs.contains_key(name) {
+                ast[pos].typ = Some(Type {
+                    kind: TypeKind::Struct(name.clone()),
+                    children: None,
+                });
+                return;
+            }
+            if funcs.contains_key(name) {
+                ast[pos].typ = Some(Type {
+                    kind: TypeKind::Function(name.clone()),
+                    children: None,
+                });
+                return;
+            }
             panic!("used `{}` before assignment", name)
         }
         AstNode::FirstAssignment => {
@@ -83,7 +97,7 @@ pub fn add_types(
             ast[children[0]].typ = typ;
             vars.last_mut().unwrap().insert(name, children[0]);
         }
-        AstNode::FunctionCall => {
+        AstNode::FunctionCall(_) => {
             if let AstNode::Identifier(name) = &ast[children[0]].value {
                 ast[pos].typ = funcs[name].output.clone();
             } else {
@@ -117,6 +131,7 @@ pub fn add_types(
             if let TypeKind::Struct(struct_name) = left_kind.kind {
                 let struct_description = &ast[structs[&struct_name]];
                 let mut typ = None;
+                let mut is_static = false;
                 match &ast[children[1]].value {
                     AstNode::Identifier(right) => {
                         //1 element
@@ -130,7 +145,7 @@ pub fn add_types(
                             }
                         }
                     },
-                    AstNode::FunctionCall => {
+                    AstNode::FunctionCall(_) => {
                         //1 func
                         let func_call = &ast[children[1]];
                         let right = if let AstNode::Identifier(name) = &ast[unwrap_u(&func_call.children)[0]].value { name } else { panic!() };
@@ -141,11 +156,19 @@ pub fn add_types(
                                     typ = ast[unwrap_u(&ast[*child_pos].children)[1]].typ.clone();
                                     break;
                                 }
+                            } else if let AstNode::StaticFunction(name) = &ast[*child_pos].value{
+                                if name == right {
+                                    is_static = true;
+                                    typ = ast[unwrap_u(&ast[*child_pos].children)[1]].typ.clone();
+                                    break;
+                                }
                             }
                         }
                     }
                     _ => panic!()
                 };
+
+                ast[children[1]].value = AstNode::FunctionCall(is_static);
                 ast[pos].typ = typ;
 
             } else { panic!("{:?}", left_kind.kind) }

@@ -22,7 +22,7 @@ static mut IS_COMPILED: bool = false;
 fn main() {
 
     // todo remove
-    unsafe { IS_COMPILED = true; }
+    // unsafe { IS_COMPILED = true; }
 
     for argument in env::args() {
         if argument == "compile" {

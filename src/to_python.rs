@@ -1,5 +1,6 @@
-use crate::ast_structure::{Ast, AstNode};
+use crate::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
+use std::iter::zip;
 use crate::to_rust::{BIFunc, is_bif};
 use crate::types::{unwrap_u};
 
@@ -16,6 +17,15 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         },
         AstNode::Function(name) => {
             write!(res, "def {}", name).unwrap();
+            write!(res, "(").unwrap();
+            to_python(ast, children[0], indentation, res); // param
+            write!(res, ")").unwrap();
+            to_python(ast, children[1], indentation, res); // return
+            write!(res, ":").unwrap();
+            to_python(ast, children[2], indentation + 1, res); // body
+        },
+        AstNode::StaticFunction(name) => {
+            write!(res, "@staticmethod\n{}def {}", "\t".repeat(indentation), name).unwrap();
             write!(res, "(").unwrap();
             to_python(ast, children[0], indentation, res); // param
             write!(res, ")").unwrap();
@@ -87,6 +97,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         AstNode::Number(num) => write!(res, "{}", num).unwrap(),
         AstNode::String(str) => write!(res, "{}", str).unwrap(),
         AstNode::Char(chr) => write!(res, "{}", chr).unwrap(),
+        AstNode::Bool(b) => write!(res, "{}", if *b { "True" } else { "False" }).unwrap(),
         AstNode::ListLiteral => {
             write!(res, "[").unwrap();
             for (i, child) in children.iter().enumerate() {
@@ -101,7 +112,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         AstNode::Pass => {
             write!(res, "pass").unwrap();
         },
-        AstNode::FunctionCall => {
+        AstNode::FunctionCall(is_static) => {
             match is_bif(&ast[children[0]].value) {
                 Some(BIFunc::Rev) => write!(res, "reversed(").unwrap(),
                 Some(BIFunc::DPrint) => write!(res, "print(").unwrap(),
@@ -151,6 +162,27 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         AstNode::ForIter => {
             write!(res, " in ").unwrap();
             to_python(ast, children[0], indentation, res);
+        },
+        AstNode::StructInit => {
+            to_python(ast, children[0], indentation, res);
+            write!(res, "(").unwrap();
+            let arg_vals = unwrap_u(&ast[children[1]].children);
+            for val in arg_vals {
+                to_python(ast, *val, indentation, res);
+                write!(res, ", ").unwrap();
+            }
+            write!(res, ")").unwrap();
+        }
+        AstNode::Struct(name) => {
+            let param = &ast[children[0]];
+            let param = unwrap_u(&param.children).iter()
+                .map(|&x|
+                    if let AstNode::Identifier(n) = &ast[x].value { n } else { panic!() }
+                ).collect();
+            let param_comma = join(&param, ", ");
+            let param_assign = join(&param.iter().map(|x| format!("self.{} = {}", x, x)).collect(), "\n\t\t");
+            write!(res, "class {}:\n\tdef __init__(self, {}):\n\t\t{}", name, param_comma, param_assign).unwrap();
+            to_python(ast, children[1], indentation + 1, res);
         }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
