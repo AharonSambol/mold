@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use pretty_print_tree::PrettyPrintTree;
 use crate::ast_structure::{Ast, AstNode, Param};
 use crate::IS_COMPILED;
@@ -19,10 +19,24 @@ pub struct FuncType {
     pub input: Option<Vec<Type>>,
     pub output: Option<Type>
 }
+const UNKNOWN_FUNC_TYPE: FuncType = FuncType{ input: None, output: None };
 
 pub fn construct_ast(
 tokens: &Vec<SolidToken>, pos: usize, ppt: &PPT
 ) -> (usize, Vec<Ast>) {
+    let (mut structs, mut funcs) = get_struct_and_func_names(tokens);
+
+    let mut res = make_ast_statement(
+        tokens, pos, vec![Ast::new(AstNode::Module)], 0, 0,
+        &mut vec![HashMap::new()], &mut funcs, &mut structs, ppt
+    );
+    println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
+    add_types(&mut res.1, 0, &mut vec![HashMap::new()], &funcs, &structs, ppt);
+    println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
+    res
+}
+
+fn get_struct_and_func_names(tokens: &Vec<SolidToken>) -> (StructTypes, FuncTypes){
     let int_iter = Type {
         kind: TypeKind::TypWithSubTypes,
         children: Some(vec![
@@ -109,15 +123,22 @@ tokens: &Vec<SolidToken>, pos: usize, ppt: &PPT
 
     ]);
     let mut structs = HashMap::new();
-    
-    let mut res = make_ast_statement(
-        tokens, pos, vec![Ast::new(AstNode::Module)], 0, 0,
-        &mut vec![HashMap::new()], &mut funcs, &mut structs, ppt
-    );
-    println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
-    add_types(&mut res.1, 0, &mut vec![HashMap::new()], &funcs, &structs, ppt);
-    println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
-    res
+
+    for (i, tok) in tokens.iter().enumerate() {
+        match tok {
+            SolidToken::Def =>
+                if let SolidToken::Word(name) = &tokens[i + 1] {
+                    funcs.insert(name.clone(), UNKNOWN_FUNC_TYPE);
+                },
+            SolidToken::Struct =>
+                if let SolidToken::Word(name) = &tokens[i + 1] {
+                    structs.insert(name.clone(), 0);
+                },
+            _ => ()
+        }
+    }
+
+    (structs, funcs)
 }
 
 fn make_ast_statement(
@@ -130,14 +151,14 @@ fn make_ast_statement(
         match token {
             SolidToken::Struct => {
                 vars.push(HashMap::new());
-                let temp = make_struct(tokens, pos + 1, tree, parent, indent, structs, ppt);
+                let temp = make_struct(tokens, pos + 1, tree, parent, indent, funcs, structs, ppt);
                 pos = temp.0; tree = temp.1;
                 vars.pop();
             },
             SolidToken::Def => {
                 vars.push(HashMap::new());
                 let temp = make_func(tokens, pos + 1, tree, parent, indent, vars, funcs, structs, ppt);
-                pos = temp.0; tree = temp.1;
+                pos = temp.0 - 1; tree = temp.1;
                 vars.pop();
             },
             SolidToken::For => {
@@ -186,7 +207,7 @@ fn make_ast_statement(
             },
             SolidToken::Word(st) => {
                 let (p, t) = word_tok(
-                    tokens, pos, tree, parent, indent, vars, funcs, structs, ppt, st, false
+                tokens, pos, tree, parent, indent, vars, funcs, structs, ppt, st, false
                 );
                 pos = p; tree = t;
             }
@@ -354,7 +375,7 @@ fn word_tok(
                     infer_typ = true;
                 } else {
                     pos -= 1;
-                    let _param = get_params(&tokens, &mut pos).remove(0); // 5 for now only taking the first
+                    let _param = get_params(&tokens, &mut pos, funcs, structs).remove(0); // 5 for now only taking the first
                     // tree[identifier_pos].typ = Some(param.typ);
                 }
                 let (p, t) = make_ast_expression(
@@ -384,6 +405,10 @@ fn word_tok(
                 // return (pos, tree);
             },
             SolidToken::Period => {
+                let mut parent = parent;
+                while tree[parent].value.is_expression() {
+                     parent = tree[parent].parent.unwrap();
+                }
                 let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Property);
                 if let SolidToken::Word(st) = &tokens[pos + 1] {
                     let(p, t) = word_tok(tokens, pos + 1, tree, index, indent, vars, funcs, structs, ppt, st, is_expression);
@@ -543,7 +568,7 @@ fn make_func(
         panic!("expected `(`, found {:?}", tokens[pos])
     }
     pos += 1;
-    let params = get_params(tokens, &mut pos);
+    let params = get_params(tokens, &mut pos, funcs, structs);
     add_to_tree(index, &mut tree, Ast::new(AstNode::ArgsDef));
     add_to_tree(index, &mut tree, Ast::new(AstNode::ReturnType));
     add_to_tree(index, &mut tree, Ast::new(AstNode::Body));
@@ -564,7 +589,7 @@ fn make_func(
     pos += 1;
     if let SolidToken::Operator(OperatorType::Returns) = tokens[pos] {
         pos += 1;
-        let typ = get_arg_typ(tokens, &mut pos);
+        let typ = get_arg_typ(tokens, &mut pos, funcs, structs);
         tree[return_pos].typ = Some(typ);
     }
     if let SolidToken::Colon = tokens[pos] {} else {
@@ -580,63 +605,110 @@ fn make_func(
 
 fn make_struct(
     tokens: &Vec<SolidToken>, mut pos: usize, mut tree: Vec<Ast>, parent: usize, indent: usize,
-    structs: &mut StructTypes,
+    funcs: &mut FuncTypes, structs: &mut StructTypes,
     ppt: &PPT
 ) -> (usize, Vec<Ast>) {
     let name =
-    if let SolidToken::Word(name) = &tokens[pos] { name.clone() }
-    else { panic!("Invalid name for function {:?}", tokens[pos]) };
+        if let SolidToken::Word(name) = &tokens[pos] { name.clone() }
+        else { panic!("Invalid name for function {:?}", tokens[pos]) };
 
     add_to_tree(parent, &mut tree, Ast::new(AstNode::Struct(name.clone())));
     let index = tree.len() - 1;
-    structs.insert(name, index);
+    structs.insert(name.clone(), index);
 
     pos += 1;
     add_to_tree(index, &mut tree, Ast::new(AstNode::ArgsDef));
-    add_to_tree(index, &mut tree, Ast::new(AstNode::Functions(vec![])));
+    // add_to_tree(index, &mut tree, Ast::new(AstNode::Functions(vec![])));
     add_to_tree(index, &mut tree, Ast::new(AstNode::Module));
-    let args_pos = tree.len() - 3;
-    let funcs_pos = args_pos + 1;
-    let body_pos = args_pos + 2;
+    let args_pos = tree.len() - 2;
+    // let funcs_pos = args_pos + 1;
+    let body_pos = args_pos + 1;
 
     if let SolidToken::Colon = tokens[pos] {} else {
         panic!("expected colon")
     }
     pos += 3 + indent;
     while let SolidToken::Word(word) = &tokens[pos] {
-        println!("w {}", word);
         pos += 1;
         if let SolidToken::Colon = &tokens[pos] {
             pos += 1;
-            let typ = get_arg_typ(tokens, &mut pos);
+            let typ = get_arg_typ(tokens, &mut pos, funcs, structs);
+            // TODO if type is a struct is should know that and not return a TypeKind::Type("Struct-Name")x
             add_to_tree(args_pos, &mut tree, Ast::new(AstNode::Identifier(word.clone())));
             tree.last_mut().unwrap().typ = Some(typ);
-            pos += 2 + indent;
+            pos += 1;
         } else {
             add_to_tree(args_pos, &mut tree, Ast::new(AstNode::Identifier(word.clone())));
-            pos += 1 + indent;
+        }
+        pos += 1; //1 newline
+        let mut exited = false;
+        for i in 0..indent {
+            if let SolidToken::Tab = tokens[pos + i] { } else {
+                exited = true;
+                break;
+            }
+        }
+        if exited {
+            return (pos, tree)
+        } else {
+            pos += indent;
         }
     }
-
+    println!("TOK: {:?}", tokens[pos]);
     let mut struct_funcs: FuncTypes = HashMap::new();
-    let (p, t) = make_ast_statement(
-        tokens, pos, tree, body_pos, indent + 1,
-        &mut vec![], &mut struct_funcs, &mut HashMap::new(), ppt
-    );
-    pos = p; tree = t;
+    let mut vars = vec![]; // todo insert the properties of the struct
+    while let SolidToken::Def = tokens[pos] {
+        vars.push(HashMap::new());
+        let temp = make_func(tokens, pos + 1, tree, body_pos, indent + 1, &mut vars, &mut struct_funcs, &mut HashMap::new(), ppt);
+        vars.pop();
+        pos = temp.0; tree = temp.1;
 
-    if let AstNode::Functions(v) = &mut tree[funcs_pos].value {
-        for fnc in struct_funcs {
-            v.push(fnc);
+        let func = &tree[*unwrap_u(&tree[body_pos].children).last().unwrap()];
+        let args_def_pos = unwrap_u(&func.children)[0];
+        tree.push(Ast {
+            children: None,
+            parent: Some(args_def_pos),
+            value: AstNode::Identifier(String::from("self")),
+            typ: Some(Type {
+                kind: TypeKind::Pointer,
+                children: Some(vec![Type{
+                    kind: TypeKind::Struct(name.clone()),
+                    children: None,
+                }])
+            }),
+        });
+        let self_pos = tree.len() - 1;
+        let args_def = &mut tree[args_def_pos];
+        if let Some(children) = &mut args_def.children {
+            children.insert(0, self_pos);
+        } else {
+            args_def.children = Some(vec![self_pos]);
         }
+
+        pos += indent + 2;
+        if pos > tokens.len() { break; }
     }
+    pos -= indent + 2;
+    // let (p, t) = make_ast_statement(
+    //     tokens, pos, tree, body_pos, indent + 1,
+    //     &mut vec![], &mut struct_funcs, &mut HashMap::new(), ppt
+    // );
+    // pos = p; tree = t;
+
+    // if let AstNode::Functions(v) = &mut tree[funcs_pos].value {
+    //     for fnc in struct_funcs {
+    //         v.push(fnc);
+    //     }
+    // }
     (pos, tree)
 }
 
 // returns where pos = the index of the closing brace
 // e.g.     x, y: bool | int ) -> int:
 //                           ^
-fn get_params(tokens: &Vec<SolidToken>, mut pos: &mut usize) -> Vec<Param> {
+fn get_params(
+    tokens: &Vec<SolidToken>, mut pos: &mut usize, funcs: &mut FuncTypes, structs: &StructTypes
+) -> Vec<Param> {
     let mut params = Vec::new();
     loop {
         match &tokens[*pos] {
@@ -646,7 +718,7 @@ fn get_params(tokens: &Vec<SolidToken>, mut pos: &mut usize) -> Vec<Param> {
                     typ:
                         if let SolidToken::Colon = &tokens[*pos + 1] {
                             *pos += 2;
-                            get_arg_typ(tokens, &mut pos)
+                            get_arg_typ(tokens, &mut pos, funcs, structs)
                         } else { UNKNOWN_TYPE }
                 });
                 if let SolidToken::Parenthesis(IsOpen::False)
@@ -666,7 +738,9 @@ fn get_params(tokens: &Vec<SolidToken>, mut pos: &mut usize) -> Vec<Param> {
 // returns where pos is the index of the token after the end of the type
 // e.g.     x: int | bool, y: int | None) -> bool:
 //                       ^              ^
-fn get_arg_typ(tokens: &Vec<SolidToken>, pos: &mut usize) -> Type {
+fn get_arg_typ(
+    tokens: &Vec<SolidToken>, pos: &mut usize, funcs: &mut FuncTypes, structs: &StructTypes
+) -> Type {
     let mut amount_of_open = 1;
     let mut res: Option<Type> = None;
     loop {
@@ -675,14 +749,14 @@ fn get_arg_typ(tokens: &Vec<SolidToken>, pos: &mut usize) -> Type {
                 amount_of_open += 1;
                 if let Some(typ) = res {
                     *pos += 1;
-                    let mut children = vec![typ, get_arg_typ(tokens, pos)];
-                    let mut typ = Type{
+                    let mut children = vec![typ, get_arg_typ(tokens, pos, funcs, structs)];
+                    let mut typ = Type {
                         kind: TypeKind::TypWithSubTypes,
                         children: None
                     };
                     while let SolidToken::Comma = &tokens[*pos] {
                         *pos += 1;
-                        children.push(get_arg_typ(tokens, pos));
+                        children.push(get_arg_typ(tokens, pos, funcs, structs));
                     }
                     typ.children = Some(children);
                     res = Some(typ);
@@ -709,7 +783,7 @@ fn get_arg_typ(tokens: &Vec<SolidToken>, pos: &mut usize) -> Type {
             SolidToken::Operator(OperatorType::BinOr) => {
                 if let Some(typ) = res {
                     *pos += 1;
-                    res = Some(typ.add_option(get_arg_typ(tokens, pos)));
+                    res = Some(typ.add_option(get_arg_typ(tokens, pos, funcs, structs)));
                     break
                 } else {
                     panic!("need a value before |")
@@ -719,7 +793,16 @@ fn get_arg_typ(tokens: &Vec<SolidToken>, pos: &mut usize) -> Type {
                 if let Some(_) = res {
                     panic!("unexpected type. res: {:?}, wrd: {}", res, wrd)
                 }
-                res = Some(Type::new(wrd.clone()));
+                res = if funcs.contains_key(wrd) {
+                    todo!()
+                } else if structs.contains_key(wrd) {
+                    Some(Type {
+                        kind: TypeKind::Struct(wrd.clone()),
+                        children: None,
+                    })
+                } else {
+                    Some(Type::new(wrd.clone()))
+                };
             },
             _ => panic!("unexpected token {:?}, at {}", tokens[*pos], *pos)
         }

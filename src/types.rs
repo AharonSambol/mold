@@ -70,8 +70,11 @@ pub enum TypeKind {
     Args,
     Trait(String),
     Unknown,
-    Struct(HashMap<String, usize>),
-    Class(HashMap<String, usize>),
+    Struct(String),
+    Class(String),
+    Pointer,
+    // Struct(HashMap<String, usize>),
+    // Class(HashMap<String, usize>),
 }
 
 #[derive(Debug, Clone)]
@@ -134,12 +137,11 @@ impl Display for Type {
             TypeKind::Trait(trt) => {
                 write!(f, "TRAIT({})", trt)
             },
-            TypeKind::Struct(_) => {
-                todo!()
-            }
+            TypeKind::Struct(name) => write!(f, "{}", name),
             TypeKind::Class(_) => {
                 todo!()
             }
+            TypeKind::Pointer => write!(f, "&{}", unwrap(&self.children)[0])
         }
     }
 }

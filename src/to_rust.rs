@@ -252,6 +252,9 @@ pub fn to_rust(
         AstNode::String(str) => write!(res, "{}", str).unwrap(),
         AstNode::Char(chr) => write!(res, "{}", chr).unwrap(),
         AstNode::Property => {
+            if let AstNode::FunctionCall = ast[children[1]].value {
+                // TODO Struct::func()
+            }
             to_rust(ast, children[0], indentation, res, enums);
             write!(res, ".").unwrap();
             to_rust(ast, children[1], indentation, res, enums);
@@ -290,7 +293,7 @@ pub fn to_rust(
                 ", "
             );
             write!(res, "struct {} {{ {} }}\nimpl {} {{", name, param, name).unwrap();
-            to_rust(ast, children[2], indentation + 1, res, enums);
+            to_rust(ast, children[1], indentation + 1, res, enums);
             write!(res, "\n{}}}", "\t".repeat(indentation)).unwrap();
         },
         AstNode::StructInit => {
@@ -341,8 +344,11 @@ fn make_enums(typ: &Type, enums: &mut HashMap<String, String>){
                 make_enums(child, enums)
             }
         }
-        TypeKind::Struct(_) => todo!(),
-        TypeKind::Class(_) => todo!(),
+        TypeKind::Struct(..) => {
+            // todo for typ in arg-types and func-types
+        },
+        TypeKind::Class(..) => todo!(),
+        TypeKind::Pointer => (),
     }
 }
 

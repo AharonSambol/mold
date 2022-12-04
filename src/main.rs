@@ -20,6 +20,7 @@ use crate::mold_ast::PPT;
 static mut IS_COMPILED: bool = false;
 
 fn main() {
+
     // todo remove
     unsafe { IS_COMPILED = true; }
 

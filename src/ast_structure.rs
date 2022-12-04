@@ -1,7 +1,7 @@
-use crate::types::{Type, TypeKind};
-use std::fmt::{Display, Formatter};
 use crate::mold_ast::{FuncType, FuncTypes};
 use crate::mold_tokens::OperatorType;
+use crate::types::{Type, TypeKind};
+use std::fmt::{Display, Formatter};
 
 #[derive(Clone, Debug)]
 pub struct Ast {
@@ -17,7 +17,7 @@ impl Ast {
             children: None,
             parent: None,
             typ: None,
-            value: typ
+            value: typ,
         }
     }
 }
@@ -25,30 +25,74 @@ impl Ast {
 #[derive(Clone, Debug)]
 pub enum AstNode {
     Body,
-    Module,             // children = all the functions/classes/enums..
+    Module,           // children = all the functions/classes/enums..
     Function(String), // children[0] = args, children[1] = returnType, children[2] = body
-    Struct(String),     // children[0] = args, children[1] = functions, children[2] = body
+    Struct(String),   // children[0] = args, children[1] = functions, children[2] = body
     Functions(Vec<(String, FuncType)>),
     Identifier(String), // children[0] = type
-    FirstAssignment, Assignment, // children[0] = var, children[1] = val
-    FunctionCall,       // children[0] = func, children[1] = Args,
-    StructInit,         // children[0] = struct, children[1] = Args,
-    Property,           // children[0] = obj, children[1] = prop
-    Number(String), Char(char), String(String), Bool(bool),    // no children
-    Operator(OperatorType),   // children[0] = elem1, children[1] = elem2
-    UnaryOp(OperatorType),    // children[0] = elem
-    Parentheses,        // children[0] = inside
-    ColonParentheses,   // children[0] = inside
-    IfStatement, WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
-    ForStatement, // children[0] = colon_parentheses(ForVars, ForIter)
-    ForVars,    // children = vars
-    ForIter,    // children[0] = iter
+    FirstAssignment,
+    Assignment,   // children[0] = var, children[1] = val
+    FunctionCall, // children[0] = func, children[1] = Args,
+    StructInit,   // children[0] = struct, children[1] = Args,
+    Property,     // children[0] = obj, children[1] = prop
+    Number(String),
+    Char(char),
+    String(String),
+    Bool(bool),             // no children
+    Operator(OperatorType), // children[0] = elem1, children[1] = elem2
+    UnaryOp(OperatorType),  // children[0] = elem
+    Parentheses,            // children[0] = inside
+    ColonParentheses,       // children[0] = inside
+    IfStatement,
+    WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
+    ForStatement,   // children[0] = colon_parentheses(ForVars, ForIter)
+    ForVars,        // children = vars
+    ForIter,        // children[0] = iter
     Pass,
     ListLiteral, // children = elements
-    Index,      // child[0] = item, child[1] = index
-    ArgsDef, Args,       // children = args
+    Index,       // child[0] = item, child[1] = index
+    ArgsDef,
+    Args,       // children = args
     ReturnType, // children[0] = type
-    Return      // children[0] = return val
+    Return,     // children[0] = return val
+}
+
+impl AstNode {
+    pub fn is_expression(&self) -> bool {
+        match self {
+            AstNode::Identifier(_)
+            | AstNode::FunctionCall
+            | AstNode::StructInit
+            | AstNode::Property
+            | AstNode::Number(_)
+            | AstNode::Char(_)
+            | AstNode::String(_)
+            | AstNode::Bool(_)
+            | AstNode::Operator(_)
+            | AstNode::UnaryOp(_)
+            | AstNode::Parentheses
+            | AstNode::Pass
+            | AstNode::ListLiteral
+            | AstNode::Index => true,
+            AstNode::FirstAssignment
+            | AstNode::Assignment
+            | AstNode::Body
+            | AstNode::Functions(_)
+            | AstNode::Module
+            | AstNode::Function(_)
+            | AstNode::Struct(_)
+            | AstNode::ColonParentheses
+            | AstNode::IfStatement
+            | AstNode::WhileStatement
+            | AstNode::ForStatement
+            | AstNode::ForVars
+            | AstNode::ForIter
+            | AstNode::ArgsDef
+            | AstNode::Args
+            | AstNode::ReturnType
+            | AstNode::Return => false,
+        }
+    }
 }
 
 impl Display for AstNode {
@@ -90,20 +134,26 @@ impl Display for AstNode {
     }
 }
 
-
 pub fn join<T: Display>(lst: &Vec<T>, sep: &str) -> String {
-    lst.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(sep)
+    lst.iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<String>>()
+        .join(sep)
 }
 
 #[derive(Debug, Clone)]
 pub struct Param {
     pub typ: Type,
-    pub name: String
+    pub name: String,
 }
 
 impl Display for Param {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Type{ kind: TypeKind::Unknown, .. } = self.typ {
+        if let Type {
+            kind: TypeKind::Unknown,
+            ..
+        } = self.typ
+        {
             write!(f, "{}", self.name)
         } else {
             write!(f, "{}: {}", self.name, self.typ)
