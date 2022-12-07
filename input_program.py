@@ -1,8 +1,8 @@
 def main():
     a := St { 1, Inner{ 2, false } }
-    p := a.par2.param
-    a.par2.param = 22
-    dprint(a, a.par2, p)
+#     x := a.wow().param
+#     p := ((a.par2.param) + 1)
+    p := ((a.par2).param + 1)
 
 
 
@@ -18,5 +18,6 @@ struct St:
     static def do_something(a: int, b: int) -> int:
         return a + b
 
-    def wow():
+    def wow() -> Inner:
         param = par2.param
+        return Inner { 100, false}

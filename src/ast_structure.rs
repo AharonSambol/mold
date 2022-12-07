@@ -121,7 +121,6 @@ impl Display for AstNode {
             AstNode::ForVars => write!(f, "VARS"),
             AstNode::Pass => write!(f, "PASS"),
             AstNode::ListLiteral => write!(f, "[LIST]"),
-            // AstNode::Type(typ) => write!(f, "{}", typ),
             AstNode::Index => write!(f, "[INDEX]"),
             AstNode::Args => write!(f, "(ARGS)"),
             AstNode::ArgsDef => write!(f, "(ARGS_DEF)"),

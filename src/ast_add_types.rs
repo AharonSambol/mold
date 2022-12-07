@@ -9,6 +9,7 @@ lazy_static! {
     static ref SPECIFIED_NUM_TYPE_RE: Regex = Regex::new(r"[iuf](8|16|32|64|128|size)$").unwrap();
 }
 
+
 // todo first save all uses of each var (in mold_ast) then check if any of them are used in a function and if so assign their type
 pub fn add_types(
     ast: &mut Vec<Ast>, pos: usize,
@@ -140,7 +141,7 @@ pub fn add_types(
         }
         AstNode::Property => {
             add_types(ast, children[0], vars, funcs, structs, parent_struct, ppt);
-            let left_kind = ast[children[0]].typ.clone().unwrap();
+            let left_kind = ast[children[0]].typ.clone().unwrap_or_else(|| panic!("{:?}", ast[children[0]].value));
             if let TypeKind::Struct(struct_name) = left_kind.kind {
                 let struct_description = &ast[structs[&struct_name]];
                 let mut typ = None;
@@ -215,8 +216,8 @@ pub fn add_types(
 
             let t1 = ast[children[0]].typ.clone().unwrap();
             let t2 = if let Some(x) = &ast[children[1]].typ { x } else { panic!() };
-            let t1_name = if let TypeKind::Typ(t) = &t1.kind { t } else { panic!() };
-            let t2_name = if let TypeKind::Typ(t) = &t2.kind { t } else { panic!() };
+            let t1_name = if let TypeKind::Typ(t) = &t1.kind { t } else { panic!("operator not valid for structs") };
+            let t2_name = if let TypeKind::Typ(t) = &t2.kind { t } else { panic!("operator not valid for structs") };
             if *t1_name != *t2_name {
                 panic!("`{}` not implemented for `{t1_name}` and `{t2_name}`",
                        if let AstNode::Operator(op) = &ast[pos].value { op } else { panic!() },

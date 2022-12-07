@@ -259,7 +259,6 @@ fn make_ast_expression(
                 let par_pos = tree.len() - 1;
                 let (p, t) = make_ast_expression(tokens, pos + 1, tree, par_pos, vars, funcs, structs, ppt);
                 pos = p - 1; tree = t;
-                // tree[par_pos].typ = tree[unwrap_u(&tree[par_pos].children)[0]].typ.clone();
             },
             SolidToken::Bracket(IsOpen::True) =>{
                 amount_of_open += 1;
@@ -332,6 +331,10 @@ fn make_ast_expression(
                 let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, vars, funcs, structs, ppt);
                 pos = p - 1; tree = t;
             },
+            SolidToken::Period => {
+                let (p, t) = add_property(&tokens, pos, tree, 0, vars, funcs, structs, ppt, true, parent);
+                pos = p; tree = t;
+            }
             _ => panic!("unexpected token {:?}", token)
         }
         pos += 1;
@@ -357,9 +360,7 @@ fn word_tok(
             SolidToken::NewLine => { return (pos - 1, tree) },
             SolidToken::Operator(OperatorType::Eq) => {
                 if is_expression { return (pos - 1, tree) }
-                // if !is_in_stack(vars, st) {
-                //     panic!("var hasn't been initialized `{st}`")
-                // }
+
                 let mut parent = parent;
                 while tree[parent].value.is_expression() {
                     parent = tree[parent].parent.unwrap();
@@ -372,25 +373,19 @@ fn word_tok(
                 return (p - 1, t);
             },
             SolidToken::Colon => /*4 first assignment*/{
-                let mut infer_typ = false;
                 if is_expression { return (pos - 1, tree) }
                 let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::FirstAssignment);
                 identifier_pos += 1;
                 vars.last_mut().unwrap().insert(st.clone(), identifier_pos);
                 if let SolidToken::Operator(OperatorType::Eq) = tokens[pos + 1] {
                     pos += 1;
-                    infer_typ = true;
                 } else {
                     pos -= 1;
                     let _param = get_params(&tokens, &mut pos, funcs, structs).remove(0); // 5 for now only taking the first
-                    // tree[identifier_pos].typ = Some(param.typ);
                 }
                 let (p, t) = make_ast_expression(
                     tokens, pos + 1, tree, index, vars, funcs, structs, ppt
                 );
-                if infer_typ {
-                    // todo get the type
-                }
                 return (p - 1, t);
             },
             SolidToken::Brace(IsOpen::True)
@@ -409,20 +404,10 @@ fn word_tok(
                     );
                     pos = p; tree = t;
                 }
-                // return (pos, tree);
             },
             SolidToken::Period => {
-                let mut parent = parent;
-                while tree[parent].value.is_expression() {
-                     parent = tree[parent].parent.unwrap();
-                }
-                let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Property);
-                if let SolidToken::Word(st) = &tokens[pos + 1] {
-                    let(p, t) = word_tok(tokens, pos + 1, tree, index, indent, vars, funcs, structs, ppt, st, is_expression);
-                    pos = p; tree = t;
-                } else {
-                    panic!("expected word after period")
-                }
+                let (p, t) = add_property(&tokens, pos, tree, indent, vars, funcs, structs, ppt, is_expression, parent);
+                pos = p; tree = t;
             },
             _ if is_expression => return (pos - 1, tree),
             _ => panic!("Unexpected token {:?}", tokens[pos]),
@@ -430,17 +415,21 @@ fn word_tok(
     }
 }
 
-// fn is_in_stack(vars: &mut VarTypes, st: &String) -> bool {
-//     if unsafe { !IS_COMPILED } {
-//         return true;
-//     }
-//     for frame in vars.iter().rev() {
-//         if frame.contains_key(st) {
-//             return true;
-//         }
-//     }
-//     return false;
-// }
+fn add_property(
+    tokens: &Vec<SolidToken>, pos: usize, mut tree: Vec<Ast>, indent: usize,
+    vars: &mut VarTypes, funcs: &mut FuncTypes, structs: &mut StructTypes,
+    ppt: &PPT, is_expression: bool, mut parent: usize
+) -> (usize, Vec<Ast>){
+    while let AstNode::Property = tree[parent].value {
+        parent = tree[parent].parent.unwrap();
+    }
+    let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Property);
+    if let SolidToken::Word(st) = &tokens[pos + 1] {
+        return word_tok(tokens, pos + 1, tree, index, indent, vars, funcs, structs, ppt, st, is_expression);
+    } else {
+        panic!("expected word after period")
+    }
+}
 
 fn get_last(arr: &mut Option<Vec<usize>>) -> usize{
     if let Some(arr) = arr {
@@ -605,6 +594,7 @@ fn make_func(
     if let SolidToken::Operator(OperatorType::Returns) = tokens[pos] {
         pos += 1;
         let typ = get_arg_typ(tokens, &mut pos, funcs, structs);
+        println!("{typ}");
         tree[return_pos].typ = Some(typ);
     }
     if let SolidToken::Colon = tokens[pos] {} else {
@@ -629,7 +619,7 @@ fn make_struct(
 
     add_to_tree(parent, &mut tree, Ast::new(AstNode::Struct(name.clone())));
     let index = tree.len() - 1;
-    structs.insert(name.clone(), index);
+    *structs.get_mut(&name).unwrap() = index;
 
     pos += 1;
     add_to_tree(index, &mut tree, Ast::new(AstNode::ArgsDef));
@@ -684,7 +674,7 @@ fn make_struct(
         vars.push(HashMap::new());
         let temp = make_func(
             tokens, pos, tree, body_pos, indent + 1,
-            &mut vars, &mut struct_funcs, &mut HashMap::new(), ppt
+            &mut vars, &mut struct_funcs, structs, ppt
         );
         vars.pop();
         pos = temp.0; tree = temp.1;
@@ -716,17 +706,6 @@ fn make_struct(
         if pos > tokens.len() { break; }
     }
     pos -= indent + 2;
-    // let (p, t) = make_ast_statement(
-    //     tokens, pos, tree, body_pos, indent + 1,
-    //     &mut vec![], &mut struct_funcs, &mut HashMap::new(), ppt
-    // );
-    // pos = p; tree = t;
-
-    // if let AstNode::Functions(v) = &mut tree[funcs_pos].value {
-    //     for fnc in struct_funcs {
-    //         v.push(fnc);
-    //     }
-    // }
     (pos, tree)
 }
 
@@ -768,6 +747,9 @@ fn get_params(
 fn get_arg_typ(
     tokens: &Vec<SolidToken>, pos: &mut usize, funcs: &mut FuncTypes, structs: &StructTypes
 ) -> Type {
+    if structs.len() == 0 {
+        panic!()
+    }
     let mut amount_of_open = 1;
     let mut res: Option<Type> = None;
     loop {
@@ -821,11 +803,13 @@ fn get_arg_typ(
                     panic!("unexpected type. res: {:?}, wrd: {wrd}", res)
                 }
                 res = if structs.contains_key(wrd) {
+                    println!("###{wrd}, {:?}", structs);
                     Some(Type {
                         kind: TypeKind::Struct(wrd.clone()),
                         children: None,
                     })
                 } else {
+                    println!("!!!{wrd}, {:?}", structs);
                     Some(Type::new(wrd.clone()))
                 };
             },
