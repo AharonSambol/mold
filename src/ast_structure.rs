@@ -1,4 +1,3 @@
-use crate::mold_ast::{FuncType, FuncTypes};
 use crate::mold_tokens::OperatorType;
 use crate::types::{Type, TypeKind};
 use std::fmt::{Display, Formatter};
@@ -29,7 +28,6 @@ pub enum AstNode {
     Function(String), // children[0] = args, children[1] = returnType, children[2] = body
     StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
     Struct(String),   // children[0] = args, children[1] = functions, children[2] = body
-    Functions(Vec<(String, FuncType)>),
     Identifier(String), // children[0] = type
     FirstAssignment,
     Assignment,   // children[0] = var, children[1] = val
@@ -78,7 +76,6 @@ impl AstNode {
             AstNode::FirstAssignment
             | AstNode::Assignment
             | AstNode::Body
-            | AstNode::Functions(_)
             | AstNode::Module
             | AstNode::Function(_)
             | AstNode::StaticFunction(_)
@@ -109,12 +106,12 @@ impl Display for AstNode {
             AstNode::Assignment => write!(f, "="),
             AstNode::FirstAssignment => write!(f, ":="),
             AstNode::Property => write!(f, "PROPERTY"),
-            AstNode::Identifier(st) => write!(f, "{}", st),
-            AstNode::Number(num) => write!(f, "{}", num),
-            AstNode::String(str) => write!(f, "{}", str),
-            AstNode::Char(chr) => write!(f, "{}", chr),
-            AstNode::Operator(op) => write!(f, "{}", op),
-            AstNode::UnaryOp(op) => write!(f, "UNARY({})", op),
+            AstNode::Identifier(st) => write!(f, "{st}"),
+            AstNode::Number(num) => write!(f, "{num}"),
+            AstNode::String(str) => write!(f, "{str}"),
+            AstNode::Char(chr) => write!(f, "{chr}"),
+            AstNode::Operator(op) => write!(f, "{op}"),
+            AstNode::UnaryOp(op) => write!(f, "UNARY({op})"),
             AstNode::Parentheses => write!(f, "()"),
             AstNode::ColonParentheses => write!(f, "():"),
             AstNode::IfStatement => write!(f, "IF"),
@@ -130,9 +127,8 @@ impl Display for AstNode {
             AstNode::ArgsDef => write!(f, "(ARGS_DEF)"),
             AstNode::Return => write!(f, "RETURN"),
             AstNode::ReturnType => write!(f, "RETURNS"),
-            AstNode::Struct(name) => write!(f, "STRUCT({})", name),
-            AstNode::Functions(funcs) => write!(f, "FUNCS({:?})", funcs),
-            AstNode::Bool(b) => write!(f, "{}", b),
+            AstNode::Struct(name) => write!(f, "STRUCT({name})"),
+            AstNode::Bool(b) => write!(f, "{b}"),
         }
     }
 }

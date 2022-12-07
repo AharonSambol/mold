@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use crate::ast_structure::join;
 use crate::IS_COMPILED;
@@ -58,6 +57,7 @@ impl PartialEq for TypName {
     }
 }
 
+
 #[derive(Debug, Clone)]
 pub enum TypeKind {
     TypWithSubTypes,
@@ -70,12 +70,11 @@ pub enum TypeKind {
     Args,
     Trait(String),
     Unknown,
-    Struct(String),
     Function(String),
+    Struct(String),
     Class(String),
     Pointer,
-    // Struct(HashMap<String, usize>),
-    // Class(HashMap<String, usize>),
+    MutPointer,
 }
 
 #[derive(Debug, Clone)]
@@ -100,7 +99,7 @@ impl Display for Type {
                         _ => st
                     })
                 } else {
-                    write!(f, "{}", st)
+                    write!(f, "{st}")
                 }
             },
             TypeKind::OneOf => {
@@ -117,9 +116,9 @@ impl Display for Type {
                     , ","
                 );
                 if unsafe { IS_COMPILED } {
-                    write!(f, "{}<{}>", parent_type, inner_types)
+                    write!(f, "{parent_type}<{inner_types}>")
                 } else {
-                    write!(f, "{}[{}]", parent_type, inner_types)
+                    write!(f, "{parent_type}[{inner_types}]")
                 }
             },
             TypeKind::Tuple => {
@@ -136,14 +135,15 @@ impl Display for Type {
                 write!(f, "ARGS({})", unwrap(&self.children)[0])
             },
             TypeKind::Trait(trt) => {
-                write!(f, "TRAIT({})", trt)
+                write!(f, "TRAIT({trt})")
             },
-            TypeKind::Struct(name) => write!(f, "{}", name),
-            TypeKind::Function(name) => write!(f, "{}", name),
+            TypeKind::Struct(name) => write!(f, "{name}"),
+            TypeKind::Function(name) => write!(f, "{name}"),
             TypeKind::Class(_) => {
                 todo!()
             }
-            TypeKind::Pointer => write!(f, "&{}", unwrap(&self.children)[0])
+            TypeKind::Pointer => write!(f, "&{}", unwrap(&self.children)[0]),
+            TypeKind::MutPointer => write!(f, "&mut {}", unwrap(&self.children)[0]),
         }
     }
 }
@@ -182,7 +182,7 @@ impl Display for TypName {
             TypName::Str(s) => s.as_str(),
             TypName::Static(s) => s
         };
-        write!(f, "{}", st)
+        write!(f, "{st}")
     }
 }
 

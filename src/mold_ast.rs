@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use pretty_print_tree::PrettyPrintTree;
 use crate::ast_structure::{Ast, AstNode, Param};
 use crate::IS_COMPILED;
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{GenericType, INT_TYPE, ITER_TYPE, STR_TYPE, Type, TypeKind, UNKNOWN_TYPE, unwrap, unwrap_u};
+use crate::types::{GenericType, INT_TYPE, ITER_TYPE, STR_TYPE, Type, TypeKind, UNKNOWN_TYPE, unwrap_u};
 use crate::ast_add_types::add_types;
 
 
@@ -31,8 +31,10 @@ tokens: &Vec<SolidToken>, pos: usize, ppt: &PPT
         &mut vec![HashMap::new()], &mut funcs, &mut structs, ppt
     );
     println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
-    add_types(&mut res.1, 0, &mut vec![HashMap::new()], &funcs, &structs, ppt);
-    println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
+    if unsafe { IS_COMPILED } {
+        add_types(&mut res.1, 0, &mut vec![HashMap::new()], &funcs, &structs, &None, ppt);
+        println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
+    }
     res
 }
 
@@ -217,7 +219,7 @@ fn make_ast_statement(
                 if tabs < indent {
                     return (pos, tree)
                 } else if tabs > indent {
-                    panic!("unexpected indentation, expected `{}` found `{}`", indent, tabs)
+                    panic!("unexpected indentation, expected `{indent}` found `{tabs}`")
                 }
                 pos += tabs;
             },
@@ -343,6 +345,7 @@ fn word_tok(
     ppt: &PPT, st: &String,
     is_expression: bool
 ) -> (usize, Vec<Ast>) {
+
     add_to_tree(
         parent, &mut tree,
         Ast::new(AstNode::Identifier(st.clone()))
@@ -354,8 +357,12 @@ fn word_tok(
             SolidToken::NewLine => { return (pos - 1, tree) },
             SolidToken::Operator(OperatorType::Eq) => {
                 if is_expression { return (pos - 1, tree) }
-                if !is_in_stack(vars, st) {
-                    panic!("var hasn't been initialized `{}`", st)
+                // if !is_in_stack(vars, st) {
+                //     panic!("var hasn't been initialized `{st}`")
+                // }
+                let mut parent = parent;
+                while tree[parent].value.is_expression() {
+                    parent = tree[parent].parent.unwrap();
                 }
 
                 let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Assignment);
@@ -423,17 +430,17 @@ fn word_tok(
     }
 }
 
-fn is_in_stack(vars: &mut VarTypes, st: &String) -> bool {
-    if unsafe { !IS_COMPILED } {
-        return true;
-    }
-    for frame in vars.iter().rev() {
-        if frame.contains_key(st) {
-            return true;
-        }
-    }
-    return false;
-}
+// fn is_in_stack(vars: &mut VarTypes, st: &String) -> bool {
+//     if unsafe { !IS_COMPILED } {
+//         return true;
+//     }
+//     for frame in vars.iter().rev() {
+//         if frame.contains_key(st) {
+//             return true;
+//         }
+//     }
+//     return false;
+// }
 
 fn get_last(arr: &mut Option<Vec<usize>>) -> usize{
     if let Some(arr) = arr {
@@ -626,10 +633,8 @@ fn make_struct(
 
     pos += 1;
     add_to_tree(index, &mut tree, Ast::new(AstNode::ArgsDef));
-    // add_to_tree(index, &mut tree, Ast::new(AstNode::Functions(vec![])));
     add_to_tree(index, &mut tree, Ast::new(AstNode::Module));
     let args_pos = tree.len() - 2;
-    // let funcs_pos = args_pos + 1;
     let body_pos = args_pos + 1;
 
     if let SolidToken::Colon = tokens[pos] {} else {
@@ -641,33 +646,46 @@ fn make_struct(
         if let SolidToken::Colon = &tokens[pos] {
             pos += 1;
             let typ = get_arg_typ(tokens, &mut pos, funcs, structs);
-            // TODO if type is a struct is should know that and not return a TypeKind::Type("Struct-Name")x
             add_to_tree(args_pos, &mut tree, Ast::new(AstNode::Identifier(word.clone())));
             tree.last_mut().unwrap().typ = Some(typ);
-            pos += 1;
         } else {
+            // TODO check if works
             add_to_tree(args_pos, &mut tree, Ast::new(AstNode::Identifier(word.clone())));
         }
-        pos += 1; //1 newline
+        if let SolidToken::NewLine = tokens[pos] {} else {
+            return (pos, tree)
+        }
+        pos += 1;
         let mut exited = false;
-        for i in 0..indent {
+        for i in 0..=indent {
             if let SolidToken::Tab = tokens[pos + i] { } else {
                 exited = true;
                 break;
             }
         }
         if exited {
-            return (pos, tree)
+            return (pos - 1, tree)
         } else {
-            pos += indent;
+            pos += indent + 1;
         }
     }
-    println!("TOK: {:?}", tokens[pos]);
     let mut struct_funcs: FuncTypes = HashMap::new();
-    let mut vars = vec![]; // todo insert the properties of the struct
+
+    let mut vars = HashMap::new(); // todo insert the properties of the struct
+    for child in unwrap_u(&tree[args_pos].children) {
+        let arg = &tree[*child];
+        vars.insert(
+            if let AstNode::Identifier(n) = &arg.value { n.clone() } else { panic!() },
+            child.clone()
+        );
+    }
+    let mut vars = vec![vars];
     while let SolidToken::Def | SolidToken::Static = tokens[pos] {
         vars.push(HashMap::new());
-        let temp = make_func(tokens, pos, tree, body_pos, indent + 1, &mut vars, &mut struct_funcs, &mut HashMap::new(), ppt);
+        let temp = make_func(
+            tokens, pos, tree, body_pos, indent + 1,
+            &mut vars, &mut struct_funcs, &mut HashMap::new(), ppt
+        );
         vars.pop();
         pos = temp.0; tree = temp.1;
 
@@ -679,7 +697,7 @@ fn make_struct(
                 parent: Some(args_def_pos),
                 value: AstNode::Identifier(String::from("self")),
                 typ: Some(Type {
-                    kind: TypeKind::Pointer,
+                    kind: TypeKind::MutPointer,
                     children: Some(vec![Type {
                         kind: TypeKind::Struct(name.clone()),
                         children: None,
@@ -800,11 +818,9 @@ fn get_arg_typ(
             }
             SolidToken::Word(wrd) => {
                 if let Some(_) = res {
-                    panic!("unexpected type. res: {:?}, wrd: {}", res, wrd)
+                    panic!("unexpected type. res: {:?}, wrd: {wrd}", res)
                 }
-                res = if funcs.contains_key(wrd) {
-                    todo!()
-                } else if structs.contains_key(wrd) {
+                res = if structs.contains_key(wrd) {
                     Some(Type {
                         kind: TypeKind::Struct(wrd.clone()),
                         children: None,

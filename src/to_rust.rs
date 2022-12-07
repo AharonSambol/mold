@@ -2,11 +2,8 @@ use std::collections::HashMap;
 use crate::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
-use crate::mold_ast::StructTypes;
 use crate::mold_tokens::OperatorType;
-use crate::types::{Type, TypeKind, unwrap, unwrap_u};
-
-// TODO types with |
+use crate::types::unwrap_u;
 
 pub fn to_rust(
     ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String, 
@@ -17,18 +14,18 @@ pub fn to_rust(
     match &ast[pos].value {
         AstNode::Module => {
             let indent = "\t".repeat(indentation);
-            write!(res, "\n{}", indent).unwrap();
+            write!(res, "\n{indent}").unwrap();
             for child in children {
                 write!(res, "\n{}", indent).unwrap();
                 to_rust(ast, *child, indentation, res, enums);
             }
-            write!(res, "\n{}", indent).unwrap();
+            write!(res, "\n{indent}").unwrap();
         },
         AstNode::Body => {
             let indent = "\t".repeat(indentation);
             write!(res, " {{").unwrap();
             for child in children {
-                write!(res, "\n{}", indent).unwrap();
+                write!(res, "\n{indent}").unwrap();
                 to_rust(ast, *child, indentation, res, enums);
                 write!(res, ";").unwrap();
             }
@@ -37,10 +34,10 @@ pub fn to_rust(
         AstNode::Function(name) | AstNode::StaticFunction(name) => {
             let param = &ast[children[0]];
             let return_typ = &ast[children[1]];
-            for par in unwrap_u(&param.children) {
-                let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
-                make_enums(typ,  enums);
-            }
+            // for par in unwrap_u(&param.children) {
+                // let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
+                // make_enums(typ,  enums);
+            // }
             let mut param = join(
                 &unwrap_u(&param.children).iter()
                     .map(|&x|
@@ -52,12 +49,12 @@ pub fn to_rust(
                 ", mut "
             );
             if param != "" {
-                param = format!("mut {}", param);
+                param = format!("mut {param}");
             }
             if let Some(t) = &return_typ.typ {
-                write!(res, "fn {}({}) -> {}", name, param, t).unwrap();
+                write!(res, "fn {name}({param}) -> {t}").unwrap();
             } else {
-                write!(res, "fn {}({})", name, param).unwrap();
+                write!(res, "fn {name}({param})").unwrap();
             }
             to_rust(ast, children[2], indentation + 1, res, enums);
         },
@@ -95,14 +92,14 @@ pub fn to_rust(
             write!(res, "let mut ").unwrap();
             to_rust(ast, children[0], indentation, res, enums);
             if let Some(c) = &ast[children[0]].typ {
-                make_enums(c, enums);
-                write!(res, ": {}", c).unwrap();
+                // make_enums(c, enums);
+                write!(res, ": {c}").unwrap();
             }
             write!(res, " = ").unwrap();
             to_rust(ast, children[1], indentation, res, enums);
         }
         AstNode::Identifier(name) => {
-            write!(res, "{}", name).unwrap();
+            write!(res, "{name}").unwrap();
         },
         // todo floor div
         AstNode::Operator(op) => {
@@ -123,7 +120,7 @@ pub fn to_rust(
         },
         AstNode::UnaryOp(op) => {
             let st = if let OperatorType::BinNot = op { String::from("!") } else { op.to_string() };
-            write!(res, " {}", st).unwrap();
+            write!(res, " {st}").unwrap();
             to_rust(ast, children[0], indentation, res, enums);
         },
         AstNode::Parentheses => {
@@ -142,7 +139,7 @@ pub fn to_rust(
             to_rust(ast, children[1], indentation, res, enums);
             write!(res, "]").unwrap();
         },
-        AstNode::Number(num) => write!(res, "{}", num).unwrap(),
+        AstNode::Number(num) => write!(res, "{num}").unwrap(),
         AstNode::ListLiteral => {
             write!(res, "vec![").unwrap();
             for (i, child) in children.iter().enumerate() {
@@ -241,8 +238,8 @@ pub fn to_rust(
                 to_rust(ast, children[0], indentation, res, enums);
             }
         },
-        AstNode::String(str) => write!(res, "{}", str).unwrap(),
-        AstNode::Char(chr) => write!(res, "{}", chr).unwrap(),
+        AstNode::String(str) => write!(res, "{str}").unwrap(),
+        AstNode::Char(chr) => write!(res, "{chr}").unwrap(),
         AstNode::Property => {
             if let AstNode::FunctionCall(true) = ast[children[1]].value {
                 to_rust(ast, children[0], indentation, res, enums);
@@ -273,10 +270,10 @@ pub fn to_rust(
         AstNode::Struct(name) => {
             let param = &ast[children[0]];
             // let funcs = if let AstNode::Functions(v) = &ast[children[1]].value { v } else { panic!() };
-            for par in unwrap_u(&param.children) {
-                let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
-                make_enums(typ, enums);
-            }
+            // for par in unwrap_u(&param.children) {
+                // let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
+                // make_enums(typ, enums);
+            // }
             let param = join(
                 &unwrap_u(&param.children).iter()
                     .map(|&x|
@@ -287,7 +284,7 @@ pub fn to_rust(
                     ).collect(),
                 ", "
             );
-            write!(res, "struct {} {{ {} }}\nimpl {} {{", name, param, name).unwrap();
+            write!(res, "#[derive(Debug, Clone)]\nstruct {name} {{ {param} }}\nimpl {name} {{").unwrap();
             to_rust(ast, children[1], indentation + 1, res, enums);
             write!(res, "\n{}}}", "\t".repeat(indentation)).unwrap();
         },
@@ -311,43 +308,45 @@ pub fn to_rust(
     }
 }
 
-fn make_enums(typ: &Type, enums: &mut HashMap<String, String>){
-    match &typ.kind {
-        TypeKind::Trait(_trt) => todo!(),
-        TypeKind::Args => todo!(),
-        TypeKind::Implements => todo!(),
-        TypeKind::Tuple => todo!(),
-        TypeKind::Generic(_gen) => todo!(),
-        TypeKind::Optional => todo!(),
-        TypeKind::Unknown | TypeKind::Typ(_) => (),
-        TypeKind::OneOf => {
-            let types = unwrap(&typ.children);
-            let enm = join(types, "-or-");
-            if !enums.contains_key(&enm) {
-                let elems = types
-                    .iter()
-                    .map(|x| format!("_{}: {}", x, x))
-                    .collect::<Vec<String>>();
-                enums.insert(
-                    enm.clone(),
-                    format!("enum {} {{ {} }}", enm, join(&elems , ","))
-                );
-            }
-        },
-        TypeKind::TypWithSubTypes => {
-            for child in unwrap(&typ.children).iter().skip(1) {
-                make_enums(child, enums)
-            }
-        }
-        TypeKind::Struct(_) => {
-            // todo for typ in arg-types and func-types
-        },
-        TypeKind::Function(_) => {
-            // todo for typ in arg-types and func-types
-        },
-        TypeKind::Class(_) => todo!(),
-        TypeKind::Pointer => (),
-    }
+fn _make_enums(){
+// fn make_enums(typ: &Type, enums: &mut HashMap<String, String>){
+//     match &typ.kind {
+//         TypeKind::Trait(_trt) => todo!(),
+//         TypeKind::Args => todo!(),
+//         TypeKind::Implements => todo!(),
+//         TypeKind::Tuple => todo!(),
+//         TypeKind::Generic(_gen) => todo!(),
+//         TypeKind::Optional => todo!(),
+//         TypeKind::Unknown | TypeKind::Typ(_) => (),
+//         TypeKind::OneOf => {
+//             let types = unwrap(&typ.children);
+//             let enm = join(types, "-or-");
+//             if !enums.contains_key(&enm) {
+//                 let elems = types
+//                     .iter()
+//                     .map(|x| format!("_{x}: {x}"))
+//                     .collect::<Vec<String>>();
+//                 enums.insert(
+//                     enm.clone(),
+//                     format!("enum {enm} {{ {} }}", join(&elems , ","))
+//                 );
+//             }
+//         },
+//         TypeKind::TypWithSubTypes => {
+//             for child in unwrap(&typ.children).iter().skip(1) {
+//                 make_enums(child, enums)
+//             }
+//         }
+//         TypeKind::Struct(_) => {
+//             // todo for typ in arg-types and func-types
+//         },
+//         TypeKind::Function(_) => {
+//             // todo for typ in arg-types and func-types
+//         },
+//         TypeKind::Class(_) => todo!(),
+//         TypeKind::Pointer => (),
+//     }
+// }
 }
 
 pub enum BIFunc {

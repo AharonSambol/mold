@@ -316,7 +316,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                         res.push(unary_or_bin(&res, op));
                         oper = c.to_string()
                     } else {
-                        write!(&mut oper, "{}", c).unwrap();
+                        write!(&mut oper, "{c}").unwrap();
                     }
                 }
                 if let Some(op) = str_to_op_type(&oper) {
@@ -375,7 +375,7 @@ fn unary_or_bin(res: &Vec<SolidToken>, op: OperatorType) -> SolidToken {
         if let OperatorType::Minus | OperatorType::BinNot = op {
             SolidToken::UnaryOperator(op)
         } else {
-            panic!("Invalid unary operator {}", op)
+            panic!("Invalid unary operator {op}")
         }
     } else {
         SolidToken::Operator(op)
