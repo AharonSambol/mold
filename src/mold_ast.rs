@@ -3,8 +3,9 @@ use pretty_print_tree::PrettyPrintTree;
 use crate::ast_structure::{Ast, AstNode, Param};
 use crate::IS_COMPILED;
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{GenericType, INT_TYPE, ITER_TYPE, STR_TYPE, Type, TypeKind, UNKNOWN_TYPE, unwrap_u};
+use crate::types::{GenericType, INT_TYPE, ITER_TYPE, STR_TYPE, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap_u};
 use crate::ast_add_types::add_types;
+use crate::built_in_funcs::{BuiltIn, make_built_ins};
 
 
 pub type StructTypes = HashMap<String, usize>;
@@ -22,7 +23,8 @@ pub struct FuncType {
 const UNKNOWN_FUNC_TYPE: FuncType = FuncType{ input: None, output: None };
 
 pub fn construct_ast(
-tokens: &Vec<SolidToken>, pos: usize, ppt: &PPT
+tokens: &Vec<SolidToken>, pos: usize, ppt: &PPT,
+built_ins: &HashMap<&str, Box<dyn BuiltIn>>
 ) -> (usize, Vec<Ast>) {
     let (mut structs, mut funcs) = get_struct_and_func_names(tokens);
 
@@ -32,98 +34,14 @@ tokens: &Vec<SolidToken>, pos: usize, ppt: &PPT
     );
     println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
     if unsafe { IS_COMPILED } {
-        add_types(&mut res.1, 0, &mut vec![HashMap::new()], &funcs, &structs, &None, ppt);
+        add_types(&mut res.1, 0, &mut vec![HashMap::new()], &funcs, &structs, &None, &built_ins, ppt);
         println!("\n\n{}", ppt.to_str(&(res.1.clone(), 0)));
     }
     res
 }
 
 fn get_struct_and_func_names(tokens: &Vec<SolidToken>) -> (StructTypes, FuncTypes){
-    let int_iter = Type {
-        kind: TypeKind::TypWithSubTypes,
-        children: Some(vec![
-            ITER_TYPE,
-            INT_TYPE,
-        ]),
-    };
-    let generic_iter = Type {
-        kind: TypeKind::TypWithSubTypes,
-        children: Some(vec![
-            ITER_TYPE,
-            Type {
-                kind: TypeKind::Generic(GenericType::IterInternal),
-                children: None,
-            },
-        ]),
-    };
-    let enum_iter = Type {
-        kind: TypeKind::TypWithSubTypes,
-        children: Some(vec![
-            ITER_TYPE,
-            Type {
-                kind: TypeKind::Tuple,
-                children: Some(vec![
-                    Type::new(String::from("u32")),
-                    Type {
-                        kind: TypeKind::Generic(GenericType::IterInternal),
-                        children: None,
-                    }
-                ]),
-            },
-        ]),
-    };
-
-    let range_param = { vec![
-        INT_TYPE,
-        Type {
-            kind: TypeKind::Optional,
-            children: Some(vec![ INT_TYPE, INT_TYPE ]),
-        }
-    ] };
-    let print_param = { vec![
-        Type {
-            kind: TypeKind::Args,
-            children: Some(vec![
-                Type {
-                    kind: TypeKind::Implements,
-                    children: Some(vec![
-                        Type {
-                            kind: TypeKind::Trait(String::from("Display")),
-                            children: None,
-                        }
-                    ]),
-                }
-            ]),
-        }
-    ] };
-    let dprint_param = { vec![
-        Type {
-            kind: TypeKind::Args,
-            children: Some(vec![
-                Type {
-                    kind: TypeKind::Implements,
-                    children: Some(vec![
-                        Type {
-                            kind: TypeKind::Trait(String::from("Debug")),
-                            children: None,
-                        }
-                    ]),
-                }
-            ]),
-        }
-    ] };
-    let mut funcs = HashMap::from([
-        (String::from("range"),     FuncType{ input: Some(range_param), output: Some(int_iter) }),
-        (String::from("print"),     FuncType{ input: Some(print_param), output: None }),
-        (String::from("str"),     FuncType{
-            input: Some(vec![Type{ kind: TypeKind::Implements, children: Some(vec![Type::new(String::from("Display"))]) }]),
-            output: Some(STR_TYPE)
-        }),
-        (String::from("dprint"),    FuncType{ input: Some(dprint_param), output: None }),
-        (String::from("rev"),       FuncType{ input: Some(vec![generic_iter.clone()]), output: Some(generic_iter.clone()) }),
-        (String::from("enumerate"), FuncType{ input: Some(vec![generic_iter]), output: Some(enum_iter) }),
-
-    ]);
+    let mut funcs = HashMap::new();
     let mut structs = HashMap::new();
 
     for (i, tok) in tokens.iter().enumerate() {
@@ -140,6 +58,7 @@ fn get_struct_and_func_names(tokens: &Vec<SolidToken>) -> (StructTypes, FuncType
         }
     }
 
+    structs.insert(String::from("String"), 0);
     (structs, funcs)
 }
 
@@ -236,6 +155,12 @@ fn make_ast_statement(
                     tree = t;
                 }
             },
+            SolidToken::Continue => {
+                add_to_tree(parent, &mut tree, Ast::new(AstNode::Continue));
+            },
+            SolidToken::Break => {
+                add_to_tree(parent, &mut tree, Ast::new(AstNode::Break));
+            }
             _ => panic!("unexpected token `{:?}`", token)
         }
         pos += 1;
@@ -265,7 +190,7 @@ fn make_ast_expression(
                 if let SolidToken::Parenthesis(IsOpen::False)
                 | SolidToken::Bracket(IsOpen::False)
                 | SolidToken::Brace(IsOpen::False)
-                | SolidToken::Str(_)
+                | SolidToken::Str { .. }
                 | SolidToken::Word(_) = &tokens[pos - 1] {
                     //1 index
                     let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Index);
@@ -298,8 +223,8 @@ fn make_ast_expression(
             SolidToken::Num(num) => {
                 add_to_tree(parent, &mut tree, Ast::new(AstNode::Number(num.clone())));
             },
-            SolidToken::Str(str) => {
-                add_to_tree(parent, &mut tree, Ast::new(AstNode::String(str.clone())));
+            SolidToken::Str { val: str, mutable } => {
+                add_to_tree(parent, &mut tree, Ast::new(AstNode::String{ val: str.clone(), mutable: *mutable }));
             },
             SolidToken::Char(ch) => {
                 add_to_tree(parent, &mut tree, Ast::new(AstNode::Char(ch.clone())));
@@ -381,7 +306,8 @@ fn word_tok(
                     pos += 1;
                 } else {
                     pos -= 1;
-                    let _param = get_params(&tokens, &mut pos, funcs, structs).remove(0); // 5 for now only taking the first
+                    let param = get_params(&tokens, &mut pos, funcs, structs).remove(0); // 5 for now only taking the first
+                    tree[index].typ = Some(param.typ);
                 }
                 let (p, t) = make_ast_expression(
                     tokens, pos + 1, tree, index, vars, funcs, structs, ppt
@@ -404,6 +330,11 @@ fn word_tok(
                     );
                     pos = p; tree = t;
                 }
+            },
+            SolidToken::Bracket(IsOpen::True) => {
+                let index = insert_as_parent_of_prev(&mut tree, parent, AstNode::Index);
+                let (p, t) = make_ast_expression(tokens, pos + 1, tree, index, vars, funcs, structs, ppt);
+                pos = p; tree = t;
             },
             SolidToken::Period => {
                 let (p, t) = add_property(&tokens, pos, tree, indent, vars, funcs, structs, ppt, is_expression, parent);
@@ -594,11 +525,10 @@ fn make_func(
     if let SolidToken::Operator(OperatorType::Returns) = tokens[pos] {
         pos += 1;
         let typ = get_arg_typ(tokens, &mut pos, funcs, structs);
-        println!("{typ}");
         tree[return_pos].typ = Some(typ);
     }
     if let SolidToken::Colon = tokens[pos] {} else {
-        panic!("expected colon")
+        panic!("expected colon, found `{:?}`", tokens[pos])
     }
     pos += 1;
     funcs.insert(name, FuncType{
@@ -689,7 +619,7 @@ fn make_struct(
                 typ: Some(Type {
                     kind: TypeKind::MutPointer,
                     children: Some(vec![Type {
-                        kind: TypeKind::Struct(name.clone()),
+                        kind: TypeKind::Struct(TypName::Str(name.clone())),
                         children: None,
                     }])
                 }),
@@ -743,7 +673,7 @@ fn get_params(
 
 // returns where pos is the index of the token after the end of the type
 // e.g.     x: int | bool, y: int | None) -> bool:
-//                       ^              ^
+//                       ^              ^        ^
 fn get_arg_typ(
     tokens: &Vec<SolidToken>, pos: &mut usize, funcs: &mut FuncTypes, structs: &StructTypes
 ) -> Type {
@@ -759,16 +689,15 @@ fn get_arg_typ(
                 if let Some(typ) = res {
                     *pos += 1;
                     let mut children = vec![typ, get_arg_typ(tokens, pos, funcs, structs)];
-                    let mut typ = Type {
-                        kind: TypeKind::TypWithSubTypes,
-                        children: None
-                    };
                     while let SolidToken::Comma = &tokens[*pos] {
                         *pos += 1;
                         children.push(get_arg_typ(tokens, pos, funcs, structs));
                     }
-                    typ.children = Some(children);
-                    res = Some(typ);
+                    *pos += 1;
+                    res = Some(Type {
+                        kind: TypeKind::TypWithSubTypes,
+                        children: Some(children)
+                    });
                     break
                 }
             },
@@ -803,13 +732,11 @@ fn get_arg_typ(
                     panic!("unexpected type. res: {:?}, wrd: {wrd}", res)
                 }
                 res = if structs.contains_key(wrd) {
-                    println!("###{wrd}, {:?}", structs);
                     Some(Type {
-                        kind: TypeKind::Struct(wrd.clone()),
+                        kind: TypeKind::Struct(TypName::Str(wrd.clone())),
                         children: None,
                     })
                 } else {
-                    println!("!!!{wrd}, {:?}", structs);
                     Some(Type::new(wrd.clone()))
                 };
             },

@@ -8,27 +8,31 @@ pub const UNKNOWN_TYPE: Type = Type {
 };
 
 pub const STR_TYPE: Type = Type {
-    kind: TypeKind::Typ(TypName::Static("String")),
+    kind: TypeKind::Struct(TypName::Static("str")),
+    children: None
+};
+pub const MUT_STR_TYPE: Type = Type {
+    kind: TypeKind::Struct(TypName::Static("String")),
     children: None
 };
 pub const BOOL_TYPE: Type = Type {
-    kind: TypeKind::Typ(TypName::Static("bool")),
+    kind: TypeKind::Struct(TypName::Static("bool")),
     children: None
 };
 pub const INT_TYPE: Type = Type {
-    kind: TypeKind::Typ(TypName::Static("i32")),
+    kind: TypeKind::Struct(TypName::Static("i32")),
     children: None
 };
 pub const FLOAT_TYPE: Type = Type {
-    kind: TypeKind::Typ(TypName::Static("f32")),
+    kind: TypeKind::Struct(TypName::Static("f32")),
     children: None
 };
 pub const CHAR_TYPE: Type = Type {
-    kind: TypeKind::Typ(TypName::Static("char")),
+    kind: TypeKind::Struct(TypName::Static("char")),
     children: None
 };
 pub const ITER_TYPE: Type = Type {
-    kind: TypeKind::Typ(TypName::Static("iter")),
+    kind: TypeKind::Struct(TypName::Static("Iter")),
     children: None
 };
 
@@ -42,6 +46,7 @@ pub enum TypName {
     Str(String),
     Static(&'static str)
 }
+
 
 impl PartialEq for TypName {
     fn eq(&self, other: &Self) -> bool {
@@ -62,7 +67,7 @@ impl PartialEq for TypName {
 pub enum TypeKind {
     TypWithSubTypes,
     Generic(GenericType),
-    Typ(TypName),
+    // Typ(TypName),
     OneOf,
     Optional,
     Tuple,
@@ -71,7 +76,7 @@ pub enum TypeKind {
     Trait(String),
     Unknown,
     Function(String),
-    Struct(String),
+    Struct(TypName),
     Class(String),
     Pointer,
     MutPointer,
@@ -87,21 +92,21 @@ impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             TypeKind::Unknown => if unsafe { IS_COMPILED } { panic!("Unknown Type") } else { write!(f, "")},
-            TypeKind::Typ(st) => {
-                if unsafe { IS_COMPILED } {
-                    let st = match st {
-                        TypName::Str(s) => s.as_str(),
-                        TypName::Static(s) => s
-                    };
-                    write!(f, "{}", match st {
-                        "str" => "String",
-                        "int" => "i32",
-                        _ => st
-                    })
-                } else {
-                    write!(f, "{st}")
-                }
-            },
+            // TypeKind::Typ(st) => {
+            //     if unsafe { IS_COMPILED } {
+            //         let st = match st {
+            //             TypName::Str(s) => s.as_str(),
+            //             TypName::Static(s) => s
+            //         };
+            //         write!(f, "{}", match st {
+            //             "str" => "String",
+            //             "int" => "i32",
+            //             _ => st
+            //         })
+            //     } else {
+            //         write!(f, "{st}")
+            //     }
+            // },
             TypeKind::OneOf => {
                 let children = unwrap(&self.children);
                 write!(f, "{}", join(&children, "-or-"))
@@ -151,7 +156,7 @@ impl Display for Type {
 impl Type {
     pub fn new(typ: String) -> Type {
         Type {
-            kind: TypeKind::Typ(clean_type(typ)),
+            kind: TypeKind::Struct(clean_type(typ)),
             children: None
         }
     }
@@ -208,7 +213,7 @@ pub fn clean_type(st: String) -> TypName {
             "str" => "String",
             "int" => "i32",
             "float" => "f32",
-            "list" => "Vec",
+            "List" => "Vec",
             _ => return TypName::Str(st)
         }
     )

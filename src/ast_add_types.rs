@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use crate::ast_structure::{Ast, AstNode};
 use crate::mold_ast::{add_to_tree, FuncTypes, PPT, StructTypes, VarTypes};
-use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, generify, INT_TYPE, STR_TYPE, Type, TypeKind, unwrap_u};
+use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, generify, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap_u};
 use lazy_static::lazy_static;
 use regex::Regex;
+use crate::built_in_funcs::BuiltIn;
+use crate::IS_COMPILED;
+use crate::mold_tokens::OperatorType;
 
 lazy_static! {
     static ref SPECIFIED_NUM_TYPE_RE: Regex = Regex::new(r"[iuf](8|16|32|64|128|size)$").unwrap();
@@ -15,6 +18,7 @@ pub fn add_types(
     ast: &mut Vec<Ast>, pos: usize,
     vars: &mut VarTypes, funcs: &FuncTypes, structs: &StructTypes,
     parent_struct: &Option<HashMap<String, usize>>,
+    built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
     ppt: &PPT
 ) {
     let children = ast[pos].children.clone().unwrap_or(vec![]);
@@ -23,7 +27,7 @@ pub fn add_types(
             //3 ****************************************************************
             //3 **** WARNING: ugly code ahead, viewer discretion is advised ****
             //3 ****************************************************************
-            add_types(ast, unwrap_u(&ast[children[0]].children)[1], vars, funcs, structs, parent_struct, ppt);
+            add_types(ast, unwrap_u(&ast[children[0]].children)[1], vars, funcs, structs, parent_struct, built_ins, ppt);
             vars.push(HashMap::new());
             let par = &ast[children[0]];
             let for_vars = &ast[unwrap_u(&par.children)[0]];
@@ -41,14 +45,14 @@ pub fn add_types(
             if let AstNode::Identifier(n) = &ast[for_var_pos].value { n.clone() } else { panic!() },
             for_var_pos
             );
-            add_types(ast, children[1], vars, funcs, structs, parent_struct, ppt);
+            add_types(ast, children[1], vars, funcs, structs, parent_struct, built_ins, ppt);
             vars.pop();
         }
         AstNode::Function(_) | AstNode::StaticFunction(_) | AstNode::WhileStatement | AstNode::IfStatement
         => {
             vars.push(HashMap::new());
             for child in children {
-                add_types(ast, child, vars, funcs, structs, parent_struct, ppt);
+                add_types(ast, child, vars, funcs, structs, parent_struct, built_ins, ppt);
             }
             vars.pop();
         }
@@ -56,7 +60,7 @@ pub fn add_types(
         | AstNode::ColonParentheses | AstNode::Return | AstNode::Args
         => {
             for child in children {
-                add_types(ast, child, vars, funcs, structs, parent_struct, ppt);
+                add_types(ast, child, vars, funcs, structs, parent_struct, built_ins, ppt);
             }
         }
         AstNode::ArgsDef => {
@@ -75,7 +79,7 @@ pub fn add_types(
             }
             if structs.contains_key(name) {
                 ast[pos].typ = Some(Type {
-                    kind: TypeKind::Struct(name.clone()),
+                    kind: TypeKind::Struct(TypName::Str(name.clone())),
                     children: None,
                 });
                 return;
@@ -105,24 +109,34 @@ pub fn add_types(
         }
         AstNode::FirstAssignment => {
             let name = if let AstNode::Identifier(name) = &ast[children[0]].value { name.clone() } else { panic!() };
-            add_types(ast, children[1], vars, funcs, structs, parent_struct, ppt);
-            let typ = ast[children[1]].typ.clone();
-            if let None = typ {
-                panic!("{name}")
+            add_types(ast, children[1], vars, funcs, structs, parent_struct, built_ins, ppt);
+            if let Some(_) = ast[pos].typ {
+                ast[children[0]].typ = ast[pos].typ.clone();
+            } else {
+                let typ = ast[children[1]].typ.clone();
+                if let None = typ {
+                    panic!("`{name}` needs to a type annotation")
+                }
+                ast[children[0]].typ = typ;
             }
-            ast[children[0]].typ = typ;
             vars.last_mut().unwrap().insert(name, children[0]);
         }
         AstNode::FunctionCall(_) => {
             if let AstNode::Identifier(name) = &ast[children[0]].value {
-                ast[pos].typ = funcs[name].output.clone();
-            }
-            add_types(ast, children[1], vars, funcs, structs, parent_struct, ppt);
+                if funcs.contains_key(name){
+                    ast[pos].typ = funcs[name].output.clone();
+                } else if built_ins.contains_key(name.as_str()) {
+                    ast[pos].typ = built_ins[name.as_str()].output().clone();
+                } else {
+                    panic!("unrecognized function `{name}`")
+                }
+            } else { panic!("function without identifier?") }
+            add_types(ast, children[1], vars, funcs, structs, parent_struct, built_ins, ppt);
         }
         AstNode::StructInit => {
             if let AstNode::Identifier(name) = &ast[children[0]].value.clone() {
                 ast[pos].typ = Some(Type {
-                    kind: TypeKind::Struct(name.clone()),
+                    kind: TypeKind::Struct(TypName::Str(name.clone())),
                     children: None
                 });
                 add_to_tree(pos, ast, Ast::new(AstNode::Args));
@@ -137,13 +151,13 @@ pub fn add_types(
                 todo!()
             }
 
-            add_types(ast, children[1], vars, funcs, structs, parent_struct, ppt);
+            add_types(ast, children[1], vars, funcs, structs, parent_struct, built_ins, ppt);
         }
         AstNode::Property => {
-            add_types(ast, children[0], vars, funcs, structs, parent_struct, ppt);
+            add_types(ast, children[0], vars, funcs, structs, parent_struct, built_ins, ppt);
             let left_kind = ast[children[0]].typ.clone().unwrap_or_else(|| panic!("{:?}", ast[children[0]].value));
             if let TypeKind::Struct(struct_name) = left_kind.kind {
-                let struct_description = &ast[structs[&struct_name]];
+                let struct_description = &ast[structs[&struct_name.to_string()]];
                 let mut typ = None;
                 let mut is_static = false;
                 match &ast[children[1]].value {
@@ -164,19 +178,25 @@ pub fn add_types(
                         let func_call = &ast[children[1]];
                         let right = if let AstNode::Identifier(name) = &ast[unwrap_u(&func_call.children)[0]].value { name } else { panic!() };
                         let module = &ast[unwrap_u(&struct_description.children)[1]];
+                        let mut found = false;
                         for child_pos in unwrap_u(&module.children) {
                             if let AstNode::Function(name) = &ast[*child_pos].value {
                                 if name == right {
+                                    found = true;
                                     typ = ast[unwrap_u(&ast[*child_pos].children)[1]].typ.clone();
                                     break;
                                 }
-                            } else if let AstNode::StaticFunction(name) = &ast[*child_pos].value{
+                            } else if let AstNode::StaticFunction(name) = &ast[*child_pos].value {
                                 if name == right {
+                                    found = true;
                                     is_static = true;
                                     typ = ast[unwrap_u(&ast[*child_pos].children)[1]].typ.clone();
                                     break;
                                 }
                             }
+                        }
+                        if !found {
+                            panic!("function `{right}` not found in struct `{struct_name}`")
                         }
                     }
                     _ => unreachable!()
@@ -204,60 +224,70 @@ pub fn add_types(
         AstNode::Char(_) => {
             ast[pos].typ = Some(CHAR_TYPE);
         }
-        AstNode::String(_) => {
-            ast[pos].typ = Some(STR_TYPE);
+        AstNode::String{ mutable, .. } => {
+            if *mutable {
+                ast[pos].typ = Some(MUT_STR_TYPE);
+            } else {
+                ast[pos].typ = Some(STR_TYPE);
+            }
         }
         AstNode::Bool(_) => {
             ast[pos].typ = Some(BOOL_TYPE);
         }
         AstNode::Operator(_) => {
-            add_types(ast, children[0], vars, funcs, structs, parent_struct, ppt);
-            add_types(ast, children[1], vars, funcs, structs, parent_struct, ppt);
+            add_types(ast, children[0], vars, funcs, structs, parent_struct, built_ins, ppt);
+            add_types(ast, children[1], vars, funcs, structs, parent_struct, built_ins, ppt);
 
             let t1 = ast[children[0]].typ.clone().unwrap();
             let t2 = if let Some(x) = &ast[children[1]].typ { x } else { panic!() };
-            let t1_name = if let TypeKind::Typ(t) = &t1.kind { t } else { panic!("operator not valid for structs") };
-            let t2_name = if let TypeKind::Typ(t) = &t2.kind { t } else { panic!("operator not valid for structs") };
-            if *t1_name != *t2_name {
+            let t1_name = if let TypeKind::Struct(t) = &t1.kind { t } else { panic!("operator not valid for this type") };
+            let t2_name = if let TypeKind::Struct(t) = &t2.kind { t } else { panic!("operator not valid for this type") };
+            if *t1_name != *t2_name && !(*t1_name == TypName::Static("String") && *t2_name  == TypName::Static("str")) {
                 panic!("`{}` not implemented for `{t1_name}` and `{t2_name}`",
                        if let AstNode::Operator(op) = &ast[pos].value { op } else { panic!() },
                 )
             }
-            ast[pos].typ = Some(t1);
+            ast[pos].typ = Some(t1.clone());
+
+            // if let AstNode::Operator(OperatorType::Plus) = ast[pos].value {
+            //     if *t1_name == TypName::Static("String") {
+            //         panic!("{t1_name}");
+            //
+            //     }
+            // }
         }
         AstNode::ForIter | AstNode::Parentheses | AstNode::UnaryOp(_) => {
-            add_types(ast, children[0], vars, funcs, structs, parent_struct, ppt);
+            add_types(ast, children[0], vars, funcs, structs, parent_struct, built_ins, ppt);
             ast[pos].typ = ast[children[0]].typ.clone();
         }
-        AstNode::ForVars => {}
-        AstNode::Pass => {}
+        AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break => {}
         AstNode::ListLiteral => {
             ast[pos].typ = Some(Type {
                 kind: TypeKind::TypWithSubTypes,
                 children: Some(vec![
                     Type::new(String::from("Vec")),
                     generify(&children.iter().map(|x| {
-                        add_types(ast, *x, vars, funcs, structs, parent_struct, ppt);
+                        add_types(ast, *x, vars, funcs, structs, parent_struct, built_ins, ppt);
                         ast[*x].typ.clone().unwrap()
                     }).collect()),
                 ]),
             });
         }
         AstNode::Index => {
-            add_types(ast, children[0], vars, funcs, structs, parent_struct, ppt);
-            add_types(ast, children[1], vars, funcs, structs, parent_struct, ppt);
+            add_types(ast, children[0], vars, funcs, structs, parent_struct, built_ins, ppt);
+            add_types(ast, children[1], vars, funcs, structs, parent_struct, built_ins, ppt);
             if let Some(Type { kind: TypeKind::TypWithSubTypes, children: Some(children) }) = &ast[children[0]].typ {
-                if children.len() != 1 {
-                    panic!()
+                if children.len() != 2 {
+                    panic!("{:?}", children)
                 }
-                ast[pos].typ = Some(children[0].clone());
+                ast[pos].typ = Some(children[1].clone());
             } else {
                 panic!()
             }
         }
         AstNode::Struct(_) => {
             vars.push(HashMap::new());
-            add_types(ast, children[0], vars, funcs, structs, parent_struct, ppt);
+            add_types(ast, children[0], vars, funcs, structs, parent_struct, built_ins, ppt);
             vars.pop();
 
             let mut hm = HashMap::new();
@@ -271,7 +301,7 @@ pub fn add_types(
 
             let parent_struct = Some(hm);
             vars.push(HashMap::new());
-            add_types(ast, children[1], vars, funcs, structs, &parent_struct, ppt);
+            add_types(ast, children[1], vars, funcs, structs, &parent_struct, built_ins, ppt);
             vars.pop();
         }
     }

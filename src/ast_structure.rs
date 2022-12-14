@@ -1,5 +1,7 @@
+use crate::built_in_funcs::BuiltIn;
 use crate::mold_tokens::OperatorType;
 use crate::types::{Type, TypeKind};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 #[derive(Clone, Debug)]
@@ -24,19 +26,22 @@ impl Ast {
 #[derive(Clone, Debug)]
 pub enum AstNode {
     Body,
-    Module,           // children = all the functions/classes/enums..
+    Module, // children = all the functions/classes/enums..
     Function(String), // children[0] = args, children[1] = returnType, children[2] = body
     StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
-    Struct(String),   // children[0] = args, children[1] = functions, children[2] = body
+    Struct(String), // children[0] = args, children[1] = functions, children[2] = body
     Identifier(String), // children[0] = type
     FirstAssignment,
-    Assignment,   // children[0] = var, children[1] = val
+    Assignment,         // children[0] = var, children[1] = val
     FunctionCall(bool), // bool = is_static, children[0] = func, children[1] = Args,
-    StructInit,   // children[0] = struct, children[1] = Args,
-    Property,     // children[0] = obj, children[1] = prop
+    StructInit,         // children[0] = struct, children[1] = Args,
+    Property,           // children[0] = obj, children[1] = prop
     Number(String),
-    Char(char),
-    String(String),
+    Char(String),
+    String {
+        val: String,
+        mutable: bool,
+    },
     Bool(bool),             // no children
     Operator(OperatorType), // children[0] = elem1, children[1] = elem2
     UnaryOp(OperatorType),  // children[0] = elem
@@ -47,7 +52,7 @@ pub enum AstNode {
     ForStatement,   // children[0] = colon_parentheses(ForVars, ForIter)
     ForVars,        // children = vars
     ForIter,        // children[0] = iter
-    Pass,
+    Pass, Continue, Break,
     ListLiteral, // children = elements
     Index,       // child[0] = item, child[1] = index
     ArgsDef,
@@ -65,20 +70,22 @@ impl AstNode {
             | AstNode::Property
             | AstNode::Number(_)
             | AstNode::Char(_)
-            | AstNode::String(_)
+            | AstNode::String { .. }
             | AstNode::Bool(_)
             | AstNode::Operator(_)
             | AstNode::UnaryOp(_)
             | AstNode::Parentheses
-            | AstNode::Pass
             | AstNode::ListLiteral
             | AstNode::Index => true,
             AstNode::FirstAssignment
+            | AstNode::Pass
+            | AstNode::Continue
+            | AstNode::Break
             | AstNode::Assignment
             | AstNode::Body
             | AstNode::Module
-            | AstNode::Function(_)
-            | AstNode::StaticFunction(_)
+            | AstNode::Function { .. }
+            | AstNode::StaticFunction { .. }
             | AstNode::Struct(_)
             | AstNode::ColonParentheses
             | AstNode::IfStatement
@@ -100,15 +107,19 @@ impl Display for AstNode {
             AstNode::Body => write!(f, "BODY"),
             AstNode::Module => write!(f, "MODULE"),
             AstNode::Function(func) => write!(f, "FUNC({})", func.to_string()),
-            AstNode::StaticFunction(func) => write!(f, "STATIC_FUNC({})", func.to_string()),
-            AstNode::FunctionCall(s) => write!(f, "{}", if *s { "STATIC_FUNC_CALL" } else { "FUNC_CALL" }),
+            AstNode::StaticFunction(func) => {
+                write!(f, "STATIC_FUNC({})", func.to_string())
+            }
+            AstNode::FunctionCall(s) => {
+                write!(f, "{}", if *s { "STATIC_FUNC_CALL" } else { "FUNC_CALL" })
+            }
             AstNode::StructInit => write!(f, "STRUCT_INIT"),
             AstNode::Assignment => write!(f, "="),
             AstNode::FirstAssignment => write!(f, ":="),
             AstNode::Property => write!(f, "PROPERTY"),
             AstNode::Identifier(st) => write!(f, "{st}"),
             AstNode::Number(num) => write!(f, "{num}"),
-            AstNode::String(str) => write!(f, "{str}"),
+            AstNode::String { val, mutable } => write!(f, "{val} [mut: {mutable}]"),
             AstNode::Char(chr) => write!(f, "{chr}"),
             AstNode::Operator(op) => write!(f, "{op}"),
             AstNode::UnaryOp(op) => write!(f, "UNARY({op})"),
@@ -120,6 +131,8 @@ impl Display for AstNode {
             AstNode::ForIter => write!(f, "ITER"),
             AstNode::ForVars => write!(f, "VARS"),
             AstNode::Pass => write!(f, "PASS"),
+            AstNode::Continue => write!(f, "CONTINUE"),
+            AstNode::Break => write!(f, "BREAK"),
             AstNode::ListLiteral => write!(f, "[LIST]"),
             AstNode::Index => write!(f, "[INDEX]"),
             AstNode::Args => write!(f, "(ARGS)"),

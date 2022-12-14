@@ -16,6 +16,7 @@ enum Token {
     Str {
         start: usize,
         end: usize,
+        mutable: bool
     },
     Char(char),
     Num {
@@ -41,7 +42,11 @@ enum Token {
 pub enum SolidToken {
     Brace(IsOpen), Bracket(IsOpen), Parenthesis(IsOpen),
     Word(String),
-    Str(String), Char(char),
+    Str{
+        val: String,
+        mutable: bool
+    },
+    Char(String),
     Num(String), // Float(f32),
     Bool(bool),
     Operator(OperatorType), UnaryOperator(OperatorType),
@@ -248,8 +253,19 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
             },
             '"' => {
                 is_str = true;
+                if let Some(Word { start, end, is_spaced: false }) = tokens.last_mut() {
+                    if *start == *end - 1 && chars[*start] == 'm' {
+                        tokens.pop();
+                        tokens.push(Str {
+                            start: i, end: i + 1, mutable: true
+                        });
+                        continue
+                    }
+                }
                 tokens.push(Str {
-                    start: i, end: i + 1
+                    start: i,
+                    end: i + 1,
+                    mutable: false
                 });
                 continue
             },
@@ -280,7 +296,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
             Brace(is_open) =>        SolidToken::Brace(is_open.clone()),
             Bracket(is_open) =>      SolidToken::Bracket(is_open.clone()),
             Parenthesis(is_open) =>  SolidToken::Parenthesis(is_open.clone()),
-            Char(chr) => SolidToken::Char(chr.clone()),
+            Char(chr) => SolidToken::Char(clean_char(*chr)),
             Word { start, end, .. } => {
                 let st = &input_code[*start..*end];
                 match st {
@@ -299,12 +315,13 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                     "True" | "true" => SolidToken::Bool(true),
                     "False" | "false" => SolidToken::Bool(false),
                     "static" => SolidToken::Static,
-                    _ => SolidToken::Word(String::from(st))
+                    _ => SolidToken::Word(clean(st))
                 }
             },
-            Str { start, end } => SolidToken::Str(
-                String::from(&input_code[*start..*end])
-            ),
+            Str { start, end, mutable: m } => SolidToken::Str {
+                val: String::from(&input_code[*start..*end]),
+                mutable: *m
+            },
             Operator { start, end, .. } => {
                 // todo this is messy...
                 let mut oper = String::new();
@@ -468,4 +485,18 @@ fn join_op(tokens: &mut Vec<Token>, new_end: usize) -> bool {
         *end = new_end;
         true
     } else { false }
+}
+
+fn clean(st: &str) -> String {
+    st.replace("\n", "\\n")
+        .replace("\t", "\\t")
+        .replace("\r", "\\r")
+}
+fn clean_char(st: char) -> String {
+    match st {
+        '\n' => String::from("\\n"),
+        '\t' => String::from("\\t"),
+        '\r' => String::from("\\r"),
+        _ => st.to_string()
+    }
 }
