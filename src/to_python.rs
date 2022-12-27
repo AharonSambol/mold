@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use crate::built_in_funcs::BuiltIn;
-use crate::IGNORE_STRUCTS;
+use crate::{IGNORE_STRUCTS, unwrap_enum};
 use crate::types::{unwrap_u};
 
 pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
@@ -18,20 +18,20 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         AstNode::Function(name) => {
             write!(res, "def {name}").unwrap();
             write!(res, "(").unwrap();
-            to_python(ast, children[0], indentation, res, built_ins); // param
+            to_python(ast, children[1], indentation, res, built_ins); // param
             write!(res, ")").unwrap();
-            to_python(ast, children[1], indentation, res, built_ins); // return
+            to_python(ast, children[2], indentation, res, built_ins); // return
             write!(res, ":").unwrap();
-            to_python(ast, children[2], indentation + 1, res, built_ins); // body
+            to_python(ast, children[3], indentation + 1, res, built_ins); // body
         },
         AstNode::StaticFunction(name) => {
             write!(res, "@staticmethod\n{}def {name}", "\t".repeat(indentation)).unwrap();
             write!(res, "(").unwrap();
-            to_python(ast, children[0], indentation, res, built_ins); // param
+            to_python(ast, children[1], indentation, res, built_ins); // param
             write!(res, ")").unwrap();
-            to_python(ast, children[1], indentation, res, built_ins); // return
+            to_python(ast, children[2], indentation, res, built_ins); // return
             write!(res, ":").unwrap();
-            to_python(ast, children[2], indentation + 1, res, built_ins); // body
+            to_python(ast, children[3], indentation + 1, res, built_ins); // body
         },
         AstNode::ReturnType => {},
         AstNode::IfStatement => {
@@ -42,7 +42,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
                 match &ast[*child].value {
                     AstNode::IfStatement => {
                         write!(res, "\n{}elif ", "\t".repeat(indentation)).unwrap();
-                        let c_children = if let Some(x) = &ast[*child].children { x } else { panic!() };
+                        let c_children = unwrap_enum!(&ast[*child].children, Some(x), x);
                         to_python(ast, c_children[0], indentation, res, built_ins);
                         to_python(ast, c_children[1], indentation + 1, res, built_ins);
                     },
@@ -192,10 +192,10 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             if unsafe { IGNORE_STRUCTS.contains(name.as_str()) } {
                 return;
             }
-            let param = &ast[children[0]];
+            let param = &ast[children[1]];
             let param = unwrap_u(&param.children).iter()
                 .map(|&x|
-                    if let AstNode::Identifier(n) = &ast[x].value { n } else { panic!() }
+                    unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n)
                 ).collect();
             let param_comma = join(&param, ", ");
             let param_assign = join(&param.iter().map(|x| format!("self.{x} = {x}")).collect(), "\n\t\t");
@@ -204,10 +204,11 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
 \tdef __init__(self, {param_comma}):
 \t\tself._is_STRUCT__ = True
 \t\t{param_assign}").unwrap();
-            to_python(ast, children[1], indentation + 1, res, built_ins);
+            to_python(ast, children[2], indentation + 1, res, built_ins);
         }
         AstNode::Continue => write!(res, "continue").unwrap(),
         AstNode::Break => write!(res, "break").unwrap(),
+        AstNode::GenericsDeclaration => {},
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }

@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use crate::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
 use crate::built_in_funcs::BuiltIn;
-use crate::IGNORE_STRUCTS;
+use crate::{IGNORE_STRUCTS, unwrap_enum};
 use crate::mold_tokens::OperatorType;
-use crate::types::{unwrap_u, Type, TypeKind, TypName, STR_TYPE};
+use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType};
 
 
 
@@ -38,31 +38,32 @@ pub fn to_rust(
             write!(res, "\n{}}}", "\t".repeat(indentation - 1)).unwrap();
         },
         AstNode::Function(name) | AstNode::StaticFunction(name) => {
-            let param = &ast[children[0]];
-            let return_typ = &ast[children[1]];
+            let generics_ast = &ast[children[0]];
+            let param = &ast[children[1]];
+            let return_typ = &ast[children[2]];
             // for par in unwrap_u(&param.children) {
                 // let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
                 // make_enums(typ,  enums);
             // }
-            let mut param = join(
+            let generic = format_generics(generics_ast);
+            let param = join(
                 &unwrap_u(&param.children).iter()
                     .map(|&x|
-                        format!("{}: {}",
-                                if let AstNode::Identifier(n) = &ast[x].value { n } else { panic!() },
-                                if let Some(t) = &ast[x].typ { t } else { panic!() }
+                        format!("{}{}: {}",
+                            if ast[x].is_mut { "mut " } else { "" },
+                            unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
+                            unwrap_enum!(&ast[x].typ, Some(t), t),
                         )
                     ).collect(),
-                ", mut "
+                ", "
             );
-            if param != "" {
-                param = format!("mut {param}");
-            }
             if let Some(t) = &return_typ.typ {
-                write!(res, "fn {name}({param}) -> {t}").unwrap();
+                write!(res, "fn {name}{generic}({param}) -> {t}").unwrap();
             } else {
-                write!(res, "fn {name}({param})").unwrap();
+                write!(res, "fn {name}{generic}({param})").unwrap();
             }
-            to_rust(ast, children[2], indentation + 1, res, built_ins, enums);
+
+            to_rust(ast, children[3], indentation + 1, res, built_ins, enums);
         },
         AstNode::IfStatement => {
             write!(res, "if ").unwrap();
@@ -72,7 +73,7 @@ pub fn to_rust(
                 match &ast[*child].value {
                     AstNode::IfStatement => {
                         write!(res, "\n{}else if ", "\t".repeat(indentation)).unwrap();
-                        let c_children = if let Some(x) = &ast[*child].children { x } else { panic!() };
+                        let c_children = unwrap_enum!(&ast[*child].children, Some(x), x);
                         to_rust(ast, c_children[0], indentation, res, built_ins, enums);
                         to_rust(ast, c_children[1], indentation + 1, res, built_ins, enums);
                     },
@@ -249,29 +250,33 @@ pub fn to_rust(
             if unsafe { IGNORE_STRUCTS.contains(name.as_str()) } {
                 return;
             }
-            let param = &ast[children[0]];
+            let generics_ast = &ast[children[0]];
+            let param = &ast[children[1]];
             // let funcs = if let AstNode::Functions(v) = &ast[children[1]].value { v } else { panic!() };
             // for par in unwrap_u(&param.children) {
                 // let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
                 // make_enums(typ, built_ins, enums);
             // }
+            let generic = format_generics(generics_ast);
             let param = join(
                 &unwrap_u(&param.children).iter()
                     .map(|&x|
                         format!("{}: {}",
-                            if let AstNode::Identifier(n) = &ast[x].value { n } else { panic!() },
-                            if let Some(t) = &ast[x].typ { t } else { panic!() }
+                            unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
+                            unwrap_enum!(&ast[x].typ, Some(t), t)
                         )
                     ).collect(),
                 ", "
             );
-            write!(res, "#[derive(Debug, Clone)]\nstruct {name} {{ {param} }}\nimpl {name} {{").unwrap();
-            to_rust(ast, children[1], indentation + 1, res, built_ins, enums);
+            write!(res,
+                   "#[derive(Debug, Clone)]\nstruct {name}{generic} {{ {param} }}\n\
+                    impl{generic} {name}{generic} {{"
+            ).unwrap();
+            to_rust(ast, children[2], indentation + 1, res, built_ins, enums);
             write!(res, "\n{}}}", "\t".repeat(indentation)).unwrap();
         },
         AstNode::StructInit => {
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
-            write!(res, "{{ ").unwrap();
+            write!(res, "{}{{ ", ast[pos].typ.clone().unwrap()).unwrap();
             let arg_vals = unwrap_u(&ast[children[1]].children);
             let arg_names = unwrap_u(&ast[children[2]].children);
             for (val, name) in zip(arg_vals, arg_names) {
@@ -287,7 +292,8 @@ pub fn to_rust(
         }
         AstNode::Continue => write!(res, "continue").unwrap(),
         AstNode::Break => write!(res, "break").unwrap(),
-        _ => panic!("Unexpected AST {:?}", ast[pos].value)
+        AstNode::ReturnType => { unreachable!() },
+        _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
 }
 
@@ -297,13 +303,9 @@ fn built_in_func(
     children: &Vec<usize>
 ) -> bool {
     if let Some((struct_name, func_name)) = get_struct_and_func_name(ast, children) {
-        let struct_name = match struct_name {
-            TypName::Str(s) => s.as_str(),
-            TypName::Static(s) => s
-        };
         let arg_pos = unwrap_u(&ast[children[1]].children)[1];
 
-        match (struct_name, func_name.as_str()) {
+        match (struct_name.get_str(), func_name.as_str()) {
             ("String", "split") => {
                 to_rust(ast, children[0], indentation, res, built_ins, enums);
                 if unwrap_u(&ast[arg_pos].children).len() != 0 {
@@ -400,12 +402,12 @@ fn get_struct_and_func_name<'a>(ast: &'a Vec<Ast>, children: &Vec<usize>) -> Opt
 fn _make_enums(){
 // fn make_enums(typ: &Type, enums: &mut HashMap<String, String>){
 //     match &typ.kind {
-//         TypeKind::Trait(_trt) => todo!(),
-//         TypeKind::Args => todo!(),
-//         TypeKind::Implements => todo!(),
-//         TypeKind::Tuple => todo!(),
-//         TypeKind::Generic(_gen) => todo!(),
-//         TypeKind::Optional => todo!(),
+//         TypeKind::Trait(_trt) => ,
+//         TypeKind::Args => ,
+//         TypeKind::Implements => ,
+//         TypeKind::Tuple => ,
+//         TypeKind::Generic(_gen) => ,
+//         TypeKind::Optional => ,
 //         TypeKind::Unknown | TypeKind::Typ(_) => (),
 //         TypeKind::OneOf => {
 //             let types = unwrap(&typ.children);
@@ -427,13 +429,24 @@ fn _make_enums(){
 //             }
 //         }
 //         TypeKind::Struct(_) => {
-//             // todo for typ in arg-types and func-types
+//             // for typ in arg-types and func-types
 //         },
 //         TypeKind::Function(_) => {
-//             // todo for typ in arg-types and func-types
+//             // for typ in arg-types and func-types
 //         },
-//         TypeKind::Class(_) => todo!(),
+//         TypeKind::Class(_) => ,
 //         TypeKind::Pointer => (),
 //     }
 // }
 }
+
+fn format_generics(generics_ast: &Ast) -> String {
+    if let Some(Type{ children: Some(generics), .. }) = &generics_ast.typ {
+        format!("<{}>", join(&generics.iter().map(|x|
+            unwrap_enum!(&x.kind, TypeKind::Generic(GenericType::Declaration(name)), name)
+        ).collect(), ","))
+    } else {
+        String::new()
+    }
+}
+

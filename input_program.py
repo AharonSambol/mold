@@ -1,7 +1,16 @@
 def main():
-    input := m"Wow Look  "
-    p := str(input.lower())
-    print(p)
+#     s := generic_test(m"12")
+    s := [1, 2, 3, 9]
+    sm := 0
+    for i in s:
+        sm = sm + i
+    print(sm)
+#     s := [1, 2, 3]
+#     s.append(4)
+#     dprint(s)
+
+# def generic_test<T>(a: T) -> T:
+#     return a
 #     for i in input.split("  "):
 #         dprint(i)
 #     mx := [0, 0, 0, 0]
@@ -19,3 +28,7 @@ def main():
 #             sm = sm + int(i)
 #     print(mx[1] + mx[2] + mx[3])
 
+# struct A<T>:
+#     b: T
+#     def into_iter() -> T:
+#         pass

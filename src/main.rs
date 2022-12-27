@@ -7,11 +7,12 @@ mod to_python;
 mod to_rust;
 mod types;
 mod built_in_funcs;
+mod macros;
 
-use crate::ast_structure::{join, Ast};
+use crate::ast_structure::{join, Ast, AstNode};
 use crate::mold_ast::PPT;
 use std::collections::{HashMap, HashSet};
-use std::{env, io};
+use std::{env, io, mem};
 use std::fs;
 use std::fs::File;
 use std::io::Write as W;
@@ -24,6 +25,7 @@ use crate::mold_tokens::SolidToken;
 
 static mut IS_COMPILED: bool = false;
 static mut IGNORE_STRUCTS: Lazy<HashSet<&'static str>> = Lazy::new(|| HashSet::new());
+
 
 fn main() {
     // todo remove
@@ -150,7 +152,7 @@ fn compile(ast: &Vec<Ast>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
 enum StructFunc { Struct, Func }
 fn put_at_start(data: &mut String) {
     let to_add = [
-        (StructFunc::Struct, "String", vec![
+        (StructFunc::Struct, "String", None, vec![
             "split(s: str) -> List[str]", //TODO (optional) s: str | char    if rust: -> Iter[str]
             "strip() -> str",        //TODO (optional) c: char
             "lstrip() -> str",        //TODO (optional) c: char
@@ -168,16 +170,24 @@ fn put_at_start(data: &mut String) {
             "upper(s: str) -> str",
             // todo is(digit\numeric\ascii...)
             // todo "join(lst: List[T]) -> int",
+        ]),
+        (StructFunc::Struct, "Vec", Some(vec!["T"]), vec![
+            "into_iter() -> T"
         ])
     ];
+    write!(data, "\n").unwrap();
     for add in to_add {
         match add.0 {
             StructFunc::Struct => {
                 unsafe {
                     IGNORE_STRUCTS.insert(add.1);
                 }
-                write!(data, "struct {}:", add.1).unwrap();
-                for func in add.2 {
+                if let Some(generics) = add.2 {
+                    write!(data, "struct {}<{}>:", add.1, join(&generics, ",")).unwrap();
+                } else {
+                    write!(data, "struct {}:", add.1).unwrap();
+                }
+                for func in add.3 {
                     write!(data, "\n\tdef {}:", func).unwrap();
                 }
                 writeln!(data).unwrap();

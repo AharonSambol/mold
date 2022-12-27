@@ -1,15 +1,14 @@
-use crate::built_in_funcs::BuiltIn;
 use crate::mold_tokens::OperatorType;
 use crate::types::{Type, TypeKind};
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 #[derive(Clone, Debug)]
 pub struct Ast {
+    pub value: AstNode,
     pub children: Option<Vec<usize>>,
     pub parent: Option<usize>,
-    pub value: AstNode,
     pub typ: Option<Type>,
+    pub is_mut: bool
 }
 
 impl Ast {
@@ -19,6 +18,7 @@ impl Ast {
             parent: None,
             typ: None,
             value: typ,
+            is_mut: true
         }
     }
 }
@@ -57,8 +57,9 @@ pub enum AstNode {
     Index,       // child[0] = item, child[1] = index
     ArgsDef,
     Args,       // children = args
-    ReturnType, // children[0] = type
+    ReturnType,
     Return,     // children[0] = return val
+    GenericsDeclaration,
 }
 
 impl AstNode {
@@ -96,6 +97,7 @@ impl AstNode {
             | AstNode::ArgsDef
             | AstNode::Args
             | AstNode::ReturnType
+            | AstNode::GenericsDeclaration
             | AstNode::Return => false,
         }
     }
@@ -139,6 +141,7 @@ impl Display for AstNode {
             AstNode::ArgsDef => write!(f, "(ARGS_DEF)"),
             AstNode::Return => write!(f, "RETURN"),
             AstNode::ReturnType => write!(f, "RETURNS"),
+            AstNode::GenericsDeclaration => write!(f, "GENERIC_DECLARATION"),
             AstNode::Struct(name) => write!(f, "STRUCT({name})"),
             AstNode::Bool(b) => write!(f, "{b}"),
         }
@@ -160,11 +163,7 @@ pub struct Param {
 
 impl Display for Param {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Type {
-            kind: TypeKind::Unknown,
-            ..
-        } = self.typ
-        {
+        if let Type { kind: TypeKind::Unknown, .. } = self.typ {
             write!(f, "{}", self.name)
         } else {
             write!(f, "{}: {}", self.name, self.typ)

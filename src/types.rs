@@ -31,14 +31,16 @@ pub const CHAR_TYPE: Type = Type {
     kind: TypeKind::Struct(TypName::Static("char")),
     children: None
 };
+pub const ITER_NAME: TypName = TypName::Static("Iter");
 pub const ITER_TYPE: Type = Type {
-    kind: TypeKind::Struct(TypName::Static("Iter")),
+    kind: TypeKind::Struct(ITER_NAME),
     children: None
 };
 
 #[derive(Debug, Clone)]
 pub enum GenericType {
-    IterInternal
+    Declaration(String),
+    Of(String),
 }
 
 #[derive(Debug, Clone)]
@@ -50,24 +52,25 @@ pub enum TypName {
 
 impl PartialEq for TypName {
     fn eq(&self, other: &Self) -> bool {
-        let s1 = match self {
-            TypName::Str(s) => s.as_str(),
-            TypName::Static(s) => s
-        };
-        let s2 = match other {
-            TypName::Str(s) => s.as_str(),
-            TypName::Static(s) => s
-        };
-        s1 == s2
+        self.get_str() == other.get_str()
     }
 }
 
+impl TypName {
+    pub fn get_str(&self) -> &str {
+        match self {
+            TypName::Str(s) => s.as_str(),
+            TypName::Static(s) => s
+        }
+    }
+
+}
 
 #[derive(Debug, Clone)]
 pub enum TypeKind {
-    TypWithSubTypes,
     Generic(GenericType),
-    // Typ(TypName),
+    Generics,
+    GenericsMap,
     OneOf,
     Optional,
     Tuple,
@@ -76,9 +79,9 @@ pub enum TypeKind {
     Trait(String),
     Unknown,
     Function(String),
-    Struct(TypName),
-    Class(String),
-    Pointer,
+    Struct(TypName), // child[0] = generics
+    _Class(String),
+    _Pointer,
     MutPointer,
 }
 
@@ -111,25 +114,33 @@ impl Display for Type {
                 let children = unwrap(&self.children);
                 write!(f, "{}", join(&children, "-or-"))
             },
-            TypeKind::TypWithSubTypes => {
-                let children = unwrap(&self.children);
-                let parent_type = children.first().unwrap();
-                let inner_types = join(
-                    &children.iter()
-                        .skip(1)
-                        .collect()
-                    , ","
-                );
-                if unsafe { IS_COMPILED } {
-                    write!(f, "{parent_type}<{inner_types}>")
-                } else {
-                    write!(f, "{parent_type}[{inner_types}]")
-                }
-            },
+            // TypeKind::TypWithSubTypes => {
+            //     let children = unwrap(&self.children);
+            //     let parent_type = children.first().unwrap();
+            //     let inner_types = join(
+            //         &children.iter()
+            //             .skip(1)
+            //             .collect()
+            //         , ","
+            //     );
+            //     if unsafe { IS_COMPILED } {
+            //         write!(f, "{parent_type}<{inner_types}>")
+            //     } else {
+            //         write!(f, "{parent_type}[{inner_types}]")
+            //     }
+            // },
             TypeKind::Tuple => {
                 write!(f, "({})", join(unwrap(&self.children), ","))
             },
-            TypeKind::Generic(c) => write!(f, "GENERIC({:?})", c),
+            TypeKind::Generic(c) => {
+                if let GenericType::Of(name) = c {
+                    write!(f, "{name}")
+                } else {
+                    write!(f, "GENERIC({c:?})")
+                }
+            },
+            TypeKind::GenericsMap => write!(f, "GENERICS_MAP({})", join(unwrap(&self.children), ",")),
+            TypeKind::Generics => write!(f, "GENERICS({})", join(unwrap(&self.children), ",")),
             TypeKind::Optional => {
                 write!(f, "OPTIONAL({})", join(unwrap(&self.children), ","))
             },
@@ -142,12 +153,29 @@ impl Display for Type {
             TypeKind::Trait(trt) => {
                 write!(f, "TRAIT({trt})")
             },
-            TypeKind::Struct(name) => write!(f, "{name}"),
+            TypeKind::Struct(name) => {
+                let mut gens = String::new();
+                if let Some(children) = &self.children {
+                    if children.len() != 0 {
+                        if let TypeKind::GenericsMap = children[0].kind {
+                            if let Some(generics) = &children[0].children {
+                                gens = format!("::<{}>", join(&(generics.iter().map(|x| unwrap(&x.children)[0].clone()).collect()), ","));
+                            }
+                        } else {
+                            // println!("{:?}", children[0]);
+                            if let Some(generics) = &children[0].children {
+                                gens = format!("<{}>", join(generics, ","));
+                            }
+                        }
+                    }
+                }
+                write!(f, "{name}{gens}")
+            },
             TypeKind::Function(name) => write!(f, "{name}"),
-            TypeKind::Class(_) => {
+            TypeKind::_Class(_) => {
                 todo!()
             }
-            TypeKind::Pointer => write!(f, "&{}", unwrap(&self.children)[0]),
+            TypeKind::_Pointer => write!(f, "&{}", unwrap(&self.children)[0]),
             TypeKind::MutPointer => write!(f, "&mut {}", unwrap(&self.children)[0]),
         }
     }
@@ -204,7 +232,12 @@ pub fn unwrap_u(children: &Option<Vec<usize>>) -> &Vec<usize> {
 
 pub fn generify(types: &Vec<Type>) -> Type {
     // TODO !!
-    types[0].clone()
+    // Type {
+    //     kind: TypeKind::Generic(GenericType::Of(generic_name)),
+    //     children: Some(vec![
+            types[0].clone()
+    //     ]),
+    // }
 }
 
 pub fn clean_type(st: String) -> TypName {
@@ -218,3 +251,4 @@ pub fn clean_type(st: String) -> TypName {
         }
     )
 }
+
