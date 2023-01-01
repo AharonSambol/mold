@@ -1,9 +1,16 @@
 use std::collections::HashMap;
 use crate::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
+use lazy_static::lazy_static;
+use regex::Regex;
 use crate::built_in_funcs::BuiltIn;
-use crate::{IGNORE_STRUCTS, unwrap_enum};
+use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
+use crate::to_rust::get_struct_and_func_name;
 use crate::types::{unwrap_u};
+
+lazy_static!{
+    static ref NUM_TYP_RE: Regex = Regex::new(r"[uif]").unwrap();
+}
 
 pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     let children = unwrap_u(&ast[pos].children);
@@ -16,6 +23,9 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             }
         },
         AstNode::Function(name) => {
+            if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
+                return;
+            }
             write!(res, "def {name}").unwrap();
             write!(res, "(").unwrap();
             to_python(ast, children[1], indentation, res, built_ins); // param
@@ -94,7 +104,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             to_python(ast, children[1], indentation, res, built_ins);
             write!(res, "]").unwrap();
         },
-        AstNode::Number(num) => write!(res, "{num}").unwrap(),
+        AstNode::Number(num) => write!(res, "{}", NUM_TYP_RE.split(num).next().unwrap()).unwrap(),
         AstNode::String { val, .. } => write!(res, "\"\"{val}\"\"").unwrap(),
         AstNode::Char(chr) => write!(res, "'{chr}'").unwrap(),
         AstNode::Bool(b) => write!(res, "{}", if *b { "True" } else { "False" }).unwrap(),
@@ -116,6 +126,9 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             if let AstNode::Identifier(name) = &ast[children[0]].value {
                 if built_ins.contains_key(name.as_str()) {
                     built_ins[name.as_str()].to_str_python(ast, res, children, built_ins);
+                    return;
+                }
+                if built_in_funcs(&ast, name, indentation, res, built_ins, &children) {
                     return;
                 }
             }
@@ -158,6 +171,9 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             }
         },
         AstNode::Property => {
+            if built_in_methods(ast, indentation, res, built_ins, children) {
+                return;
+            }
             to_python(ast, children[0], indentation, res, built_ins);
             write!(res, ".").unwrap();
             to_python(ast, children[1], indentation, res, built_ins);
@@ -211,4 +227,40 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         AstNode::GenericsDeclaration => {},
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
+}
+
+
+fn built_in_methods(
+    ast: &Vec<Ast>, indentation: usize, res: &mut String,
+    built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
+    children: &Vec<usize>
+) -> bool {
+    if let AstNode::Identifier(func_name) = &ast[unwrap_u(&ast[children[1]].children)[0]].value {
+        let arg_pos = unwrap_u(&ast[children[1]].children)[1];
+        match func_name.as_str() {
+            "iter" => {
+                //1 ignores it
+                to_python(ast, children[0], indentation, res, built_ins);
+            }
+
+            _ => { return false }
+        }
+        true
+    } else { false }
+}
+
+fn built_in_funcs(
+    ast: &Vec<Ast>, name: &String, indentation: usize, res: &mut String,
+    built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
+    children: &Vec<usize>
+) -> bool {
+    // let arg_pos = unwrap_u(&ast[children[1]].children)[1];
+    match name.as_str() {
+        "reversed" => {
+            to_python(ast, children[1], indentation, res, built_ins);
+            write!(res, ".rev()").unwrap();
+        }
+        _ => { return false }
+    }
+    true
 }

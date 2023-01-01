@@ -3,7 +3,8 @@ use crate::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
 use crate::built_in_funcs::BuiltIn;
-use crate::{IGNORE_STRUCTS, unwrap_enum};
+use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
+use crate::ast_add_types::print_type;
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType};
 
@@ -38,13 +39,12 @@ pub fn to_rust(
             write!(res, "\n{}}}", "\t".repeat(indentation - 1)).unwrap();
         },
         AstNode::Function(name) | AstNode::StaticFunction(name) => {
+            if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
+                return;
+            }
             let generics_ast = &ast[children[0]];
             let param = &ast[children[1]];
             let return_typ = &ast[children[2]];
-            // for par in unwrap_u(&param.children) {
-                // let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
-                // make_enums(typ,  enums);
-            // }
             let generic = format_generics(generics_ast);
             let param = join(
                 &unwrap_u(&param.children).iter()
@@ -99,7 +99,7 @@ pub fn to_rust(
             write!(res, "let mut ").unwrap();
             to_rust(ast, children[0], indentation, res, built_ins, enums);
             if let Some(c) = &ast[children[0]].typ {
-                // make_enums(c, built_ins, enums);
+                // print_type(&ast[children[0]].typ);
                 write!(res, ": {c}").unwrap();
             }
             write!(res, " = ").unwrap();
@@ -180,8 +180,12 @@ pub fn to_rust(
         },
         AstNode::FunctionCall(_) => {
             if let AstNode::Identifier(name) = &ast[children[0]].value {
+                // TODO !!!!!!!!!!!1
                 if built_ins.contains_key(name.as_str()) {
                     built_ins[name.as_str()].to_str_rust(ast, res, children, built_ins, enums);
+                    return;
+                }
+                if built_in_funcs(&ast, name, indentation, res, built_ins, enums, &children) {
                     return;
                 }
             }
@@ -217,7 +221,7 @@ pub fn to_rust(
         },
         AstNode::Char(chr) => write!(res, "'{chr}'").unwrap(),
         AstNode::Property => {
-            if built_in_func(&ast, indentation, res, built_ins, enums, &children) {
+            if built_in_methods(&ast, indentation, res, built_ins, enums, &children) {
                 return;
             }
             if let AstNode::FunctionCall(true) = ast[children[1]].value {
@@ -236,9 +240,10 @@ pub fn to_rust(
             to_rust(ast, children[1], indentation + 1, res, built_ins, enums);
         },
         AstNode::ForVars => {
+            write!(res, "mut ").unwrap();
             to_rust(ast, children[0], indentation, res, built_ins, enums);
             for child in children.iter().skip(1) {
-                write!(res, ", ").unwrap();
+                write!(res, ", mut ").unwrap();
                 to_rust(ast, *child, indentation, res, built_ins, enums);
             }
         },
@@ -252,11 +257,6 @@ pub fn to_rust(
             }
             let generics_ast = &ast[children[0]];
             let param = &ast[children[1]];
-            // let funcs = if let AstNode::Functions(v) = &ast[children[1]].value { v } else { panic!() };
-            // for par in unwrap_u(&param.children) {
-                // let typ = if let Some(t) = &ast[*par].typ { t } else { panic!() };
-                // make_enums(typ, built_ins, enums);
-            // }
             let generic = format_generics(generics_ast);
             let param = join(
                 &unwrap_u(&param.children).iter()
@@ -297,7 +297,7 @@ pub fn to_rust(
     }
 }
 
-fn built_in_func(
+fn built_in_methods(
     ast: &Vec<Ast>, indentation: usize, res: &mut String,
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>, enums: &mut HashMap<String, String>,
     children: &Vec<usize>
@@ -370,12 +370,33 @@ fn built_in_func(
                 to_rust(ast, children[0], indentation, res, built_ins, enums);
                 write!(res, "}}").unwrap();
             }
+            ("Vec", "append") => {
+                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                write!(res, ".push(").unwrap();
+                to_rust(ast, arg_pos, indentation, res, built_ins, enums);
+                write!(res, ")").unwrap();
+            }
 
             _ => { return false }
         }
         true
     } else { false }
+}
 
+fn built_in_funcs(
+    ast: &Vec<Ast>, name: &String, indentation: usize, res: &mut String,
+    built_ins: &HashMap<&str, Box<dyn BuiltIn>>, enums: &mut HashMap<String, String>,
+    children: &Vec<usize>
+) -> bool {
+    // let arg_pos = unwrap_u(&ast[children[1]].children)[1];
+    match name.as_str() {
+        "reversed" => {
+            to_rust(ast, children[1], indentation, res, built_ins, enums);
+            write!(res, ".rev()").unwrap();
+        }
+        _ => { return false }
+    }
+    true
 }
 
 fn is_string_addition(ast: &Vec<Ast>, pos: usize, op: &OperatorType) -> bool{
@@ -389,7 +410,7 @@ fn is_string_addition(ast: &Vec<Ast>, pos: usize, op: &OperatorType) -> bool{
     false
 }
 
-fn get_struct_and_func_name<'a>(ast: &'a Vec<Ast>, children: &Vec<usize>) -> Option<(&'a TypName, &'a String)> {
+pub fn get_struct_and_func_name<'a>(ast: &'a Vec<Ast>, children: &Vec<usize>) -> Option<(&'a TypName, &'a String)> {
     if let Some(Type{ kind: TypeKind::Struct(struct_name), .. }) = &ast[children[0]].typ {
         if let AstNode::Identifier(func_name) = &ast[unwrap_u(&ast[children[1]].children)[0]].value {
             return Some((struct_name, func_name))

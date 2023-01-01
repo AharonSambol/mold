@@ -4,6 +4,7 @@ use crate::to_rust::to_rust;
 use crate::types::{unwrap_u, Type, TypeKind, INT_TYPE, ITER_TYPE, GenericType, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE, MUT_STR_TYPE, ITER_NAME};
 use std::collections::HashMap;
 use std::fmt::Write;
+use crate::{some_vec, typ_with_child};
 
 macro_rules! get_types {
     () => {
@@ -27,30 +28,28 @@ macro_rules! to_py {
 pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
     let mut res: HashMap<&'static str, Box<dyn BuiltIn>> = HashMap::new();
 
-    let generic_iter = Type {
-        kind: TypeKind::Struct(ITER_NAME),
-        children: Some(vec![
-            Type {
-                kind: TypeKind::Generic(GenericType::Declaration(String::from("T"))),
-                children: None,
-            },
-        ]),
+    let generic_iter = typ_with_child! {
+        TypeKind::Struct(ITER_NAME),
+        Type {
+            kind: TypeKind::Generic(GenericType::Declaration(String::from("T"))),
+            children: None,
+        }
     };
 
     /*1 print */{
         res.insert(
             "print",
             Box::new(Print {
-                input_types: Some(vec![Type {
-                    kind: TypeKind::Args,
-                    children: Some(vec![Type {
+                input_types: some_vec![typ_with_child! {
+                    TypeKind::Args,
+                    Type {
                         kind: TypeKind::Implements,
-                        children: Some(vec![Type {
+                        children: some_vec![Type {
                             kind: TypeKind::Trait(String::from("Display")),
                             children: None,
-                        }]),
-                    }]),
-                }]),
+                        }]
+                    }
+                }],
                 output_types: None,
                 for_strct: None,
             }),
@@ -95,14 +94,14 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
         );
     }
     /*1 rev */{
-        res.insert(
-            "rev",
-            Box::new(Rev {
-                input_types: Some(vec![generic_iter.clone()]),
-                output_types: Some(generic_iter.clone()),
-                for_strct: None,
-            }),
-        );
+        // res.insert(
+        //     "rev",
+        //     Box::new(Rev {
+        //         input_types: Some(vec![generic_iter.clone()]),
+        //         output_types: Some(generic_iter.clone()),
+        //         for_strct: None,
+        //     }),
+        // );
     }
     /*1 enumerate */{
         res.insert(
@@ -162,12 +161,12 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
         res.insert(
             "float",
             Box::new(Float {
-                input_types: Some(vec![
+                input_types: some_vec![
                     Type{
                         kind: TypeKind::OneOf,
-                        children: Some(vec![MUT_STR_TYPE, STR_TYPE, CHAR_TYPE, BOOL_TYPE, INT_TYPE])
+                        children: some_vec![MUT_STR_TYPE, STR_TYPE, CHAR_TYPE, BOOL_TYPE, INT_TYPE]
                     }
-                ]),
+                ],
                 output_types: Some(FLOAT_TYPE),
                 for_strct: None,
             }),

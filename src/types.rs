@@ -94,47 +94,21 @@ pub struct Type {
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            TypeKind::Unknown => if unsafe { IS_COMPILED } { panic!("Unknown Type") } else { write!(f, "")},
-            // TypeKind::Typ(st) => {
-            //     if unsafe { IS_COMPILED } {
-            //         let st = match st {
-            //             TypName::Str(s) => s.as_str(),
-            //             TypName::Static(s) => s
-            //         };
-            //         write!(f, "{}", match st {
-            //             "str" => "String",
-            //             "int" => "i32",
-            //             _ => st
-            //         })
-            //     } else {
-            //         write!(f, "{st}")
-            //     }
-            // },
+            TypeKind::Unknown => write!(f, ""),
             TypeKind::OneOf => {
                 let children = unwrap(&self.children);
                 write!(f, "{}", join(&children, "-or-"))
             },
-            // TypeKind::TypWithSubTypes => {
-            //     let children = unwrap(&self.children);
-            //     let parent_type = children.first().unwrap();
-            //     let inner_types = join(
-            //         &children.iter()
-            //             .skip(1)
-            //             .collect()
-            //         , ","
-            //     );
-            //     if unsafe { IS_COMPILED } {
-            //         write!(f, "{parent_type}<{inner_types}>")
-            //     } else {
-            //         write!(f, "{parent_type}[{inner_types}]")
-            //     }
-            // },
             TypeKind::Tuple => {
                 write!(f, "({})", join(unwrap(&self.children), ","))
             },
             TypeKind::Generic(c) => {
                 if let GenericType::Of(name) = c {
-                    write!(f, "{name}")
+                    if let Some(v) = &self.children {
+                        write!(f, "{}", v[0])
+                    } else {
+                        write!(f, "{name}")
+                    }
                 } else {
                     write!(f, "GENERIC({c:?})")
                 }
@@ -159,7 +133,7 @@ impl Display for Type {
                     if children.len() != 0 {
                         if let TypeKind::GenericsMap = children[0].kind {
                             if let Some(generics) = &children[0].children {
-                                gens = format!("::<{}>", join(&(generics.iter().map(|x| unwrap(&x.children)[0].clone()).collect()), ","));
+                                gens = format!("::<{}>", join(generics, ","));
                             }
                         } else {
                             // println!("{:?}", children[0]);
@@ -231,6 +205,9 @@ pub fn unwrap_u(children: &Option<Vec<usize>>) -> &Vec<usize> {
 }
 
 pub fn generify(types: &Vec<Type>) -> Type {
+    if types.len() == 0 {
+        return UNKNOWN_TYPE;
+    }
     // TODO !!
     // Type {
     //     kind: TypeKind::Generic(GenericType::Of(generic_name)),
