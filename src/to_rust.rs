@@ -3,8 +3,7 @@ use crate::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
 use crate::built_in_funcs::BuiltIn;
-use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
-use crate::ast_add_types::print_type;
+use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, print_tree, unwrap_enum};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType};
 
@@ -42,28 +41,8 @@ pub fn to_rust(
             if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
                 return;
             }
-            let generics_ast = &ast[children[0]];
-            let param = &ast[children[1]];
-            let return_typ = &ast[children[2]];
-            let generic = format_generics(generics_ast);
-            let param = join(
-                &unwrap_u(&param.children).iter()
-                    .map(|&x|
-                        format!("{}{}: {}",
-                            if ast[x].is_mut { "mut " } else { "" },
-                            unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
-                            unwrap_enum!(&ast[x].typ, Some(t), t),
-                        )
-                    ).collect(),
-                ", "
-            );
-            if let Some(t) = &return_typ.typ {
-                write!(res, "fn {name}{generic}({param}) -> {t}").unwrap();
-            } else {
-                write!(res, "fn {name}{generic}({param})").unwrap();
-            }
 
-            to_rust(ast, children[3], indentation + 1, res, built_ins, enums);
+            print_function_rust(name, &ast, indentation, res, built_ins, enums, &children);
         },
         AstNode::IfStatement => {
             write!(res, "if ").unwrap();
@@ -96,7 +75,11 @@ pub fn to_rust(
             to_rust(ast, children[1], indentation, res, built_ins, enums);
         },
         AstNode::FirstAssignment => {
-            write!(res, "let mut ").unwrap();
+            if ast[pos].is_mut {
+                write!(res, "let mut ").unwrap();
+            } else {
+                write!(res, "let ").unwrap();
+            }
             to_rust(ast, children[0], indentation, res, built_ins, enums);
             if let Some(c) = &ast[children[0]].typ {
                 // print_type(&ast[children[0]].typ);
@@ -224,6 +207,8 @@ pub fn to_rust(
             if built_in_methods(&ast, indentation, res, built_ins, enums, &children) {
                 return;
             }
+
+            print_tree((ast.clone(), pos));
             if let AstNode::FunctionCall(true) = ast[children[1]].value {
                 to_rust(ast, children[0], indentation, res, built_ins, enums);
                 write!(res, "::").unwrap();
@@ -272,8 +257,31 @@ pub fn to_rust(
                    "#[derive(Debug, Clone)]\nstruct {name}{generic} {{ {param} }}\n\
                     impl{generic} {name}{generic} {{"
             ).unwrap();
-            to_rust(ast, children[2], indentation + 1, res, built_ins, enums);
-            write!(res, "\n{}}}", "\t".repeat(indentation)).unwrap();
+            let mut trait_functions = vec![];
+            for func in unwrap_u(&ast[children[2]].children) {
+                let func_name = unwrap_enum!(&ast[*func].value, AstNode::Function(n) | AstNode::StaticFunction(n), n);
+                if func_name.contains("::"){
+                    trait_functions.push((*func, func_name));
+                    continue
+                }
+                write!(res, "\n{}", "\t".repeat(indentation + 1)).unwrap();
+                to_rust(ast, *func, indentation + 1, res, built_ins, enums);
+
+            }
+            let indent = "\t".repeat(indentation);
+            write!(res, "\n{indent}}}").unwrap();
+            for (func_pos, func_name) in trait_functions {
+                let mut func_name = func_name.split("::");
+                let trait_name = func_name.next().unwrap();
+                let func_name = func_name.next().unwrap();
+                write!(res, "\n{indent}impl {trait_name} for {name} {{\n{indent}    ").unwrap();
+
+                print_function_rust(
+                    func_name, ast, indentation+1, res, built_ins, enums,
+                    unwrap_u(&ast[func_pos].children)
+                );
+                write!(res, "\n{indent}}}").unwrap();
+            }
         },
         AstNode::StructInit => {
             write!(res, "{}{{ ", ast[pos].typ.clone().unwrap()).unwrap();
@@ -293,8 +301,66 @@ pub fn to_rust(
         AstNode::Continue => write!(res, "continue").unwrap(),
         AstNode::Break => write!(res, "break").unwrap(),
         AstNode::ReturnType => { unreachable!() },
+        AstNode::Trait(name) => {
+            let generics_ast = &ast[children[0]];
+            let generic = format_generics(generics_ast);
+            let functions = unwrap_u(&ast[children[1]].children);
+
+            write!(res, "trait {name}{generic} {{").unwrap();
+            for func in functions {
+                let func = &ast[*func];
+                let func_name = unwrap_enum!(&func.value, AstNode::Function(name), name);
+                let func_children = unwrap_u(&func.children);
+                let func_generics = format_generics(&ast[func_children[0]]);
+                let args = unwrap_u(&ast[func_children[1]].children).iter().map(|x| {
+                    let arg = &ast[*x];
+                    let name = unwrap_enum!(&arg.value, AstNode::Identifier(name), name);
+                    let typ = unwrap_enum!(&arg.typ, Some(t), t);
+                    format!("{name}: {typ}")
+                }).collect();
+                let args = join(&args, ", ");
+                let return_typ = &ast[func_children[2]].typ;
+                if let Some(rt) = return_typ {
+                    write!(res, "\n\tfn {func_name}{func_generics}({args}) -> {rt};").unwrap();
+                } else {
+                    write!(res, "\n\tfn {func_name}{func_generics}({args});").unwrap();
+                }
+            }
+            write!(res, "\n}}").unwrap();
+        }
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
+}
+
+fn print_function_rust(
+    name: &str,
+    ast: &Vec<Ast>, indentation: usize, res: &mut String,
+    built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
+    enums: &mut HashMap<String, String>,
+    children: &Vec<usize>
+) {
+    let generics_ast = &ast[children[0]];
+    let param = &ast[children[1]];
+    let return_typ = &ast[children[2]];
+    let generic = format_generics(generics_ast);
+    let param = join(
+        &unwrap_u(&param.children).iter()
+            .map(|&x|
+                format!("{}{}: {}",
+                        if ast[x].is_mut { "mut " } else { "" },
+                        unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
+                        unwrap_enum!(&ast[x].typ, Some(t), t),
+                )
+            ).collect(),
+        ", "
+    );
+    if let Some(t) = &return_typ.typ {
+        write!(res, "fn {name}{generic}({param}) -> {t}").unwrap();
+    } else {
+        write!(res, "fn {name}{generic}({param})").unwrap();
+    }
+
+    to_rust(ast, children[3], indentation + 1, res, built_ins, enums);
 }
 
 fn built_in_methods(

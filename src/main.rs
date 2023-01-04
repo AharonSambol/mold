@@ -2,22 +2,21 @@ mod ast_add_types;
 mod ast_structure;
 mod mold_ast;
 mod mold_tokens;
-mod play_ground;
+#[allow(warnings, unused)] mod play_ground;
 mod to_python;
 mod to_rust;
 mod types;
 mod built_in_funcs;
 mod macros;
 
-use crate::ast_structure::{join, Ast, AstNode};
+use crate::ast_structure::{join, Ast};
 use crate::mold_ast::PPT;
 use std::collections::{HashMap, HashSet};
-use std::{env, io, mem};
+use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::Write as W;
 use std::fmt::Write;
-use std::ops::Range;
 use std::path::Path;
 use std::process::Command;
 use once_cell::sync::Lazy;
@@ -44,30 +43,12 @@ fn main() {
     }
     let mut data = fs::read_to_string("input_program.py").expect("Couldn't read file");
     put_at_start(&mut data);
-    let ppt = {
-        PPT::new(
-            Box::new(|(vc, pos)| {
-                if let Some(t) = &vc[*pos].typ {
-                    format!("{}\n:{t}", vc[*pos].value.to_string())
-                } else {
-                    vc[*pos].value.to_string()
-                }
-            }),
-            Box::new(|(vc, pos)| {
-                let children = vc.iter().nth(*pos).unwrap().clone().children;
-                if let None = children {
-                    return Vec::new();
-                }
-                children.unwrap().iter().map(|x| (vc.clone(), *x)).collect()
-            }),
-        )
-    };
     let tokens = mold_tokens::tokenize(data);
     println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidToken)>>());
 
     let built_ins = make_built_ins();
 
-    let ast = mold_ast::construct_ast(&tokens, 0, &ppt, &built_ins).1;
+    let ast = mold_ast::construct_ast(&tokens, 0, &built_ins).1;
 
     if unsafe { IS_COMPILED } {
         compile(&ast, &built_ins)
@@ -119,7 +100,8 @@ fn compile(ast: &Vec<Ast>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     }
     let mut file = File::create("out/src/main.rs").unwrap();
     file.write_all(
-        format!("
+        format!("#![allow(warnings, unused)]
+
 use std::slice::{{Iter, IterMut}};
 use std::iter::Rev;
 
@@ -174,17 +156,18 @@ fn put_at_start(data: &mut String) {
             name: "String",
             generics: None,
             methods: vec![
-                "split(s: str) -> List[str]", //TODO (optional) s: str | char    if rust: -> Iter[str]
-                "strip() -> str",        //TODO (optional) c: char
-                "lstrip() -> str",        //TODO (optional) c: char
-                "rstrip() -> str",        //TODO (optional) c: char
-                "len() -> int",         //TODO -> usize technically
-                "contains(s: str) -> bool", //TODO s: str | char
-                "replace(orig: str, new: str) -> str", //TODO orig/new: str | char
+                "clone() -> str", // todo do automatically?
+                "split(s: str) -> List[str]", //todo (optional) s: str | char    if rust: -> Iter[str]
+                "strip() -> str",        //todo (optional) c: char
+                "lstrip() -> str",        //todo (optional) c: char
+                "rstrip() -> str",        //todo (optional) c: char
+                "len() -> int",         //todo -> usize technically
+                "contains(s: str) -> bool", //todo s: str | char
+                "replace(orig: str, new: str) -> str", //todo orig/new: str | char
                 "startswith(s: str) -> bool",
                 "endswith(s: str) -> bool",
-                "find(s: str) -> int",  //TODO s: str | char
-                "count(s: str) -> int",  //TODO s: str | char
+                "find(s: str) -> int",  //todo s: str | char
+                "count(s: str) -> int",  //todo s: str | char
                 "removeprefix(s: str) -> str",
                 "removesuffix(s: str) -> str",
                 "lower(s: str) -> str",
@@ -293,4 +276,26 @@ fn put_at_start(data: &mut String) {
             },
         }
     }
+}
+
+pub fn print_tree(tree: (Vec<Ast>, usize)){
+    let ppt = {
+        PPT::new(
+            Box::new(|(vc, pos)| {
+                if let Some(t) = &vc[*pos].typ {
+                    format!("{}\n:{t}", vc[*pos].value.to_string())
+                } else {
+                    vc[*pos].value.to_string()
+                }
+            }),
+            Box::new(|(vc, pos)| {
+                let children = vc.iter().nth(*pos).unwrap().clone().children;
+                if let None = children {
+                    return Vec::new();
+                }
+                children.unwrap().iter().map(|x| (vc.clone(), *x)).collect()
+            }),
+        )
+    };
+    println!("{}\n", ppt.to_str(&tree));
 }

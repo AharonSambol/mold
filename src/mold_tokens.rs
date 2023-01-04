@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::fmt::{Display, Formatter};
 use std::fmt::Write;
 use crate::IS_COMPILED;
@@ -53,12 +52,12 @@ pub enum SolidToken {
     Operator(OperatorType), UnaryOperator(OperatorType),
     Colon, Comma, Period,
     Tab, NewLine,
-    Def, Class, Enum, Struct,
+    Def, Class, Enum, Struct, Trait,
     If, Else, Elif,
     Match, Case, While, For,
     Break, Continue, Return, Pass,
     In, Is,
-    Static
+    Static, IMut
 }
 
 #[derive(Debug, Clone)]
@@ -303,6 +302,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                 match st {
                     "def" => SolidToken::Def, "class" => SolidToken::Class,
                     "enum" => SolidToken::Enum, "struct" => SolidToken::Struct,
+                    "trait" => SolidToken::Trait,
                     "if" => SolidToken::If, "else" => SolidToken::Else,
                     "elif" => SolidToken::Elif,
                     "match" => SolidToken::Match, "case" => SolidToken::Case,
@@ -316,6 +316,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                     "True" | "true" => SolidToken::Bool(true),
                     "False" | "false" => SolidToken::Bool(false),
                     "static" => SolidToken::Static,
+                    "imut" => SolidToken::IMut,
                     _ => SolidToken::Word(clean(st))
                 }
             },

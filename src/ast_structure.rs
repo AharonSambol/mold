@@ -12,12 +12,21 @@ pub struct Ast {
 }
 
 impl Ast {
-    pub fn new(typ: AstNode) -> Ast {
+    pub fn new(value: AstNode) -> Ast {
         Ast {
+            value,
+            typ: None,
             children: None,
             parent: None,
-            typ: None,
-            value: typ,
+            is_mut: true
+        }
+    }
+    pub fn new_w_typ(value: AstNode, typ: Option<Type>) -> Ast {
+        Ast {
+            value,
+            typ,
+            children: None,
+            parent: None,
             is_mut: true
         }
     }
@@ -25,41 +34,39 @@ impl Ast {
 
 #[derive(Clone, Debug)]
 pub enum AstNode {
-    Body,
-    Module, // children = all the functions/classes/enums..
-    Function(String), // children[0] = args, children[1] = returnType, children[2] = body
-    StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
-    Struct(String), // children[0] = args, children[1] = functions, children[2] = body
-    Identifier(String), // children[0] = type
-    FirstAssignment,
+    Args,       // children = args
+    ArgsDef,
     Assignment,         // children[0] = var, children[1] = val
-    FunctionCall(bool), // bool = is_static, children[0] = func, children[1] = Args,
-    StructInit,         // children[0] = struct, children[1] = Args,
-    Property,           // children[0] = obj, children[1] = prop
-    Number(String),
-    Char(String),
-    String {
-        val: String,
-        mutable: bool,
-    },
+    Body,
     Bool(bool),             // no children
-    Operator(OperatorType), // children[0] = elem1, children[1] = elem2
-    UnaryOp(OperatorType),  // children[0] = elem
-    Parentheses,            // children[0] = inside
+    Char(String),
     ColonParentheses,       // children[0] = inside
-    IfStatement,
-    WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
+    FirstAssignment,
+    ForIter,        // children[0] = iter
     ForStatement,   // children[0] = colon_parentheses(ForVars, ForIter)
     ForVars,        // children = vars
-    ForIter,        // children[0] = iter
-    Pass, Continue, Break,
-    ListLiteral, // children = elements
-    Index,       // child[0] = item, child[1] = index
-    ArgsDef,
-    Args,       // children = args
-    ReturnType,
-    Return,     // children[0] = return val
+    Function(String), // children[0] = args, children[1] = returnType, children[2] = body
+    FunctionCall(bool), // bool = is_static, children[0] = func, children[1] = Args,
     GenericsDeclaration,
+    Identifier(String), // children[0] = type
+    IfStatement,
+    Index,       // child[0] = item, child[1] = index
+    ListLiteral, // children = elements
+    Module, // children = all the functions/classes/enums..
+    Number(String),
+    Operator(OperatorType), // children[0] = elem1, children[1] = elem2
+    Parentheses,            // children[0] = inside
+    Pass, Continue, Break,
+    Property,           // children[0] = obj, children[1] = prop
+    Return,     // children[0] = return val
+    ReturnType,
+    StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
+    String { val: String, mutable: bool, },
+    Struct(String), // children[0] = args, children[1] = functions, children[2] = body
+    StructInit,         // children[0] = struct, children[1] = Args,
+    Trait(String),  // children[0] = Module (functions)
+    UnaryOp(OperatorType),  // children[0] = elem
+    WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
 }
 
 impl AstNode {
@@ -88,6 +95,7 @@ impl AstNode {
             | AstNode::Function { .. }
             | AstNode::StaticFunction { .. }
             | AstNode::Struct(_)
+            | AstNode::Trait(_)
             | AstNode::ColonParentheses
             | AstNode::IfStatement
             | AstNode::WhileStatement
@@ -143,6 +151,7 @@ impl Display for AstNode {
             AstNode::ReturnType => write!(f, "RETURNS"),
             AstNode::GenericsDeclaration => write!(f, "GENERIC_DECLARATION"),
             AstNode::Struct(name) => write!(f, "STRUCT({name})"),
+            AstNode::Trait(name) => write!(f, "TRAIT({name})"),
             AstNode::Bool(b) => write!(f, "{b}"),
         }
     }
@@ -159,6 +168,7 @@ pub fn join<T: Display>(lst: &Vec<T>, sep: &str) -> String {
 pub struct Param {
     pub typ: Type,
     pub name: String,
+    pub is_mut: bool,
 }
 
 impl Display for Param {

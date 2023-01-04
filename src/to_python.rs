@@ -5,7 +5,6 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use crate::built_in_funcs::BuiltIn;
 use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
-use crate::to_rust::get_struct_and_func_name;
 use crate::types::{unwrap_u};
 
 lazy_static!{
@@ -224,7 +223,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         }
         AstNode::Continue => write!(res, "continue").unwrap(),
         AstNode::Break => write!(res, "break").unwrap(),
-        AstNode::GenericsDeclaration => {},
+        AstNode::GenericsDeclaration | AstNode::Trait(_) => {},
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }
@@ -236,7 +235,7 @@ fn built_in_methods(
     children: &Vec<usize>
 ) -> bool {
     if let AstNode::Identifier(func_name) = &ast[unwrap_u(&ast[children[1]].children)[0]].value {
-        let arg_pos = unwrap_u(&ast[children[1]].children)[1];
+        // let arg_pos = unwrap_u(&ast[children[1]].children)[1];
         match func_name.as_str() {
             "iter" => {
                 //1 ignores it

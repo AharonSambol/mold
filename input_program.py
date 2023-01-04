@@ -1,11 +1,30 @@
+trait Printable:
+    def to_str() -> str
+
+struct St(Printable):
+    inner: str
+    def Printable::to_str() -> str:
+        return inner.clone()
+
+struct Wow(Printable):
+    def Printable::to_str() -> str:
+        return m"wow"
+
+def f(a: Printable):
+    print(a.to_str())
+
 def main():
+    f(St{ m"some str" })
+    f(Wow{ })
+
+
 #     a := A{ 1, False, "w", 3.4 }
-#     s := generic_test(1)
-#     s := generic_test(m"12")
-    s: List[List[int]] = [[1, 2, 3, 9], [1, 5]]
-    b:= s[0][0]
-    for i in s:
-        x:=i
+#     s := generic_test(1, False)
+#     s := generic_test(m"12", False)
+#     s: List[List[int]] = [[1, 2, 3, 9], [1, 5]]
+#     b:= s[0][0]
+#     for i in s:
+#         x:=i
 #         print(i)
 #     sm := 0
 #     s.append([33, 3])
@@ -24,7 +43,7 @@ def main():
 #     dprint(s)
 
 
-# def generic_test<T>(a: T) -> T:
+# def generic_test<T, I>(a: T, b: I) -> T:
 #     return a
 #     for i in input.split("  "):
 #         dprint(i)

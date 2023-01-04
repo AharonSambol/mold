@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 use crate::ast_structure::join;
-use crate::IS_COMPILED;
 
 pub const UNKNOWN_TYPE: Type = Type {
     kind: TypeKind::Unknown,
@@ -32,10 +31,10 @@ pub const CHAR_TYPE: Type = Type {
     children: None
 };
 pub const ITER_NAME: TypName = TypName::Static("Iter");
-pub const ITER_TYPE: Type = Type {
-    kind: TypeKind::Struct(ITER_NAME),
-    children: None
-};
+// pub const ITER_TYPE: Type = Type {
+//     kind: TypeKind::Struct(ITER_NAME),
+//     children: None
+// };
 
 #[derive(Debug, Clone)]
 pub enum GenericType {
@@ -124,8 +123,24 @@ impl Display for Type {
             TypeKind::Args => {
                 write!(f, "ARGS({})", unwrap(&self.children)[0])
             },
-            TypeKind::Trait(trt) => {
-                write!(f, "TRAIT({trt})")
+            TypeKind::Trait(name) => {
+                // todo repeat of same code in TypeKind::Struct?
+                let mut gens = String::new();
+                if let Some(children) = &self.children {
+                    if children.len() != 0 {
+                        if let TypeKind::GenericsMap = children[0].kind {
+                            if let Some(generics) = &children[0].children {
+                                gens = format!("::<{}>", join(generics, ","));
+                            }
+                        } else {
+                            // println!("{:?}", children[0]);
+                            if let Some(generics) = &children[0].children {
+                                gens = format!("<{}>", join(generics, ","));
+                            }
+                        }
+                    }
+                }
+                write!(f, "Box<dyn {name}{gens}>")
             },
             TypeKind::Struct(name) => {
                 let mut gens = String::new();

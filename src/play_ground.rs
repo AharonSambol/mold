@@ -18,3 +18,27 @@ struct Rev<T> {
 //         self.inner.
 //     }
 // }
+fn dynamic(p: Box<dyn Printable>) {
+    p.print(1);
+}
+
+fn static_<T>(p: T) where T: Printable{
+    p.print(1);
+}
+trait Printable {
+    // type Inner;
+
+    fn print(&self, a: i32) -> bool;
+}
+
+struct St {
+    inner: String
+}
+impl Printable for St {
+    // type Inner = String;
+
+    fn print(&self, a: i32) -> bool {
+        println!("{}", self.inner);
+        false
+    }
+}
