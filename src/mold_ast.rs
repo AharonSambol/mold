@@ -4,8 +4,8 @@ use pretty_print_tree::PrettyPrintTree;
 use crate::ast_structure::{Ast, AstNode, Param};
 use crate::{IS_COMPILED, typ_with_child, unwrap_enum, some_vec, print_tree};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{GenericType, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
-use crate::ast_add_types::{add_types, print_type};
+use crate::types::{clean_type, GenericType, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
+use crate::ast_add_types::{add_types, print_type, print_type_b};
 use crate::built_in_funcs::BuiltIn;
 
 pub type TraitTypes = HashMap<String, TraitType>;
@@ -39,6 +39,7 @@ tokens: &Vec<SolidToken>, pos: usize,
 built_ins: &HashMap<&str, Box<dyn BuiltIn>>
 ) -> (usize, Vec<Ast>) {
     let (mut structs, mut funcs, mut traits) = get_struct_and_func_names(tokens);
+    println!("funcs: {:?}", funcs.keys());
     let mut res = make_ast_statement(
         tokens, pos, vec![Ast::new(AstNode::Module)], 0, 0,
         &mut vec![HashMap::new()], &mut funcs, &mut structs, &mut traits
@@ -62,8 +63,13 @@ fn get_struct_and_func_names(tokens: &Vec<SolidToken>) -> (StructTypes, FuncType
     for (i, tok) in tokens.iter().enumerate() {
         match tok {
             SolidToken::Def =>
-                if let SolidToken::Word(name) = &tokens[i + 1] {
-                    funcs.insert(name.clone(), UNKNOWN_FUNC_TYPE);
+                //1 if isnt part of a struct\trait
+                if i == 0 || !(matches!(tokens[i - 1], SolidToken::Tab) ||
+                    i > 1 && (matches!(tokens[i - 1], SolidToken::Static) && matches!(tokens[i - 2], SolidToken::Tab))
+                ) {
+                    if let SolidToken::Word(name) = &tokens[i + 1] {
+                        funcs.insert(name.clone(), UNKNOWN_FUNC_TYPE);
+                    }
                 },
             SolidToken::Struct | SolidToken::Trait =>
                 if let SolidToken::Word(name) = &tokens[i + 1] {
@@ -115,7 +121,6 @@ fn make_ast_statement(
                 vars.pop();
             },
             SolidToken::Trait => {
-                // TODO put actual traits
                 let temp = make_trait(tokens, pos + 1, ast, parent, indent, funcs, structs, traits);
                 pos = temp.0; ast = temp.1;
             },
@@ -359,7 +364,9 @@ fn word_tok(
             },
             SolidToken::Brace(IsOpen::True)
             | SolidToken::Parenthesis(IsOpen::True) => {
-                let type_call = if let SolidToken::Brace(_) = tokens[pos] { AstNode::StructInit } else { AstNode::FunctionCall(false) };
+                let type_call = if let SolidToken::Brace(_) = tokens[pos] {
+                    AstNode::StructInit
+                } else { AstNode::FunctionCall(false) };
                 let index = insert_as_parent_of_prev(&mut ast, parent, type_call);
                 add_to_tree(index, &mut ast, Ast::new(AstNode::Args));
                 let last = ast.len() - 1;
@@ -402,7 +409,7 @@ fn add_property(
 }
 
 fn get_last(arr: &mut Option<Vec<usize>>) -> usize{
-    let arr = unwrap_enum!(arr, Some(x), x);
+    let arr = unwrap_enum!(arr);
     let last = arr.pop().unwrap();
     arr.push(last);
     last
@@ -529,6 +536,11 @@ fn make_func(
         pos += 2; //1 skip the ::
         write!(name, "::{}", unwrap_enum!(&tokens[pos], SolidToken::Word(w), w)).unwrap();
         pos += 1; //1 skip the next word
+        let parent_struct = ast[parent].parent.unwrap();
+        let traits = unwrap_u(&ast[parent_struct].children)[3];
+        add_to_tree(traits, &mut ast, Ast::new(
+            AstNode::Identifier(String::from(name.split("::").next().unwrap()))
+        ));
     }
     add_to_tree(parent, &mut ast, Ast::new(
         if is_static {
@@ -544,7 +556,7 @@ fn make_func(
     if let Some(struct_parent) = ast[parent].parent {
         if let AstNode::Struct(_) = ast[struct_parent].value {
             let struct_generics = &ast[unwrap_u(&ast[struct_parent].children)[0]];
-            let stct_g_typ = unwrap_enum!(&struct_generics.typ, Some(t), t);
+            let stct_g_typ = unwrap_enum!(&struct_generics.typ);
             for child in unwrap(&stct_g_typ.children) {
                 unwrap_enum!(
                     child,
@@ -588,7 +600,6 @@ fn make_func(
     if let SolidToken::Operator(OperatorType::Returns) = tokens[pos] {
         pos += 1;
         let typ = get_arg_typ(tokens, &mut pos, funcs, structs, traits);
-
         ast[return_pos].typ = Some(find_generics_in_typ(&typ, &generics_hs));
     }
     if let SolidToken::Colon = tokens[pos] {} else {
@@ -632,40 +643,44 @@ fn make_struct(
 
     add_to_tree(index, &mut ast, Ast::new(AstNode::ArgsDef));
     add_to_tree(index, &mut ast, Ast::new(AstNode::Module));
-    let args_pos = ast.len() - 2;
+    add_to_tree(index, &mut ast, Ast::new(AstNode::Traits));
+    let args_pos = ast.len() - 3;
     let body_pos = args_pos + 1;
 
     unwrap_enum!(tokens[pos], SolidToken::Colon, "expected colon");
-    pos += 3 + indent;
-    while let SolidToken::Word(word) = &tokens[pos] {
+    pos += 2 + indent;
+    if let SolidToken::Tab = &tokens[pos] {
         pos += 1;
-        if let SolidToken::Colon = &tokens[pos] {
+        while let SolidToken::Word(word) = &tokens[pos] {
             pos += 1;
-            let typ = is_generic(&get_arg_typ(tokens, &mut pos, funcs, structs, traits), &generics_hs);
-            add_to_tree(args_pos, &mut ast, Ast::new(AstNode::Identifier(word.clone())));
-            ast.last_mut().unwrap().typ = Some(typ);
-        } else {
-            if unsafe { IS_COMPILED } {
-                panic!("argument `{word}` needs a type")
+            if let SolidToken::Colon = &tokens[pos] {
+                pos += 1;
+                let typ = is_generic(&get_arg_typ(tokens, &mut pos, funcs, structs, traits), &generics_hs);
+                add_to_tree(args_pos, &mut ast, Ast::new(AstNode::Identifier(word.clone())));
+                ast.last_mut().unwrap().typ = Some(typ);
+            } else {
+                if unsafe { IS_COMPILED } {
+                    panic!("argument `{word}` needs a type")
+                }
+                // todo check if works
+                add_to_tree(args_pos, &mut ast, Ast::new(AstNode::Identifier(word.clone())));
             }
-            // todo check if works
-            add_to_tree(args_pos, &mut ast, Ast::new(AstNode::Identifier(word.clone())));
-        }
-        if let SolidToken::NewLine = tokens[pos] {} else {
-            return (pos, ast)
-        }
-        pos += 1;
-        let mut exited = false;
-        for i in 0..=indent {
-            if let SolidToken::Tab = tokens[pos + i] { } else {
-                exited = true;
-                break;
+            if let SolidToken::NewLine = tokens[pos] {} else {
+                return (pos, ast)
             }
-        }
-        if exited {
-            return (pos - 1, ast)
-        } else {
-            pos += indent + 1;
+            pos += 1;
+            let mut exited = false;
+            for i in 0..=indent {
+                if let SolidToken::Tab = tokens[pos + i] {} else {
+                    exited = true;
+                    break;
+                }
+            }
+            if exited {
+                return (pos - 1, ast)
+            } else {
+                pos += indent + 1;
+            }
         }
     }
     let mut struct_funcs: FuncTypes = HashMap::new();
@@ -844,7 +859,11 @@ fn get_arg_typ(
     loop {
         match &tokens[*pos] {
             SolidToken::Bracket(IsOpen::True) => {
-                unwrap_enum!(res, Some(Type{ kind: TypeKind::Struct(struct_name), .. }));
+                println!("res: {res:?}");
+                unwrap_enum!(&mut res, Some(Type{
+                    kind: TypeKind::Struct(struct_name),
+                    children: Some(res_children)
+                }));
                 *pos += 1;
                 let add_child = |t: Type, i: usize, struct_name: &str| {
                     if !structs.contains_key(struct_name) {
@@ -852,7 +871,7 @@ fn get_arg_typ(
                     }
                     typ_with_child! {
                         TypeKind::Generic(GenericType::Of(
-                            unwrap_enum!(&structs[struct_name].generics, Some(v), v[i].clone())
+                            unwrap_enum!(&structs[struct_name].generics)[i].clone()
                         )),
                         t
                     }
@@ -873,13 +892,14 @@ fn get_arg_typ(
                     generic_num += 1;
                 }
                 *pos += 1;
-                res = Some(typ_with_child! {
-                    TypeKind::Struct(struct_name),
-                    Type {
-                        kind: TypeKind::GenericsMap,
-                        children: Some(children),
-                    }
-                });
+                res_children[0].children = Some(children);
+                // res = Some(typ_with_child! {
+                //     TypeKind::Struct(struct_name),
+                //     Type {
+                //         kind: TypeKind::GenericsMap,
+                //         children: Some(children),
+                //     }
+                // });
                 break
             },
             SolidToken::Comma
@@ -900,19 +920,30 @@ fn get_arg_typ(
                 if let Some(_) = res {
                     panic!("unexpected type. res: {:?}, wrd: {wrd}", res)
                 }
-                res = if structs.contains_key(wrd) {
-                    Some(Type {
-                        kind: TypeKind::Struct(TypName::Str(wrd.clone())),
-                        children: None,
+                let wrd = clean_type(wrd.clone()).to_string();
+                res = if wrd == "str" {
+                    Some(MUT_STR_TYPE)
+                } else if structs.contains_key(&wrd) {
+                    Some(typ_with_child! {
+                        TypeKind::Struct(TypName::Str(wrd)),
+                        Type{
+                            kind: TypeKind::GenericsMap,
+                            children: None
+                        }
                     })
-                } else if traits.contains_key(wrd) {
-                    Some(Type {
-                        kind: TypeKind::Trait(wrd.clone()),
-                        children: None
+                } else if traits.contains_key(&wrd) {
+                    Some(typ_with_child! {
+                        TypeKind::Trait(TypName::Str(wrd.clone())),
+                        Type{
+                            kind: TypeKind::GenericsMap,
+                            children: None
+                        }
                     })
                 } else {
+                    println!("didnt contain: {wrd}");
                     Some(Type::new(wrd.clone()))
                 };
+
             },
             _ => panic!("unexpected token {:?}, at {}", tokens[*pos], *pos)
         }

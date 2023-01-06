@@ -6,10 +6,10 @@ use lazy_static::lazy_static;
 use pretty_print_tree::{Color, PrettyPrintTree};
 use regex::Regex;
 use crate::built_in_funcs::BuiltIn;
-use crate::{some_vec, unwrap_enum, typ_with_child};
+use crate::{some_vec, unwrap_enum, typ_with_child, print_tree};
 
 lazy_static! {
-    static ref SPECIFIED_NUM_TYPE_RE: Regex = Regex::new(r"[iuf](8|16|32|64|128|size)$").unwrap();
+    static ref SPECIFIED_NUM_TYPE_RE: Regex = Regex::new(r"(?:[iu](?:8|16|32|64|128|size)|f32|f64)$").unwrap();
 }
 
 
@@ -41,7 +41,7 @@ pub fn add_types(
                 let into_iters_return = &ast[unwrap_u(&ast[func_pos].children)[2]].typ;
                 let into_iters_return = apply_generics_to_method_call(
                     into_iters_return,
-                    unwrap_enum!(&iter.typ, Some(x), x),
+                    unwrap_enum!(&iter.typ),
                 );
                 //1 now get the IntoIter object's `next` function's return type
                 let func_pos = find_function_in_struct(
@@ -50,7 +50,7 @@ pub fn add_types(
                 let next_return = &ast[unwrap_u(&ast[func_pos].children)[2]].typ;
                 ast[for_var_pos].typ = apply_generics_to_method_call(
                     next_return,
-                    &unwrap_enum!(into_iters_return, Some(x), x)
+                    &unwrap_enum!(into_iters_return)
                 )
             } else {
                 panic!("{:?}", iter.typ)
@@ -71,11 +71,38 @@ pub fn add_types(
             vars.pop();
         }
         AstNode::Assignment | AstNode::Module | AstNode::Body | AstNode::ReturnType
-        | AstNode::GenericsDeclaration | AstNode::ColonParentheses | AstNode::Return
+        | AstNode::GenericsDeclaration | AstNode::ColonParentheses
         | AstNode::Args => {
             for child in children {
                 add_types(ast, child, vars, funcs, structs, traits, parent_struct, built_ins);
             }
+        }
+        AstNode::Return => {
+            add_types(ast, children[0], vars, funcs, structs, traits, parent_struct, built_ins);
+            let mut func_pos = ast[pos].parent.unwrap();
+            while !matches!(ast[func_pos].value, AstNode::Function(_) | AstNode::StaticFunction(_)) {
+                func_pos = ast[func_pos].parent.unwrap();
+            }
+            let func_name =
+                if let AstNode::Function(n) | AstNode::StaticFunction(n) = &ast[func_pos].value { //1 always true
+                    n
+                } else { unreachable!() };
+            let return_type = if let Some(p) = ast[ast[func_pos].parent.unwrap()].parent {
+                if let AstNode::Trait(_) | AstNode::Struct(_) = &ast[p].value {
+                    ast[unwrap_u(&ast[func_pos].children)[2]].typ.clone()
+                } else { unreachable!() }
+            } else {
+                funcs[func_name].output.clone()
+            };
+
+            if let Some(return_typ) = return_type {
+                check_for_boxes(return_typ, ast, children[0], structs, traits, vars, funcs);
+            } else {
+                // doesnt return anything
+                todo!()
+            }
+
+
         }
         AstNode::ArgsDef => {
             for child in children {
@@ -84,12 +111,11 @@ pub fn add_types(
             }
         }
         AstNode::Identifier(name) => {
-            for frame in vars.iter().rev(){
-                if frame.contains_key(name) {
-                    //1 optimize: things like this could probably be references instead of clone
-                    ast[pos].typ = ast[frame[name]].typ.clone();
-                    return;
-                }
+            let from_stack = get_from_stack(vars, name);
+            if let Some(x) = from_stack {
+                //1 optimize: things like this could probably be references instead of clone
+                ast[pos].typ = ast[x].typ.clone();
+                return;
             }
             if structs.contains_key(name) {
                 ast[pos].typ = Some(Type {
@@ -122,20 +148,28 @@ pub fn add_types(
         AstNode::FirstAssignment => {
             let name = unwrap_enum!(&ast[children[0]].value, AstNode::Identifier(name), name.clone());
             add_types(ast, children[1], vars, funcs, structs, traits, parent_struct, built_ins);
-            if let Some(_) = ast[pos].typ {
-                ast[children[0]].typ = ast[pos].typ.clone();
+            if let Some(_) = &ast[pos].typ {
+                let typ = check_for_boxes(
+                    ast[pos].typ.clone().unwrap(), ast, children[1],
+                    structs, traits, vars, funcs
+                );
+                // let new_children = unwrap_u(&ast[pos].children);
+                println!("typ99: {typ}");
+                ast[children[0]].typ = Some(typ); //ast[new_children[1]].typ.clone();
             } else {
                 let typ = ast[children[1]].typ.clone();
                 if let None = typ {
-                    panic!("`{name}` needs to a type annotation")
+                    panic!("`{name}` needs a type annotation")
                 }
                 ast[children[0]].typ = typ;
             }
+            println!("name: {}, children[0]: {:?}", name, ast[children[0]].typ);
             vars.last_mut().unwrap().insert(name, children[0]);
         }
         AstNode::FunctionCall(_) => {
-            // TODO if the function is expecting Box<dyn Trait> then wrap the arg with that
-            let name = unwrap_enum!(&ast[children[0]].value, AstNode::Identifier(x), x, "function without identifier?");
+            let name = unwrap_enum!(
+                &ast[children[0]].value, AstNode::Identifier(x), x, "function without identifier?"
+            );
             let (input, output) =  if funcs.contains_key(name){
                 (&funcs[name].input, &funcs[name].output)
             } else if built_ins.contains_key(name.as_str()) {
@@ -143,54 +177,21 @@ pub fn add_types(
             } else {
                 panic!("unrecognized function `{name}`")
             };
-            //4 can technically be a vec for performance
-            let boxes = if let Some(expected_inputs) = input {
-                HashSet::from_iter(
-                    expected_inputs.iter().enumerate().filter_map(
-                        |(i, expected_arg)|
-                            if let TypeKind::Trait(_) = &expected_arg.kind { Some(i) } else { None }
-                    )
-                )
-            } else { HashSet::new() };
+            println!("input: {input:?}");
 
             //1 children[1] is the args
             add_types(ast, children[1], vars, funcs, structs, traits, parent_struct, built_ins);
             let args = unwrap_u(&ast[children[1]].children).clone();
             let args: Option<Vec<Type>> = if args.len() == 0 { None } else {
-                Some(args.iter().enumerate().map(|(i, idx)| {
-                    if boxes.contains(&i) {
-                        let inner_val = ast[*idx].clone();
-                        if let Some(c) = &mut ast[inner_val.parent.unwrap()].children {
-                            c.pop();
-                        }
-                        add_to_tree(inner_val.parent.unwrap(), ast, Ast::new(AstNode::Property));
-                        let property = ast.len() - 1;
-                        ast[property].typ = Some(typ_with_child!(
-                            TypeKind::Struct(TypName::Static("Box")),
-                            Type {
-                                kind: TypeKind::GenericsMap,
-                                children: some_vec![
-                                    Type {
-                                        kind: TypeKind::Generic(GenericType::Of(String::from("T"))),
-                                        children: some_vec![inner_val.typ.clone().unwrap()]
-                                    }
-                                ]
-                            }
-                        ));
-                        add_to_tree(property, ast, Ast::new(
-                            AstNode::Identifier(String::from("Box"))
-                        ));
-                        add_to_tree(property, ast, Ast::new(
-                            AstNode::FunctionCall(true)
-                        ));
-                        let func_call = ast.len() - 1;
-                        add_to_tree(func_call, ast, Ast::new(
-                            AstNode::Identifier(String::from("new"))
-                        ));
-                        add_to_tree(func_call, ast, Ast::new(AstNode::Args));
-                        let args_pos = ast.len() - 1;
-                        add_to_tree(args_pos, ast, inner_val);
+                if let Some(expected_inputs) = input {
+                    for (exp, got) in expected_inputs.iter().zip(args.iter()) {
+                        check_for_boxes(
+                            exp.clone(), ast, *got, structs, traits, vars, funcs
+                        );
                     }
+                }
+
+                Some(args.iter().enumerate().map(|(i, idx)| {
                     ast[*idx].typ.clone().unwrap()
                 }).collect())
             };
@@ -204,15 +205,14 @@ pub fn add_types(
 
                 add_to_tree(pos, ast, Ast::new(AstNode::Args));
                 let names_pos = ast.len() - 1;
-                println!("name: {name}");
                 let args_def = &ast[unwrap_u(&ast[structs[name].pos].children)[1]];
                 let args = args_def.children.clone();
                 if let Some(args) = args {
                     let supplied_vec = ast[children[1]].children.clone().unwrap();
                     for (supplied, arg) in supplied_vec.iter().zip(args) {
                         map_generic_types(
-                            unwrap_enum!(&ast[arg].typ, Some(x), x),
-                            unwrap_enum!(&ast[*supplied].typ, Some(x), x),
+                            unwrap_enum!(&ast[arg].typ),
+                            unwrap_enum!(&ast[*supplied].typ),
                             &mut generics_map
                         );
                         add_to_tree(names_pos, ast, Ast::new(ast[arg].value.clone()));
@@ -224,10 +224,10 @@ pub fn add_types(
                         kind: TypeKind::GenericsMap,
                         children:  if generics_map.len() == 0 { None } else {
                             Some(
-                                structs[name].generics.clone().unwrap().iter().map(
+                                unwrap_enum!(&structs[name].generics).iter().map(
                                     |name| typ_with_child! {
                                         TypeKind::Generic(GenericType::Of(name.clone())),
-                                        generics_map[name].clone()
+                                        generics_map.remove(name).unwrap()
                                     }
                                 ).collect()
                             )
@@ -241,75 +241,47 @@ pub fn add_types(
         }
         AstNode::Property => {
             add_types(ast, children[0], vars, funcs, structs, traits, parent_struct, built_ins);
-            let left_kind = ast[children[0]].typ.clone().unwrap_or_else(|| panic!("{:?}", ast[children[0]].value));
-            if let TypeKind::Struct(struct_name) = &left_kind.kind {
-                println!("struct_name: {struct_name}");
-                let struct_description = &ast[structs[&struct_name.to_string()].pos];
-                let mut is_static = false;
-                match &ast[children[1]].value {
-                    AstNode::Identifier(right) => {
-                        //1 element
-                        let args_def = &ast[unwrap_u(&struct_description.children)[0]];
-                        for child_pos in unwrap_u(&args_def.children) {
-                            if let AstNode::Identifier(name) = &ast[*child_pos].value {
-                                if name == right {
-                                    ast[pos].typ = ast[*child_pos].typ.clone();
-                                    break;
-                                }
-                            }
-                        }
-                    },
-                    AstNode::FunctionCall(_) => {
-                        //1 func
-                        let func_call = &ast[children[1]];
-                        let right = if let AstNode::Identifier(name) = &ast[unwrap_u(&func_call.children)[0]].value { name } else { panic!() };
-                        let func_pos = find_function_in_struct(ast, structs, &struct_name.to_string(), right);
-                        let func_pos = func_pos.unwrap_or_else(|| panic!("function `{right}` not found in struct `{struct_name}`"));
-                        is_static = matches!(ast[func_pos].value, AstNode::StaticFunction(_));
+            let left_kind = ast[children[0]].typ.clone().unwrap_or_else(||
+                panic!("{:?}", ast[children[0]].value)
+            );
+            match &left_kind.kind {
+                TypeKind::Struct(struct_name) => {
+                    let struct_description = &ast[structs[&struct_name.to_string()].pos];
+                    ast[pos].typ = match &ast[children[1]].value {
+                        AstNode::Identifier(right) =>
+                            get_property_idf_typ(&ast, &left_kind, &struct_description, right, true),
+                        AstNode::FunctionCall(_) => {
+                            //1 add types to the args
+                            let arg_pos = unwrap_u(&ast[children[1]].children)[1];
+                            add_types(ast, arg_pos, vars, funcs, structs, traits, parent_struct, built_ins);
 
-                        let return_type = &ast[unwrap_u(&ast[func_pos].children)[2]].typ;
-                        ast[pos].typ = if let Some(rt) =
-                            apply_generics_to_method_call(return_type, &left_kind)
-                            { Some(rt) } else { return_type.clone() };
-                    }
-                    _ => unreachable!()
-                };
-                if is_static {
-                    ast[children[1]].value = AstNode::FunctionCall(true);
+                            let (res, is_static) = get_property_method_typ(ast, structs, traits, &children, &left_kind, &struct_name, true);
+                            if is_static {
+                                ast[children[1]].value = AstNode::FunctionCall(true);
+                            }
+                            res
+                        }
+                        _ => unreachable!()
+                    };
+
                 }
+                TypeKind::Trait(trait_name) => {
+                    let trait_description = &ast[traits[trait_name.get_str()].pos];
+                    ast[pos].typ = match &ast[children[1]].value {
+                        AstNode::Identifier(right) =>
+                            get_property_idf_typ(ast, &left_kind, &trait_description, right, false),
+                        AstNode::FunctionCall(_) => {
+                            //1 add types to the args //TODO IDK if this is needed here
+                            let arg_pos = unwrap_u(&ast[children[1]].children)[1];
+                            add_types(ast, arg_pos, vars, funcs, structs, traits, parent_struct, built_ins);
 
-            } else if let TypeKind::Trait(trait_name) = &left_kind.kind { 
-                let trait_description = &ast[traits[trait_name].pos];
-                match &ast[children[1]].value {
-                    AstNode::Identifier(right) => {
-                        //1 element
-                        let args_def = &ast[unwrap_u(&trait_description.children)[0]];
-                        for child_pos in unwrap_u(&args_def.children) {
-                            if let AstNode::Identifier(name) = &ast[*child_pos].value {
-                                if name == right {
-                                    ast[pos].typ = ast[*child_pos].typ.clone();
-                                    break;
-                                }
-                            }
+                            get_property_method_typ(ast, structs, traits, &children, &left_kind, &trait_name, false).0
                         }
-                    },
-                    AstNode::FunctionCall(_) => {
-                        //1 func
-                        let func_call = &ast[children[1]];
-                        let right = if let AstNode::Identifier(name) = &ast[unwrap_u(&func_call.children)[0]].value { name } else { panic!() };
-                        let func_pos = find_function_in_trait(ast, traits, &trait_name.to_string(), right);
-                        let func_pos = func_pos.unwrap_or_else(|| panic!("function `{right}` not found in struct `{trait_name}`"));
-                        // is_static = matches!(ast[func_pos].value, AstNode::StaticFunction(_));
-
-                        let return_type = &ast[unwrap_u(&ast[func_pos].children)[2]].typ;
-                        ast[pos].typ = if let Some(rt) =
-                            apply_generics_to_method_call(return_type, &left_kind)
-                        { Some(rt) } else { return_type.clone() };
-                    }
-                    _ => unreachable!()
-                };
-                // trait_typ.pos
-            } else { panic!("{:?}", left_kind) }
+                        _ => unreachable!()
+                    };
+                }
+                _ => panic!("{:?}", left_kind)
+            }
         }
         AstNode::Number(num) => {
             ast[pos].typ = Some(
@@ -343,7 +315,7 @@ pub fn add_types(
 
             let t1 = ast[children[0]].typ.clone().unwrap();
 
-            let t2 = unwrap_enum!(&ast[children[1]].typ, Some(x), x);
+            let t2 = unwrap_enum!(&ast[children[1]].typ);
             let t1_name = unwrap_enum!(&t1.kind, TypeKind::Struct(t), t, "operator not valid for this type");
             let t2_name = unwrap_enum!(&t2.kind, TypeKind::Struct(t), t, "operator not valid for this type");
             if *t1_name != *t2_name && !(*t1_name == TypName::Static("String") && *t2_name  == TypName::Static("str")) {
@@ -358,7 +330,7 @@ pub fn add_types(
             ast[pos].typ = ast[children[0]].typ.clone();
         }
         AstNode::ForVars | AstNode::Pass | AstNode::Continue
-        | AstNode::Break | AstNode::Trait(_) => {}
+        | AstNode::Break | AstNode::Trait(_) | AstNode::Traits => {}
         AstNode::ListLiteral => {
             ast[pos].typ = Some(typ_with_child!{
                 TypeKind::Struct(TypName::Static("Vec")),
@@ -377,16 +349,7 @@ pub fn add_types(
         AstNode::Index => {
             add_types(ast, children[0], vars, funcs, structs, traits, parent_struct, built_ins);
             add_types(ast, children[1], vars, funcs, structs, traits, parent_struct, built_ins);
-            if let Some(Type { kind: TypeKind::Struct(struct_name), .. }) = &ast[children[0]].typ {
-                let index_func = find_function_in_struct(
-                    ast, structs, struct_name.get_str(), "index"
-                ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", struct_name));
-                let typ = &ast[unwrap_u(&ast[index_func].children)[2]].typ;
-                ast[pos].typ = apply_generics_to_method_call(
-                    typ,
-                    unwrap_enum!(&ast[children[0]].typ, Some(x), x)
-                );
-            }
+            ast[pos].typ = find_index_typ(ast, structs, traits, &children);
         }
         AstNode::Struct(_) => {
             vars.push(HashMap::new());
@@ -407,6 +370,120 @@ pub fn add_types(
             vars.pop();
         }
     }
+}
+
+fn get_property_typ(got: &Ast, ast: &Vec<Ast>, structs: &StructTypes, traits: &TraitTypes) -> Option<Type> {
+    let children = unwrap_u(&got.children);
+    let left_kind = ast[children[0]].typ.clone().unwrap_or_else(||
+        panic!("{:?}", ast[children[0]].value)
+    );
+    let typ = match &left_kind.kind {
+        TypeKind::Struct(struct_name) => {
+            let struct_description = &ast[structs[&struct_name.to_string()].pos];
+            match &ast[children[1]].value {
+                AstNode::Identifier(right) =>
+                    get_property_idf_typ(&ast, &left_kind, &struct_description, right, true),
+                AstNode::FunctionCall(_) =>
+                    get_property_method_typ(ast, structs, traits, &children, &left_kind, &struct_name, true).0,
+                _ => unreachable!(),
+            }
+        }
+        TypeKind::Trait(trait_name) => {
+            let trait_description = &ast[traits[trait_name.get_str()].pos];
+            match &ast[children[1]].value {
+                AstNode::Identifier(right) =>
+                    get_property_idf_typ(ast, &left_kind, &trait_description, right, false),
+                AstNode::FunctionCall(_) =>
+                    get_property_method_typ(ast, structs, traits, &children, &left_kind, &trait_name, false).0,
+                _ => unreachable!()
+            }
+        }
+        _ => panic!("{:?}", left_kind)
+    };
+    typ
+}
+
+fn get_property_method_typ(
+    ast: &Vec<Ast>, structs: &StructTypes, traits: &TraitTypes, children: &Vec<usize>,
+    left_kind: &Type, trait_name: &TypName, is_struct: bool
+) -> (Option<Type>, bool) {
+    let func_call = &ast[children[1]];
+    let func_name = &ast[unwrap_u(&func_call.children)[0]].value;
+    let func_name = if let AstNode::Identifier(name) = func_name { name } else { panic!() };
+    let func_pos = if is_struct {
+        find_function_in_struct(
+            ast, structs, &trait_name.to_string(), func_name
+        )
+    }  else {
+        find_function_in_trait(
+            ast, traits, &trait_name.to_string(), func_name
+        )
+    };
+    let func_pos = func_pos.unwrap_or_else(||
+        panic!("function `{func_name}` not found in struct `{trait_name}`")
+    );
+    let is_static = matches!(ast[func_pos].value, AstNode::StaticFunction(_));
+    let func_children = unwrap_u(&ast[func_pos].children);
+
+    let return_type = &ast[func_children[2]].typ;
+    if is_static { //1 only for structs
+        let arg_pos = unwrap_u(&ast[children[1]].children)[1];
+
+        let input_arg_types =
+            if let Some(c) = &ast[func_children[1]].children {
+                Some(c.iter().map(|x| ast[*x].typ.clone().unwrap()).collect())
+            } else { None };
+
+        let expected_arg_types =
+            if let Some(c) = &ast[arg_pos].children {
+                Some(c.iter().map(|x|
+                    ast[*x].typ.clone().unwrap()
+                ).collect())
+            } else { None };
+
+        (get_function_return_type(
+            return_type, &input_arg_types, &expected_arg_types
+        ), true)
+    } else {
+        (apply_generics_to_method_call(return_type, &left_kind).or(return_type.clone()), false)
+    }
+}
+
+fn get_property_idf_typ(
+    ast: &Vec<Ast>, left_kind: &Type, struct_description: &Ast, right: &String, is_struct: bool
+) -> Option<Type>{
+    let args_def = &ast[unwrap_u(&struct_description.children)[if is_struct { 1 } else { 0 }]];
+    for child_pos in unwrap_u(&args_def.children) {
+        if let AstNode::Identifier(name) = &ast[*child_pos].value {
+            println!("{name} != {right}");
+            if name == right {
+                return apply_generics_to_method_call(
+                    &ast[*child_pos].typ.clone(),
+                    &left_kind
+                ).or(ast[*child_pos].typ.clone())
+            }
+        }
+    }
+    None
+}
+
+fn find_index_typ(ast: &Vec<Ast>, structs: &StructTypes, traits: &TraitTypes, children: &Vec<usize>) -> Option<Type> {
+    let index_func = if let Some(Type { kind: TypeKind::Struct(struct_name), .. }) = &ast[children[0]].typ {
+        find_function_in_struct(
+            ast, structs, struct_name.get_str(), "index"
+        ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", struct_name))
+    } else if let Some(Type { kind: TypeKind::Trait(trait_name), .. }) = &ast[children[0]].typ {
+        find_function_in_trait(
+            ast, traits, trait_name.get_str(), "index"
+        ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", trait_name))
+    } else {
+        panic!()
+    };
+    let typ = &ast[unwrap_u(&ast[index_func].children)[2]].typ;
+    apply_generics_to_method_call(
+        typ,
+        unwrap_enum!(&ast[children[0]].typ)
+    )
 }
 
 fn find_function_in_struct(ast: &Vec<Ast>, structs: &StructTypes, struct_name: &str, func_name: &str) -> Option<usize> {
@@ -435,18 +512,292 @@ fn find_function_in_trait(ast: &Vec<Ast>, structs: &TraitTypes, struct_name: &st
 }
 
 
-// todo only generics whose children are also T
+fn add_box(ast: &mut Vec<Ast>, pos: usize) {
+    let ast_len = ast.len();
+    let inner_val = ast[pos].clone();
+    let parent_pos = inner_val.parent.unwrap();
+    let parent = unwrap_enum!(&mut ast[parent_pos].children);
+    let pos_in_parent = parent.iter().enumerate().find(|(i, &x)| x == pos).unwrap().0;
+    parent[pos_in_parent] = ast_len; //1 ast_len is the position the Property will be pushed into
+
+    ast.push(Ast {
+        value: AstNode::Property,
+        children: None,
+        parent: Some(parent_pos),
+        typ: None,
+        is_mut: false,
+    });
+
+    let property = ast.len() - 1;
+    ast[property].typ = Some(typ_with_child! {
+        TypeKind::Struct(TypName::Static("Box")),
+        typ_with_child! {
+            TypeKind::GenericsMap,
+            Type {
+                kind: TypeKind::Generic(GenericType::Of(String::from("T"))),
+                children: some_vec![inner_val.typ.clone().unwrap()]
+            }
+        }
+    });
+    for x in [AstNode::Identifier(String::from("Box")), AstNode::FunctionCall(true)] {
+        add_to_tree(property, ast, Ast::new(x));
+    }
+    let func_call = ast.len() - 1;
+    for x in [AstNode::Identifier(String::from("new")), AstNode::Args] {
+        add_to_tree(func_call, ast, Ast::new(x));
+    }
+    let args_pos = ast.len() - 1;
+    add_to_tree(args_pos, ast, inner_val);
+}
+fn check_for_boxes(
+    expected: Type, ast: &mut Vec<Ast>, pos: usize,
+    structs: &StructTypes, traits: &TraitTypes, vars: &VarTypes, funcs: &FuncTypes
+) -> Type {
+    fn is_box_typ(typ: &Type) -> bool {
+        match &typ.kind {
+            TypeKind::Struct(bx) => bx.get_str() == "Box",
+            TypeKind::Trait(_) => true,
+            _ => false
+        }
+    }
+    fn supplied_box(
+        got: &Ast, vars: &VarTypes, ast: &Vec<Ast>,
+        structs: &StructTypes, traits: &TraitTypes, funcs: &FuncTypes
+    ) -> bool {
+        match &got.value {
+            AstNode::Struct(bx) => bx == "Box",
+            AstNode::Trait(_) => true,
+            AstNode::Identifier(idf) => {
+                let typ = get_from_stack(vars, idf).unwrap();
+                let typ = ast[typ].typ.clone().unwrap();
+                match &typ.kind {
+                    TypeKind::Struct(name)  =>
+                        if name.get_str() == "Box" { return true },
+                    TypeKind::Trait(_) => return true,
+                    _ => ()
+                }
+                false
+            },
+            AstNode::Index => {
+                is_box_typ(
+                    &find_index_typ(
+                        ast, structs, traits, unwrap_u(&got.children)
+                    ).unwrap()
+                )
+            }
+            AstNode::FunctionCall(_) => {
+                let func_name = unwrap_enum!(
+                    &ast[unwrap_u(&got.children)[0]].value,
+                    AstNode::Identifier(n), n
+                );
+                let return_type = unwrap_enum!(&funcs[func_name].output);
+                is_box_typ(return_type)
+            }
+            AstNode::Property => {
+                let typ = get_property_typ(&got, &ast, &structs, &traits);
+                if let Some(t) = typ { is_box_typ(&t) } else { false }
+            }
+            _ => false
+        }
+    }
+
+    let got = &ast[pos].clone();
+
+    println!("EXP:");
+    print_type(&Some(expected.clone()));
+    println!("GOT:");
+    print_tree((ast.clone(), pos));
+
+    if is_box_typ(&expected) {
+        if !supplied_box(got, vars, ast, structs, traits, funcs) {
+            add_box(ast, pos);
+        }
+        let TypeKind::Trait(_) = &expected.kind else {
+            return check_for_boxes(
+                unwrap(&expected.children)[0].clone(), ast, pos, structs, traits, vars, funcs
+            )
+        };
+        return expected;
+    }
+    match expected.kind.clone() {
+        TypeKind::Struct(ex_name) | TypeKind::Trait(ex_name) => {
+            let expected_children = unwrap(&expected.children).clone();
+            let got_children = unwrap_u(&got.children).clone();
+            let typ = match &got.value {
+                AstNode::ListLiteral => {
+                    if ex_name.get_str() != "Vec" {
+                        panic!("expected: `{}` but found: `Vec`", ex_name.get_str())
+                    }
+                    if expected_children.len() != 1 { panic!() }
+                    let got_c = if let Type{
+                        kind: TypeKind::GenericsMap,
+                        children: Some(c)
+                    } = &expected_children[0] {
+                        if c.len() != 1 { panic!() }
+                        if let Type{
+                            kind: TypeKind::Generic(GenericType::Of(_)),
+                            children: Some(c)
+                        } = &c[0] {
+                            if c.len() != 1 { panic!() }
+                            &c[0]
+                        } else { panic!() }
+                    } else { panic!() };
+
+                    for i in got_children {
+                        check_for_boxes(
+                            got_c.clone(), ast, i, structs, traits, vars, funcs
+                        );
+                    }
+                    expected.clone()  //1 got what expected, no need to panic
+                },
+                AstNode::StructInit => {
+                    if let TypeKind::Trait(_) = expected.kind {
+                        let struct_name = unwrap_enum!(
+                            &ast[unwrap_u(&got.children)[0]].value, AstNode::Identifier(x), x.clone()
+                        );
+                        let struct_pos = structs[&struct_name].pos;
+                        let traits = &ast[unwrap_u(&ast[struct_pos].children)[3]];
+                        if !unwrap_u(&traits.children).iter().any(|x|
+                            unwrap_enum!(&ast[*x].value, AstNode::Identifier(trt), trt) == ex_name.get_str()
+                        ) {
+                            panic!("the struct `{struct_name}` doesn't implement the trait `{}`", ex_name.get_str())
+                        }
+                    } else {
+                        let struct_name = unwrap_enum!(&ast[got_children[0]].value, AstNode::Identifier(s), s);
+                        if struct_name != ex_name.get_str() {
+                            panic!("expected: `{ex_name}` got: `{struct_name}`");
+                        }
+
+                        let mut generics_map = HashMap::new();
+                        let generics = unwrap(&expected.children);
+                        if generics.len() > 0 {
+                            if let Type { kind: TypeKind::GenericsMap, children: Some(children) } = &generics[0] {
+                                for child in children {
+                                    if let Type {
+                                        kind: TypeKind::Generic(GenericType::Of(name)),
+                                        children: Some(c)
+                                    } = child {
+                                        generics_map.insert(name.clone(), c[0].clone());
+                                    }
+                                }
+                            }
+                        }
+                        let struct_pos = structs[ex_name.get_str()].pos;
+                        let args_def = &ast[unwrap_u(&ast[struct_pos].children)[1]];
+                        let expected_args: Vec<Type> = unwrap_u(&args_def.children).iter().map(|x|
+                            if let Some(Type { kind: TypeKind::Generic(GenericType::Of(name)), .. }) = &ast[*x].typ {
+                                generics_map[name].clone()
+                            } else {
+                                ast[*x].typ.clone().unwrap()
+                            }
+                        ).collect();
+                        let got_args = unwrap_u(&ast[got_children[1]].children).clone();
+                        if expected_args.len() != got_args.len() {
+                            panic!("{} != {}", expected_children.len(), got_args.len())
+                        }
+                        for (got_c, exp_c) in got_args.iter().zip(expected_args) {
+                            check_for_boxes(
+                                exp_c, ast, *got_c, structs, traits, vars, funcs
+                            );
+                        }
+                    }
+                    expected.clone()  //1 got what expected, no need to panic
+                }
+                AstNode::Identifier(idf) => {
+                    let typ = get_from_stack(vars, idf).unwrap();
+                    ast[typ].typ.clone().unwrap()
+                }
+                AstNode::Number(num) => {
+                    if !SPECIFIED_NUM_TYPE_RE.is_match(ex_name.get_str()) {
+                        panic!("expected: `{}` but found a number", ex_name.get_str())
+                    }
+                    if let Some(t) = SPECIFIED_NUM_TYPE_RE.find(num) {
+                        if t.as_str() != ex_name.get_str() {
+                            panic!("expected: `{}` but found: `{}`", ex_name.get_str(), t.as_str())
+                        }
+                    } else {
+                        let new_num = format!("{}{}", num, ex_name.get_str());
+                        ast[pos].value = AstNode::Number(new_num);
+                    }
+                    expected.clone()  //1 got what expected, no need to panic
+                }
+                AstNode::Bool(_) => {
+                    if ex_name.get_str() != "bool" {
+                        panic!("expected: `{}` but found: `bool`", ex_name.get_str())
+                    }
+                    expected.clone()  //1 got what expected, no need to panic
+                }
+                AstNode::Char(_) => {
+                    if ex_name.get_str() != "char" {
+                        panic!("expected: `{}` but found: `char`", ex_name.get_str())
+                    }
+                    expected.clone()  //1 got what expected, no need to panic
+                }
+                AstNode::String { mutable, .. } => {
+                    if *mutable && ex_name.get_str() == "String" {
+                        //1 then its good
+                    } else if !*mutable{
+                        todo!()
+                    } else {
+                        panic!(
+                            "expected: `{}` but found: `{}`",
+                            ex_name.get_str(),
+                            if *mutable { "String" } else { "&str" }
+                        )
+                    }
+                    expected.clone()  //1 got what expected, no need to panic
+                },
+                AstNode::Property => {
+                    get_property_typ(&got, &ast, &structs, &traits).unwrap()
+                }
+                AstNode::Index => {
+                    find_index_typ(
+                        ast, structs, traits, unwrap_u(&got.children)
+                    ).unwrap()
+                }
+                AstNode::FunctionCall(_) => {
+                    let func_name = unwrap_enum!(
+                        &ast[unwrap_u(&got.children)[0]].value,
+                        AstNode::Identifier(n), n
+                    );
+                    unwrap_enum!(funcs[func_name].output.clone())
+
+                }
+                AstNode::Parentheses => {
+                    check_for_boxes(expected.clone(), ast, got_children[0], structs, traits, vars, funcs)
+                }
+                AstNode::Operator(_) | AstNode::UnaryOp(_) => {
+                    for child in got_children {
+                        check_for_boxes(expected.clone(), ast, child, structs, traits, vars, funcs);
+                    }
+                    expected.clone()  //1 got what expected, no need to panic
+                },
+                _ => panic!("expected: {:?}, got.kind: {:?}", expected.kind, got.value)
+            };
+            if typ != expected {
+                panic!("expected: `{expected}` got: `{typ}`");
+            }
+        }
+        _ => panic!(),
+    }
+    expected
+}
+
+
+
+//2 only generics whose children are also T
 //  as in [Generic(Of("T"))]
 //               |
 //        [Generic(Of("T"))]
 fn get_function_return_type(return_type: &Option<Type>, expected_inputs: &Option<Vec<Type>>, inputs: &Option<Vec<Type>>) -> Option<Type> {
     let return_type = if let Some(x) = return_type { x } else { return None };
     if let Some(expected_inputs) = expected_inputs {
-        let inputs = unwrap_enum!(inputs, Some(x), x);
+        let inputs = unwrap_enum!(inputs);
         let mut hm = HashMap::new();
         for (ex_ipt, ipt) in expected_inputs.iter().zip(inputs) {
             map_generic_types(ex_ipt, &ipt, &mut hm);
         }
+        println!("hm: {hm:?}");
         let res = apply_map_to_generic_typ(return_type, &hm, true);
         return Some(res);
     }
@@ -510,7 +861,7 @@ fn apply_generics_to_method_call(return_typ: &Option<Type>, base: &Type) -> Opti
                 let hm = HashMap::from_iter(
                     generic_map.iter().map(|x| (
                         unwrap_enum!(&x.kind, TypeKind::Generic(GenericType::Of(name)), name.clone()),
-                        unwrap_enum!(&x.children, Some(c), c[0].clone())
+                        unwrap_enum!(&x.children)[0].clone()
                     ))
                 );
                 return Some(apply_map_to_generic_typ(rt, &hm, true));
@@ -560,4 +911,13 @@ pub fn print_type_b(typ: &Option<Type>){
         println!("None");
     }
     println!("\n");
+}
+
+fn get_from_stack(vars: &VarTypes, var: &String) -> Option<usize> {
+    for frame in vars.iter().rev() {
+        if frame.contains_key(var) {
+            return Some(frame[var])
+        }
+    }
+    None
 }

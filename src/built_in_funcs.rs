@@ -1,7 +1,7 @@
 use crate::ast_structure::Ast;
 use crate::to_python::to_python;
 use crate::to_rust::to_rust;
-use crate::types::{unwrap_u, Type, TypeKind, INT_TYPE, GenericType, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE, MUT_STR_TYPE, ITER_NAME};
+use crate::types::{unwrap_u, Type, TypeKind, INT_TYPE, GenericType, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE, MUT_STR_TYPE, ITER_NAME, TypName};
 use std::collections::HashMap;
 use std::fmt::Write;
 use crate::{some_vec, typ_with_child};
@@ -40,15 +40,9 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
         res.insert(
             "print",
             Box::new(Print {
-                input_types: some_vec![typ_with_child! {
-                    TypeKind::Args,
-                    Type {
-                        kind: TypeKind::Implements,
-                        children: some_vec![Type {
-                            kind: TypeKind::Trait(String::from("Display")),
-                            children: None,
-                        }]
-                    }
+                input_types: some_vec![Type {
+                    kind: TypeKind::Trait(TypName::Static("Display")),
+                    children: None,
                 }],
                 output_types: None,
                 for_strct: None,
@@ -59,16 +53,10 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
         res.insert(
             "dprint",
             Box::new(DPrint {
-                input_types: Some(vec![Type {
-                    kind: TypeKind::Args,
-                    children: Some(vec![Type {
-                        kind: TypeKind::Implements,
-                        children: Some(vec![Type {
-                            kind: TypeKind::Trait(String::from("Debug")),
-                            children: None,
-                        }]),
-                    }]),
-                }]),
+                input_types: some_vec![Type {
+                    kind: TypeKind::Trait(TypName::Static("Debug")),
+                    children: None,
+                }],
                 output_types: None,
                 for_strct: None,
             }),
@@ -78,16 +66,16 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
         res.insert(
             "range",
             Box::new(Range {
-                input_types: Some(vec![
+                input_types: some_vec![
                     INT_TYPE,
                     Type {
                         kind: TypeKind::Optional,
-                        children: Some(vec![ INT_TYPE, INT_TYPE ]),
+                        children: some_vec![ INT_TYPE, INT_TYPE ],
                     }
-                ]),
+                ],
                 output_types: Some(Type {
                     kind: TypeKind::Struct(ITER_NAME),
-                    children: Some(vec![INT_TYPE]),
+                    children: some_vec![INT_TYPE],
                 }),
                 for_strct: None,
             }),
@@ -97,7 +85,7 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
         // res.insert(
         //     "rev",
         //     Box::new(Rev {
-        //         input_types: Some(vec![generic_iter.clone()]),
+        //         input_types: some_vec![generic_iter.clone()]),
         //         output_types: Some(generic_iter.clone()),
         //         for_strct: None,
         //     }),
@@ -107,21 +95,21 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
         res.insert(
             "enumerate",
             Box::new(Enumerate {
-                input_types: Some(vec![generic_iter]),
+                input_types: some_vec![generic_iter],
                 output_types: Some(Type {
                     kind: TypeKind::Struct(ITER_NAME),
-                    children: Some(vec![
+                    children: some_vec![
                         Type {
                             kind: TypeKind::Tuple,
-                            children: Some(vec![
+                            children: some_vec![
                                 Type::new(String::from("u32")),
                                 Type {
                                     kind: TypeKind::Generic(GenericType::Of(String::from("T"))),
                                     children: None,
                                 }
-                            ]),
+                            ],
                         },
-                    ]),
+                    ],
                 }),
                 for_strct: None,
             }),
@@ -131,12 +119,12 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
         res.insert(
             "str",
             Box::new(Str {
-                input_types: Some(vec![
+                input_types: some_vec![
                     Type{
                         kind: TypeKind::Implements,
-                        children: Some(vec![Type::new(String::from("Display"))])
+                        children: some_vec![Type::new(String::from("Display"))]
                     }
-                ]),
+                ],
                 output_types: Some(MUT_STR_TYPE),
                 for_strct: None,
             }),
@@ -146,12 +134,12 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
         res.insert(
             "int",
             Box::new(Int {
-                input_types: Some(vec![
+                input_types: some_vec![
                     Type{
-                        kind: TypeKind::OneOf,
-                        children: Some(vec![MUT_STR_TYPE, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE])
+                        kind: TypeKind::_OneOf,
+                        children: some_vec![MUT_STR_TYPE, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE]
                     }
-                ]),
+                ],
                 output_types: Some(INT_TYPE),
                 for_strct: None,
             }),
@@ -163,7 +151,7 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
             Box::new(Float {
                 input_types: some_vec![
                     Type{
-                        kind: TypeKind::OneOf,
+                        kind: TypeKind::_OneOf,
                         children: some_vec![MUT_STR_TYPE, STR_TYPE, CHAR_TYPE, BOOL_TYPE, INT_TYPE]
                     }
                 ],

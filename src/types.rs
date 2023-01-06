@@ -36,7 +36,7 @@ pub const ITER_NAME: TypName = TypName::Static("Iter");
 //     children: None
 // };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GenericType {
     Declaration(String),
     Of(String),
@@ -62,20 +62,26 @@ impl TypName {
             TypName::Static(s) => s
         }
     }
+    pub fn to_string(&self) -> String {
+        match self {
+            TypName::Str(s) => s.clone(),
+            TypName::Static(s) => String::from(*s)
+        }
+    }
 
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
     Generic(GenericType),
     Generics,
     GenericsMap,
-    OneOf,
+    _OneOf,
     Optional,
     Tuple,
     Implements,
     Args,
-    Trait(String),
+    Trait(TypName),
     Unknown,
     Function(String),
     Struct(TypName), // child[0] = generics
@@ -90,11 +96,21 @@ pub struct Type {
     pub children: Option<Vec<Type>>
 }
 
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        if self.kind != other.kind {
+            return false
+        }
+        self.children == other.children
+    }
+}
+
+
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             TypeKind::Unknown => write!(f, ""),
-            TypeKind::OneOf => {
+            TypeKind::_OneOf => {
                 let children = unwrap(&self.children);
                 write!(f, "{}", join(&children, "-or-"))
             },
@@ -179,7 +195,7 @@ impl Type {
     }
 
     pub fn add_option(mut self, typ: Type) -> Type {
-        if let TypeKind::OneOf = self.kind {
+        if let TypeKind::_OneOf = self.kind {
             if let Some(vc) = &mut self.children {
                 vc.push(typ);
             } else {
@@ -187,11 +203,11 @@ impl Type {
                 self.children = Some(vec![typ])
             }
             self
-        } else if let TypeKind::OneOf = typ.kind {
+        } else if let TypeKind::_OneOf = typ.kind {
             typ.add_option(self)
         } else {
             Type {
-                kind: TypeKind::OneOf,
+                kind: TypeKind::_OneOf,
                 children: Some(vec![self, typ])
             }
         }

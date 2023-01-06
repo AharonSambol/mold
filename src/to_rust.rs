@@ -52,7 +52,7 @@ pub fn to_rust(
                 match &ast[*child].value {
                     AstNode::IfStatement => {
                         write!(res, "\n{}else if ", "\t".repeat(indentation)).unwrap();
-                        let c_children = unwrap_enum!(&ast[*child].children, Some(x), x);
+                        let c_children = unwrap_enum!(&ast[*child].children);
                         to_rust(ast, c_children[0], indentation, res, built_ins, enums);
                         to_rust(ast, c_children[1], indentation + 1, res, built_ins, enums);
                     },
@@ -204,8 +204,10 @@ pub fn to_rust(
         },
         AstNode::Char(chr) => write!(res, "'{chr}'").unwrap(),
         AstNode::Property => {
-            if built_in_methods(&ast, indentation, res, built_ins, enums, &children) {
-                return;
+            if let AstNode::FunctionCall(_) = ast[children[1]].value {
+                if built_in_methods(&ast, indentation, res, built_ins, enums, &children) {
+                    return;
+                }
             }
 
             print_tree((ast.clone(), pos));
@@ -248,7 +250,7 @@ pub fn to_rust(
                     .map(|&x|
                         format!("{}: {}",
                             unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
-                            unwrap_enum!(&ast[x].typ, Some(t), t)
+                            unwrap_enum!(&ast[x].typ)
                         )
                     ).collect(),
                 ", "
@@ -315,7 +317,7 @@ pub fn to_rust(
                 let args = unwrap_u(&ast[func_children[1]].children).iter().map(|x| {
                     let arg = &ast[*x];
                     let name = unwrap_enum!(&arg.value, AstNode::Identifier(name), name);
-                    let typ = unwrap_enum!(&arg.typ, Some(t), t);
+                    let typ = unwrap_enum!(&arg.typ);
                     format!("{name}: {typ}")
                 }).collect();
                 let args = join(&args, ", ");
@@ -349,7 +351,7 @@ fn print_function_rust(
                 format!("{}{}: {}",
                         if ast[x].is_mut { "mut " } else { "" },
                         unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
-                        unwrap_enum!(&ast[x].typ, Some(t), t),
+                        unwrap_enum!(&ast[x].typ),
                 )
             ).collect(),
         ", "
@@ -478,6 +480,7 @@ fn is_string_addition(ast: &Vec<Ast>, pos: usize, op: &OperatorType) -> bool{
 
 pub fn get_struct_and_func_name<'a>(ast: &'a Vec<Ast>, children: &Vec<usize>) -> Option<(&'a TypName, &'a String)> {
     if let Some(Type{ kind: TypeKind::Struct(struct_name), .. }) = &ast[children[0]].typ {
+        print_tree((ast.clone(), children[1]));
         if let AstNode::Identifier(func_name) = &ast[unwrap_u(&ast[children[1]].children)[0]].value {
             return Some((struct_name, func_name))
         }

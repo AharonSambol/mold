@@ -6,17 +6,47 @@ struct St(Printable):
     def Printable::to_str() -> str:
         return inner.clone()
 
-struct Wow(Printable):
+struct Wow:
     def Printable::to_str() -> str:
-        return m"wow"
+        return "wow"
+    static def new() -> Wow:
+        return Wow { }
+struct Wow2:
+    def Printable::to_str() -> str:
+        return "wow"
+    static def new() -> Wow:
+        return Wow { }
 
 def f(a: Printable):
     print(a.to_str())
 
 def main():
-    f(St{ m"some str" })
-    f(Wow{ })
+    # TODO need to box variables in other places too not only args
+#     a: int = 12
+#     a: List[int] = [1, 2, a]
+#     a: A[int, bool] = A{ 1, False , 2}
+#     v: List[St] = [St{ "some str" }]
 
+#     a := Wow { }
+#     v := A{ 1, False, 2}
+#     f := v.a
+    a: Wow = Wow {}
+    v: List[Wow] = [Wow { }, a]
+    for i in v:
+        f(i)
+#     a: Printable = Wow {}
+#     f(a)
+#     a := Wow {}
+    a: Wow = (func())
+#     f(func())
+
+def func() -> Wow:
+    return Wow {}
+# pass
+struct A<T, G>:
+    a: T
+    b: G
+    c: T
 
 #     a := A{ 1, False, "w", 3.4 }
 #     s := generic_test(1, False)

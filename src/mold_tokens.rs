@@ -254,10 +254,10 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
             '"' => {
                 is_str = true;
                 if let Some(Word { start, end, is_spaced: false }) = tokens.last_mut() {
-                    if *start == *end - 1 && chars[*start] == 'm' {
+                    if *start == *end - 1 && chars[*start] == 'i' {
                         tokens.pop();
                         tokens.push(Str {
-                            start: i, end: i + 1, mutable: true
+                            start: i, end: i + 1, mutable: false
                         });
                         continue
                     }
@@ -265,7 +265,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
                 tokens.push(Str {
                     start: i,
                     end: i + 1,
-                    mutable: false
+                    mutable: true
                 });
                 continue
             },

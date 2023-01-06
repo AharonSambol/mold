@@ -1,4 +1,7 @@
 #[macro_export] macro_rules! unwrap_enum {
+    ($var:expr) => {
+        if let Some(x) = $var { x } else { panic!() }
+    };
     ($var:expr, $pattern:pat) => {
         let $pattern = $var else { panic!() };
     };
@@ -26,4 +29,18 @@
             children: some_vec![ $children ]
         }
     }
+}
+
+#[macro_export] macro_rules! make_primitive {
+    ($val:expr) => {
+        StructFunc::Struct(BuiltInStruct {
+            name: stringify!($val),
+            generics: None,
+            methods: vec![
+                concat!("clone() -> ", stringify!($val))
+            ],
+            static_methods: vec![],
+            _parameters: vec![],
+        })
+    };
 }

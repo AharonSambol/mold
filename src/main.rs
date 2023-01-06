@@ -136,11 +136,14 @@ use std::iter::Rev;
     }
 }
 
+
+
 enum StructFunc { Struct(BuiltInStruct), Func(BuiltInFunc) }
 struct BuiltInStruct {
     name: &'static str,
     generics: Option<Vec<&'static str>>,
     methods: Vec<&'static str>,
+    static_methods: Vec<&'static str>,
     _parameters: Vec<&'static str>
 }
 struct BuiltInFunc {
@@ -151,6 +154,12 @@ struct BuiltInFunc {
 }
 fn put_at_start(data: &mut String) {
     let to_add = [
+        make_primitive!(i8),  make_primitive!(i16), make_primitive!(i32),
+        make_primitive!(i64), make_primitive!(i128), make_primitive!(isize),
+        make_primitive!(u8),  make_primitive!(u16), make_primitive!(u32),
+        make_primitive!(u64), make_primitive!(u128), make_primitive!(usize),
+        make_primitive!(f32), make_primitive!(f64),
+        make_primitive!(bool), make_primitive!(str), make_primitive!(char),
         //1 String
         StructFunc::Struct(BuiltInStruct{
             name: "String",
@@ -176,6 +185,7 @@ fn put_at_start(data: &mut String) {
                 // todo is(digit\numeric\ascii...)
                 // todo "join(lst: List[T]) -> int",
             ],
+            static_methods: vec![],
             _parameters: vec![],
         }),
         //1 Iter
@@ -185,6 +195,7 @@ fn put_at_start(data: &mut String) {
             methods: vec![
                 "into_iter() -> IntoIter[T]",
             ],
+            static_methods: vec![],
             _parameters: vec![],
         }),
         //1 IntoIter
@@ -195,6 +206,7 @@ fn put_at_start(data: &mut String) {
                 "into_iter() -> IntoIter[T]",
                 "next() -> T"
             ],
+            static_methods: vec![],
             _parameters: vec![],
         }),
         //1 IterMut
@@ -203,6 +215,17 @@ fn put_at_start(data: &mut String) {
             generics: Some(vec!["T"]),
             methods: vec![
                 "into_iter() -> IntoIter[T]",
+            ],
+            static_methods: vec![],
+            _parameters: vec![],
+        }),
+        //1 Box
+        StructFunc::Struct(BuiltInStruct{
+            name: "Box",
+            generics: Some(vec!["T"]),
+            methods: vec![],
+            static_methods: vec![
+                "new(t: T) -> Box[T]",
             ],
             _parameters: vec![],
         }),
@@ -216,6 +239,9 @@ fn put_at_start(data: &mut String) {
                 "iter() -> Iter[T]",
                 "append(t: T)",
                 "index(pos: usize) -> T"
+            ],
+            static_methods: vec![
+                "new() -> Vec[T]"
             ],
             _parameters: vec![],
         }),
@@ -254,6 +280,9 @@ fn put_at_start(data: &mut String) {
                 for func in stct.methods {
                     write!(data, "\n\tdef {}:", func).unwrap();
                 }
+                for func in stct.static_methods {
+                    write!(data, "\n\tstatic def {}:", func).unwrap();
+                }
                 writeln!(data).unwrap();
             },
             StructFunc::Func(func) => {
@@ -276,6 +305,7 @@ fn put_at_start(data: &mut String) {
             },
         }
     }
+    // println!("{data}");
 }
 
 pub fn print_tree(tree: (Vec<Ast>, usize)){
@@ -299,3 +329,4 @@ pub fn print_tree(tree: (Vec<Ast>, usize)){
     };
     println!("{}\n", ppt.to_str(&tree));
 }
+

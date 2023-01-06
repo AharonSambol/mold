@@ -43,7 +43,7 @@ pub enum AstNode {
     ColonParentheses,       // children[0] = inside
     FirstAssignment,
     ForIter,        // children[0] = iter
-    ForStatement,   // children[0] = colon_parentheses(ForVars, ForIter)
+    ForStatement,   // children[0] = colon_parentheses(ForVars, ForIter), children[1] = body
     ForVars,        // children = vars
     Function(String), // children[0] = args, children[1] = returnType, children[2] = body
     FunctionCall(bool), // bool = is_static, children[0] = func, children[1] = Args,
@@ -65,6 +65,7 @@ pub enum AstNode {
     Struct(String), // children[0] = args, children[1] = functions, children[2] = body
     StructInit,         // children[0] = struct, children[1] = Args,
     Trait(String),  // children[0] = Module (functions)
+    Traits,
     UnaryOp(OperatorType),  // children[0] = elem
     WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
 }
@@ -96,6 +97,7 @@ impl AstNode {
             | AstNode::StaticFunction { .. }
             | AstNode::Struct(_)
             | AstNode::Trait(_)
+            | AstNode::Traits
             | AstNode::ColonParentheses
             | AstNode::IfStatement
             | AstNode::WhileStatement
@@ -114,6 +116,7 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            AstNode::Traits => write!(f, "TRAITS"),
             AstNode::Body => write!(f, "BODY"),
             AstNode::Module => write!(f, "MODULE"),
             AstNode::Function(func) => write!(f, "FUNC({})", func.to_string()),

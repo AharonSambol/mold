@@ -51,7 +51,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
                 match &ast[*child].value {
                     AstNode::IfStatement => {
                         write!(res, "\n{}elif ", "\t".repeat(indentation)).unwrap();
-                        let c_children = unwrap_enum!(&ast[*child].children, Some(x), x);
+                        let c_children = unwrap_enum!(&ast[*child].children);
                         to_python(ast, c_children[0], indentation, res, built_ins);
                         to_python(ast, c_children[1], indentation + 1, res, built_ins);
                     },
