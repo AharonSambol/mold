@@ -1,4 +1,4 @@
-#[allow(clippy::too_many_arguments)]
+#![allow(clippy::too_many_arguments)]
 mod ast_add_types;
 mod ast_structure;
 mod mold_ast;
@@ -97,7 +97,7 @@ fn compile(ast: &Vec<Ast>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     let mut rs = String::new();
     let mut enums = HashMap::new();
     to_rust::to_rust(ast, 0, 0, &mut rs, built_ins, &mut enums);
-    println!("\n{}", join(&enums.values().collect::<Vec<&String>>(), "\n\n"));
+    println!("\n{}", join(enums.values(), "\n\n"));
     println!("\n{rs}");
 
     if !Path::new("/out").exists() {
@@ -117,7 +117,7 @@ use std::iter::Rev;
 
 {}
 {rs}",
-            join(&enums.values().collect::<Vec<&String>>(), "\n\n")
+            join(enums.values(), "\n\n")
         )
         .as_ref(),
     )
@@ -281,7 +281,7 @@ fn put_at_start(data: &mut String) {
                     IGNORE_STRUCTS.insert(stct.name);
                 }
                 if let Some(generics) = stct.generics {
-                    write!(data, "struct {}<{}>:", stct.name, join(&generics, ",")).unwrap();
+                    write!(data, "struct {}<{}>:", stct.name, join(generics.iter(), ",")).unwrap();
                 } else {
                     write!(data, "struct {}:", stct.name).unwrap();
                 }
@@ -298,14 +298,14 @@ fn put_at_start(data: &mut String) {
                 unsafe {
                     IGNORE_FUNCS.insert(func.name);
                 }
-                let args = join(&func.args, ",");
+                let args = join(func.args.iter(), ",");
                 let rtrn = if let Some(t) = func.return_typ {
                     format!("-> {t}")
                 } else {
                     String::new()
                 };
                 let generics = if let Some(generics) = func.generics {
-                    format!("<{}>", join(&generics, ","))
+                    format!("<{}>", join(generics.iter(), ","))
                 } else {
                     String::new()
                 };

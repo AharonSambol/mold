@@ -62,13 +62,6 @@ impl TypName {
             TypName::Static(s) => s
         }
     }
-    pub fn to_string(&self) -> String {
-        match self {
-            TypName::Str(s) => s.clone(),
-            TypName::Static(s) => String::from(*s)
-        }
-    }
-
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,10 +105,10 @@ impl Display for Type {
             TypeKind::Unknown => write!(f, ""),
             TypeKind::_OneOf => {
                 let children = unwrap(&self.children);
-                write!(f, "{}", join(&children, "-or-"))
+                write!(f, "{}", join(children.iter(), "-or-"))
             },
             TypeKind::Tuple => {
-                write!(f, "({})", join(unwrap(&self.children), ","))
+                write!(f, "({})", join(unwrap(&self.children).iter(), ","))
             },
             TypeKind::Generic(c) => {
                 if let GenericType::Of(name) = c {
@@ -128,13 +121,13 @@ impl Display for Type {
                     write!(f, "GENERIC({c:?})")
                 }
             },
-            TypeKind::GenericsMap => write!(f, "GENERICS_MAP({})", join(unwrap(&self.children), ",")),
-            TypeKind::Generics => write!(f, "GENERICS({})", join(unwrap(&self.children), ",")),
+            TypeKind::GenericsMap => write!(f, "GENERICS_MAP({})", join(unwrap(&self.children).iter(), ",")),
+            TypeKind::Generics => write!(f, "GENERICS({})", join(unwrap(&self.children).iter(), ",")),
             TypeKind::Optional => {
-                write!(f, "OPTIONAL({})", join(unwrap(&self.children), ","))
+                write!(f, "OPTIONAL({})", join(unwrap(&self.children).iter(), ","))
             },
             TypeKind::Implements => {
-                write!(f, "IMPL({})", join(unwrap(&self.children), ","))
+                write!(f, "IMPL({})", join(unwrap(&self.children).iter(), ","))
             },
             TypeKind::Args => {
                 write!(f, "ARGS({})", unwrap(&self.children)[0])
@@ -146,12 +139,12 @@ impl Display for Type {
                     if children.len() != 0 {
                         if let TypeKind::GenericsMap = children[0].kind {
                             if let Some(generics) = &children[0].children {
-                                gens = format!("::<{}>", join(generics, ","));
+                                gens = format!("::<{}>", join(generics.iter(), ","));
                             }
                         } else {
                             // println!("{:?}", children[0]);
                             if let Some(generics) = &children[0].children {
-                                gens = format!("<{}>", join(generics, ","));
+                                gens = format!("<{}>", join(generics.iter(), ","));
                             }
                         }
                     }
@@ -161,15 +154,15 @@ impl Display for Type {
             TypeKind::Struct(name) => {
                 let mut gens = String::new();
                 if let Some(children) = &self.children {
-                    if children.len() != 0 {
+                    if !children.is_empty() {
                         if let TypeKind::GenericsMap = children[0].kind {
                             if let Some(generics) = &children[0].children {
-                                gens = format!("::<{}>", join(generics, ","));
+                                gens = format!("::<{}>", join(generics.iter(), ","));
                             }
                         } else {
                             // println!("{:?}", children[0]);
                             if let Some(generics) = &children[0].children {
-                                gens = format!("<{}>", join(generics, ","));
+                                gens = format!("<{}>", join(generics.iter(), ","));
                             }
                         }
                     }

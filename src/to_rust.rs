@@ -245,13 +245,13 @@ pub fn to_rust(
             let param = &ast[children[1]];
             let generic = format_generics(generics_ast);
             let param = join(
-                &unwrap_u(&param.children).iter()
+                unwrap_u(&param.children).iter()
                     .map(|&x|
                         format!("{}: {}",
                             unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
                             unwrap_enum!(&ast[x].typ)
                         )
-                    ).collect::<Vec<String>>(),
+                    ),
                 ", "
             );
             write!(res,
@@ -318,8 +318,8 @@ pub fn to_rust(
                     let name = unwrap_enum!(&arg.value, AstNode::Identifier(name), name);
                     let typ = unwrap_enum!(&arg.typ);
                     format!("{name}: {typ}")
-                }).collect::<Vec<String>>();
-                let args = join(&args, ", ");
+                });
+                let args = join(args, ", ");
                 let return_typ = &ast[func_children[2]].typ;
                 if let Some(rt) = return_typ {
                     write!(res, "\n\tfn {func_name}{func_generics}({args}) -> {rt};").unwrap();
@@ -345,14 +345,14 @@ fn print_function_rust(
     let return_typ = &ast[children[2]];
     let generic = format_generics(generics_ast);
     let param = join(
-        &unwrap_u(&param.children).iter()
+        unwrap_u(&param.children).iter()
             .map(|&x|
                 format!("{}{}: {}",
                         if ast[x].is_mut { "mut " } else { "" },
                         unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
                         unwrap_enum!(&ast[x].typ),
                 )
-            ).collect::<Vec<String>>(),
+            ),
         ", "
     );
     if let Some(t) = &return_typ.typ {
@@ -530,9 +530,9 @@ fn _make_enums(){
 
 fn format_generics(generics_ast: &Ast) -> String {
     if let Some(Type{ children: Some(generics), .. }) = &generics_ast.typ {
-        format!("<{}>", join(&generics.iter().map(|x|
+        format!("<{}>", join(generics.iter().map(|x|
             unwrap_enum!(&x.kind, TypeKind::Generic(GenericType::Declaration(name)), name)
-        ).collect::<Vec<&String>>(), ","))
+        ), ","))
     } else {
         String::new()
     }

@@ -215,10 +215,10 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
                 .map(|&x|
                     unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n)
                 ).collect();
-            let param_comma = join(&param, ", ");
-            let param_assign = join(&param.iter().map(
+            let param_comma = join(param.iter(), ", ");
+            let param_assign = join(param.iter().map(
                 |&x| format!("self.{x} = {x}")
-            ).collect::<Vec<String>>(), "\n\t\t");
+            ), "\n\t\t");
             write!(res,
 "class {name}:
 \tdef __init__(self, {param_comma}):

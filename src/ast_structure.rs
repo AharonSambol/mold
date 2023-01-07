@@ -160,9 +160,8 @@ impl Display for AstNode {
     }
 }
 
-pub fn join<T: Display>(lst: &[T], sep: &str) -> String {
-    lst.iter()
-        .map(|x| x.to_string())
+pub fn join<T: Display, I: Iterator<Item=T>>(lst: I, sep: &str) -> String {
+    lst.map(|x| x.to_string())
         .collect::<Vec<String>>()
         .join(sep)
 }

@@ -40,18 +40,18 @@ built_ins: &HashMap<&str, Box<dyn BuiltIn>>
         tokens, pos, vec![Ast::new(AstNode::Module)], 0, 0,
         &mut vec![HashMap::new()], &mut funcs, &mut structs, &mut traits
     );
-    print_tree((res.1.clone(), 0));
+    // print_tree((res.1.clone(), 0));
     if unsafe { IS_COMPILED } {
         add_types(
             &mut res.1, 0, &mut vec![HashMap::new()],
-            &funcs, &structs, &traits, &None, &built_ins
+            &funcs, &structs, &traits, &None, built_ins
         );
-        print_tree((res.1.clone(), 0));
+        // print_tree((res.1.clone(), 0));
     }
     res
 }
 
-fn get_struct_and_func_names(tokens: &Vec<SolidToken>) -> (StructTypes, FuncTypes, TraitTypes){
+fn get_struct_and_func_names(tokens: &[SolidToken]) -> (StructTypes, FuncTypes, TraitTypes){
     let mut funcs = HashMap::new();
     let mut structs = HashMap::new();
     let mut traits = HashMap::new();
@@ -171,10 +171,10 @@ fn make_ast_statement(
             SolidToken::NewLine => {
                 let tabs = tokens.iter().skip(pos + 1)
                     .take_while(|&x| matches!(x, SolidToken::Tab)).count();
-                if tabs < indent {
-                    return (pos, ast)
-                } else if tabs > indent {
-                    panic!("unexpected indentation, expected `{indent}` found `{tabs}`")
+                match tabs.cmp(&indent) {
+                    std::cmp::Ordering::Less => return (pos, ast),
+                    std::cmp::Ordering::Greater => panic!("unexpected indentation, expected `{indent}` found `{tabs}`"),
+                    _ => ()
                 }
                 pos += tabs;
             },
@@ -203,7 +203,7 @@ fn make_ast_statement(
                     tokens, pos + 1, ast, parent, indent, vars, funcs, structs, traits, st, false
                 );
                 pos = p; ast = t;
-                let assignment = unwrap_u(&ast[parent].children).last().unwrap().clone();
+                let assignment = *unwrap_u(&ast[parent].children).last().unwrap();
                 let assignment = &mut ast[assignment];
                 assignment.is_mut = false;
             }
@@ -275,7 +275,7 @@ fn make_ast_expression(
                 add_to_tree(parent, &mut ast, Ast::new(AstNode::Char(ch.clone())));
             },
             SolidToken::Bool(bl) => {
-                add_to_tree(parent, &mut ast, Ast::new(AstNode::Bool(bl.clone())));
+                add_to_tree(parent, &mut ast, Ast::new(AstNode::Bool(*bl)));
             },
             SolidToken::Word(wrd) => {
                 let (p, t) = word_tok(
@@ -301,7 +301,7 @@ fn make_ast_expression(
                 pos = p - 1; ast = t;
             },
             SolidToken::Period => {
-                let (p, t) = add_property(&tokens, pos, ast, 0, vars, funcs, structs, traits, true, parent);
+                let (p, t) = add_property(tokens, pos, ast, 0, vars, funcs, structs, traits, true, parent);
                 pos = p; ast = t;
             }
             _ => panic!("unexpected token {:?}", token)
@@ -313,12 +313,12 @@ fn make_ast_expression(
 
 fn word_tok(
     tokens: &Vec<SolidToken>, mut pos: usize, mut ast: Vec<Ast>, parent: usize, indent: usize,
-    vars: &mut VarTypes, funcs: &mut FuncTypes, structs: &mut StructTypes, traits: &mut TraitTypes, st: &String,
+    vars: &mut VarTypes, funcs: &mut FuncTypes, structs: &mut StructTypes, traits: &mut TraitTypes, st: &str,
     is_expression: bool
 ) -> (usize, Vec<Ast>) {
     add_to_tree(
         parent, &mut ast,
-        Ast::new(AstNode::Identifier(st.clone()))
+        Ast::new(AstNode::Identifier(String::from(st)))
     );
     let mut identifier_pos = ast.len() - 1;
     loop {
@@ -343,12 +343,12 @@ fn word_tok(
                 if is_expression { return (pos - 1, ast) }
                 let index = insert_as_parent_of_prev(&mut ast, parent, AstNode::FirstAssignment);
                 identifier_pos += 1;
-                vars.last_mut().unwrap().insert(st.clone(), identifier_pos);
+                vars.last_mut().unwrap().insert(String::from(st), identifier_pos);
                 if let SolidToken::Operator(OperatorType::Eq) = tokens[pos + 1] {
                     pos += 1;
                 } else {
                     pos -= 1;
-                    let param = get_params(&tokens, &mut pos, funcs, structs, traits).remove(0); // 5 for now only taking the first
+                    let param = get_params(tokens, &mut pos, funcs, structs, traits).remove(0); // 5 for now only taking the first
                     ast[index].typ = Some(param.typ);
                 }
                 let (p, t) = make_ast_expression(
@@ -381,7 +381,7 @@ fn word_tok(
                 pos = p; ast = t;
             },
             SolidToken::Period => {
-                let (p, t) = add_property(&tokens, pos, ast, indent, vars, funcs, structs, traits, is_expression, parent);
+                let (p, t) = add_property(tokens, pos, ast, indent, vars, funcs, structs, traits, is_expression, parent);
                 pos = p; ast = t;
             },
             _ if is_expression => return (pos - 1, ast),
@@ -399,7 +399,7 @@ fn add_property(
     }
     let index = insert_as_parent_of_prev(&mut ast, parent, AstNode::Property);
     let st = unwrap_enum!(&tokens[pos + 1], SolidToken::Word(st), st, "expected word after period");
-    return word_tok(tokens, pos + 1, ast, index, indent, vars, funcs, structs, traits, st, is_expression);
+    word_tok(tokens, pos + 1, ast, index, indent, vars, funcs, structs, traits, st, is_expression)
 }
 
 fn get_last(arr: &mut Option<Vec<usize>>) -> usize{
@@ -489,13 +489,13 @@ fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNode) -
         typ: None,
         is_mut: true
     });
-    for i in index + 1..ast.len() {
-        if let Some(children) = &ast[i].children {
-            ast[i].children = Some(children.iter().map(|x| x+1).collect())
+    for node in ast[index + 1..].iter_mut() {
+        if let Some(children) = &node.children {
+            node.children = Some(children.iter().map(|x| x+1).collect())
         }
-        if let Some(parent) = &ast[i].parent {
+        if let Some(parent) = &node.parent {
             if *parent >= index {
-                ast[i].parent = Some(parent + 1);
+                node.parent = Some(parent + 1);
             }
         }
     }
@@ -546,7 +546,7 @@ fn make_func(
     let index = ast.len() - 1;
 
     let generics_names = get_generics(&mut pos, tokens, index, &mut ast);
-    let mut generics_hs = HashSet::from_iter(generics_names.iter().map(|x| x.clone()));
+    let mut generics_hs = HashSet::from_iter(generics_names.iter().cloned());
     if let Some(struct_parent) = ast[parent].parent {
         if let AstNode::Struct(_) = ast[struct_parent].value {
             let struct_generics = &ast[unwrap_u(&ast[struct_parent].children)[0]];
@@ -601,7 +601,7 @@ fn make_func(
     }
     pos += 1;
     funcs.insert(name, FuncType{
-        input: if input.len() == 0 { None } else { Some(input) },
+        input: if input.is_empty() { None } else { Some(input) },
         output: ast[return_pos].typ.clone(),
     });
     make_ast_statement(tokens, pos, ast, body_pos, indent + 1, vars, funcs, structs, traits)
@@ -620,7 +620,7 @@ fn make_struct(
 
     pos += 1;
     let generics_names = get_generics(&mut pos, tokens, index, &mut ast);
-    let generics_hs = HashSet::from_iter(generics_names.iter().map(|x| x.clone()));
+    let generics_hs = HashSet::from_iter(generics_names.iter().cloned());
     *structs.get_mut(&name).unwrap() = StructType { generics: Some(generics_names), pos: index};
     let mut trait_names = vec![];
     if let SolidToken::Parenthesis(IsOpen::True) = tokens[pos] {
@@ -684,7 +684,7 @@ fn make_struct(
         let arg = &ast[*child];
         vars.insert(
             unwrap_enum!(&arg.value, AstNode::Identifier(n), n).clone(),
-            child.clone()
+            *child
         );
     }
     let mut vars = vec![vars]; //1 stack
@@ -741,7 +741,7 @@ fn make_trait(
 
     pos += 1;
     let generics_names = get_generics(&mut pos, tokens, index, &mut ast);
-    let generics_hs = HashSet::from_iter(generics_names.iter().map(|x| x.clone()));
+    let generics_hs = HashSet::from_iter(generics_names.iter().cloned());
 
 
     *traits.get_mut(&name).unwrap() = TraitType { generics: Some(generics_names), pos: index};
@@ -806,7 +806,7 @@ fn make_trait(
 // e.g.     x, y: bool | int ) -> int:
 //                           ^
 fn get_params(
-    tokens: &Vec<SolidToken>, mut pos: &mut usize, funcs: &mut FuncTypes, structs: &StructTypes, traits: &TraitTypes
+    tokens: &Vec<SolidToken>, pos: &mut usize, funcs: &mut FuncTypes, structs: &StructTypes, traits: &TraitTypes
 ) -> Vec<Param> {
     let mut params = Vec::new();
     let mut is_mut = true;
@@ -818,7 +818,7 @@ fn get_params(
                     typ:
                         if let SolidToken::Colon = &tokens[*pos + 1] {
                             *pos += 2;
-                            get_arg_typ(tokens, &mut pos, funcs, structs, traits)
+                            get_arg_typ(tokens, pos, funcs, structs, traits)
                         } else { UNKNOWN_TYPE },
                     is_mut
                 });
@@ -844,9 +844,9 @@ fn get_params(
 // e.g.     x: int | bool, y: int | None) -> bool:
 //                       ^              ^        ^
 fn get_arg_typ(
-    tokens: &Vec<SolidToken>, pos: &mut usize, funcs: &mut FuncTypes, structs: &StructTypes, traits: &TraitTypes
+    tokens: &Vec<SolidToken>, pos: &mut usize, _funcs: &mut FuncTypes, structs: &StructTypes, traits: &TraitTypes
 ) -> Type {
-    if structs.len() == 0 {
+    if structs.is_empty() {
         panic!()
     }
     let mut res: Option<Type> = None;
@@ -870,7 +870,7 @@ fn get_arg_typ(
                     }
                 };
                 let mut children = vec![add_child(
-                    get_arg_typ(tokens, pos, funcs, structs, traits),
+                    get_arg_typ(tokens, pos, _funcs, structs, traits),
                     0,
                     struct_name.get_str()
                 )];
@@ -878,7 +878,7 @@ fn get_arg_typ(
                 while let SolidToken::Comma = &tokens[*pos] {
                     *pos += 1;
                     children.push(add_child(
-                        get_arg_typ(tokens, pos, funcs, structs, traits),
+                        get_arg_typ(tokens, pos, _funcs, structs, traits),
                         generic_num,
                         struct_name.get_str()
                     ));
@@ -906,11 +906,11 @@ fn get_arg_typ(
             SolidToken::Operator(OperatorType::BinOr) => {
                 let typ = unwrap_enum!(res, Some(x), x, "need a value before |");
                 *pos += 1;
-                res = Some(typ.add_option(get_arg_typ(tokens, pos, funcs, structs, traits)));
+                res = Some(typ.add_option(get_arg_typ(tokens, pos, _funcs, structs, traits)));
                 break
             }
             SolidToken::Word(wrd) => {
-                if let Some(_) = res {
+                if res.is_some() {
                     panic!("unexpected type. res: {:?}, wrd: {wrd}", res)
                 }
                 let wrd = clean_type(wrd.clone()).to_string();
@@ -956,7 +956,7 @@ fn is_generic(typ: &Type, generics_hs: &HashSet<String>) -> Type {
     typ.clone()
 }
 
-fn get_generics(pos: &mut usize, tokens: &Vec<SolidToken>, index: usize, ast: &mut Vec<Ast>) -> Vec<String> {
+fn get_generics(pos: &mut usize, tokens: &[SolidToken], index: usize, ast: &mut Vec<Ast>) -> Vec<String> {
     let mut generics_vec = vec![];
     let mut generics_names = vec![];
     if let SolidToken::Operator(OperatorType::Smaller) = tokens[*pos] { //1 generics
@@ -974,16 +974,15 @@ fn get_generics(pos: &mut usize, tokens: &Vec<SolidToken>, index: usize, ast: &m
         AstNode::GenericsDeclaration,
         Some(Type {
             kind: TypeKind::Generics,
-            children: if generics_vec.len() == 0 { None } else { Some(generics_vec) }
+            children: if generics_vec.is_empty() { None } else { Some(generics_vec) }
         })
     ));
     generics_names
 }
 
 fn find_generics_in_typ(typ: &Type, generics_hs: &HashSet<String>) -> Type {
-    let mut res = is_generic(typ, &generics_hs);
-    res.children = if let Some(children) = res.children {
-        Some(children.iter().map(|x| find_generics_in_typ(x, generics_hs)).collect())
-    } else { None };
+    let mut res = is_generic(typ, generics_hs);
+    res.children = res.children.map(|children|
+        children.iter().map(|x| find_generics_in_typ(x, generics_hs)).collect());
     res
 }
