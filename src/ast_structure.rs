@@ -119,9 +119,9 @@ impl Display for AstNode {
             AstNode::Traits => write!(f, "TRAITS"),
             AstNode::Body => write!(f, "BODY"),
             AstNode::Module => write!(f, "MODULE"),
-            AstNode::Function(func) => write!(f, "FUNC({})", func.to_string()),
+            AstNode::Function(func) => write!(f, "FUNC({})", func),
             AstNode::StaticFunction(func) => {
-                write!(f, "STATIC_FUNC({})", func.to_string())
+                write!(f, "STATIC_FUNC({})", func)
             }
             AstNode::FunctionCall(s) => {
                 write!(f, "{}", if *s { "STATIC_FUNC_CALL" } else { "FUNC_CALL" })
@@ -160,7 +160,7 @@ impl Display for AstNode {
     }
 }
 
-pub fn join<T: Display>(lst: &Vec<T>, sep: &str) -> String {
+pub fn join<T: Display>(lst: &[T], sep: &str) -> String {
     lst.iter()
         .map(|x| x.to_string())
         .collect::<Vec<String>>()

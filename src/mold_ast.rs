@@ -1,19 +1,16 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
-use pretty_print_tree::PrettyPrintTree;
 use crate::ast_structure::{Ast, AstNode, Param};
 use crate::{IS_COMPILED, typ_with_child, unwrap_enum, some_vec, print_tree};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{clean_type, GenericType, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
-use crate::ast_add_types::{add_types, print_type, print_type_b};
+use crate::types::{clean_type, GenericType, MUT_STR_TYPE, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
+use crate::ast_add_types::add_types;
 use crate::built_in_funcs::BuiltIn;
 
 pub type TraitTypes = HashMap<String, TraitType>;
 pub type StructTypes = HashMap<String, StructType>;
 pub type FuncTypes = HashMap<String, FuncType>;
 pub type VarTypes = Vec<HashMap<String, usize>>;
-pub type PPT = PrettyPrintTree<(Vec<Ast>, usize)>;
-
 
 // todo I think it allows to use any type of closing )}]
 
@@ -39,7 +36,6 @@ tokens: &Vec<SolidToken>, pos: usize,
 built_ins: &HashMap<&str, Box<dyn BuiltIn>>
 ) -> (usize, Vec<Ast>) {
     let (mut structs, mut funcs, mut traits) = get_struct_and_func_names(tokens);
-    println!("funcs: {:?}", funcs.keys());
     let mut res = make_ast_statement(
         tokens, pos, vec![Ast::new(AstNode::Module)], 0, 0,
         &mut vec![HashMap::new()], &mut funcs, &mut structs, &mut traits
@@ -85,12 +81,10 @@ fn get_struct_and_func_names(tokens: &Vec<SolidToken>) -> (StructTypes, FuncType
                         } else {
                             traits.insert(name.clone(), TraitType { generics: Some(generics), pos: 0 });
                         }
+                    } else if let SolidToken::Struct = tok {
+                        structs.insert(name.clone(), StructType { generics: None, pos: 0 });
                     } else {
-                        if let SolidToken::Struct = tok {
-                            structs.insert(name.clone(), StructType { generics: None, pos: 0 });
-                        } else {
-                            traits.insert(name.clone(), TraitType { generics: None, pos: 0 });
-                        }
+                        traits.insert(name.clone(), TraitType { generics: None, pos: 0 });
                     }
                 },
             _ => ()
@@ -859,7 +853,6 @@ fn get_arg_typ(
     loop {
         match &tokens[*pos] {
             SolidToken::Bracket(IsOpen::True) => {
-                println!("res: {res:?}");
                 unwrap_enum!(&mut res, Some(Type{
                     kind: TypeKind::Struct(struct_name),
                     children: Some(res_children)
@@ -940,7 +933,6 @@ fn get_arg_typ(
                         }
                     })
                 } else {
-                    println!("didnt contain: {wrd}");
                     Some(Type::new(wrd.clone()))
                 };
 

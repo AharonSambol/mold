@@ -1,3 +1,4 @@
+#[allow(clippy::too_many_arguments)]
 mod ast_add_types;
 mod ast_structure;
 mod mold_ast;
@@ -24,24 +25,32 @@ use crate::built_in_funcs::{BuiltIn, make_built_ins};
 use crate::mold_tokens::SolidToken;
 
 static mut IS_COMPILED: bool = false;
-static mut IGNORE_STRUCTS: Lazy<HashSet<&'static str>> = Lazy::new(|| HashSet::new());
-static mut IGNORE_FUNCS: Lazy<HashSet<&'static str>> = Lazy::new(|| HashSet::new());
+static mut IGNORE_STRUCTS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
+static mut IGNORE_FUNCS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 
-
+// 2 optimizations:
+// lto = "fat"
+// codegen-units = 1
+//
+// TODO doesnt seem to check that func\struct that takes 2 of same generic are actually same typ
 fn main() {
     // todo remove
     unsafe {
         IS_COMPILED = true;
     }
-
+    // let mut path = String::from("tests/input_program.py");
+    let mut path = String::from("tests/generics.py");
+    // let mut path = String::from("tests/lists.py");
     for argument in env::args() {
         if argument == "compile" {
             unsafe {
                 IS_COMPILED = true;
             }
+        } else if let Some(p) = argument.strip_prefix("path=") {
+            path = p.to_string();
         }
     }
-    let mut data = fs::read_to_string("input_program.py").expect("Couldn't read file");
+    let mut data = fs::read_to_string(path).expect("Couldn't read file");
     put_at_start(&mut data);
     let tokens = mold_tokens::tokenize(data);
     println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidToken)>>());
@@ -59,7 +68,7 @@ fn main() {
 
 fn interpret(ast: &Vec<Ast>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     let mut py = String::new();
-    to_python::to_python(&ast, 0, 0, &mut py, &built_ins);
+    to_python::to_python(ast, 0, 0, &mut py, built_ins);
     py = format!(
         r#"from typing import *
 from copy import deepcopy
@@ -78,7 +87,7 @@ if __name__ == '__main__':
 
     let mut output = Command::new("python3")
         .arg("-c")
-        .arg(format!("{py}"))
+        .arg(&py)
         .spawn()
         .expect("ls command failed to start");
     output.wait().unwrap();
@@ -87,8 +96,8 @@ if __name__ == '__main__':
 fn compile(ast: &Vec<Ast>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     let mut rs = String::new();
     let mut enums = HashMap::new();
-    to_rust::to_rust(&ast, 0, 0, &mut rs, built_ins, &mut enums);
-    println!("\n{}", join(&enums.values().collect(), "\n\n"));
+    to_rust::to_rust(ast, 0, 0, &mut rs, built_ins, &mut enums);
+    println!("\n{}", join(&enums.values().collect::<Vec<&String>>(), "\n\n"));
     println!("\n{rs}");
 
     if !Path::new("/out").exists() {
@@ -108,7 +117,7 @@ use std::iter::Rev;
 
 {}
 {rs}",
-            join(&enums.values().collect(), "\n\n")
+            join(&enums.values().collect::<Vec<&String>>(), "\n\n")
         )
         .as_ref(),
     )
@@ -238,7 +247,7 @@ fn put_at_start(data: &mut String) {
                 "iter_mut() -> IterMut[T]",
                 "iter() -> Iter[T]",
                 "append(t: T)",
-                "index(pos: usize) -> T"
+                "index(pos: usize) -> T",
             ],
             static_methods: vec![
                 "new() -> Vec[T]"
@@ -264,7 +273,7 @@ fn put_at_start(data: &mut String) {
         }),
          */
     ];
-    write!(data, "\n").unwrap();
+    writeln!(data).unwrap();
     for add in to_add {
         match add {
             StructFunc::Struct(stct) => {
@@ -313,14 +322,14 @@ pub fn print_tree(tree: (Vec<Ast>, usize)){
         PPT::new(
             Box::new(|(vc, pos)| {
                 if let Some(t) = &vc[*pos].typ {
-                    format!("{}\n:{t}", vc[*pos].value.to_string())
+                    format!("{}\n:{t}", vc[*pos].value)
                 } else {
                     vc[*pos].value.to_string()
                 }
             }),
             Box::new(|(vc, pos)| {
-                let children = vc.iter().nth(*pos).unwrap().clone().children;
-                if let None = children {
+                let children = vc.get(*pos).unwrap().clone().children;
+                if children.is_none() {
                     return Vec::new();
                 }
                 children.unwrap().iter().map(|x| (vc.clone(), *x)).collect()

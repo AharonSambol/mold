@@ -22,6 +22,9 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             }
         },
         AstNode::Function(name) => {
+            let name = if name.contains("::") {
+                name.split("::").last().unwrap().to_string()
+            } else { name.clone() };
             if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
                 return;
             }
@@ -208,12 +211,14 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
                 return;
             }
             let param = &ast[children[1]];
-            let param = unwrap_u(&param.children).iter()
+            let param: Vec<&String> = unwrap_u(&param.children).iter()
                 .map(|&x|
                     unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n)
                 ).collect();
             let param_comma = join(&param, ", ");
-            let param_assign = join(&param.iter().map(|x| format!("self.{x} = {x}")).collect(), "\n\t\t");
+            let param_assign = join(&param.iter().map(
+                |&x| format!("self.{x} = {x}")
+            ).collect::<Vec<String>>(), "\n\t\t");
             write!(res,
 "class {name}:
 \tdef __init__(self, {param_comma}):
