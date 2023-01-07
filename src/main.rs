@@ -11,7 +11,6 @@ mod built_in_funcs;
 mod macros;
 
 use crate::ast_structure::{join, Ast};
-use crate::mold_ast::PPT;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
@@ -21,6 +20,7 @@ use std::fmt::Write;
 use std::path::Path;
 use std::process::Command;
 use once_cell::sync::Lazy;
+use pretty_print_tree::PrettyPrintTree;
 use crate::built_in_funcs::{BuiltIn, make_built_ins};
 use crate::mold_tokens::SolidToken;
 
@@ -319,7 +319,7 @@ fn put_at_start(data: &mut String) {
 
 pub fn print_tree(tree: (Vec<Ast>, usize)){
     let ppt = {
-        PPT::new(
+        PrettyPrintTree::<(Vec<Ast>, usize)>::new(
             Box::new(|(vc, pos)| {
                 if let Some(t) = &vc[*pos].typ {
                     format!("{}\n:{t}", vc[*pos].value)
