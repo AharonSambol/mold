@@ -23,7 +23,13 @@ pub fn get_function_return_type(return_type: &Option<Type>, expected_inputs: &Op
 pub fn map_generic_types(generic: &Type, t: &Type, res: &mut HashMap<String, Type>) {
     if let Type { kind: TypeKind::Generic(GenericType::Of(name)), children } = generic {
         if generic_isnt_defined(children, name) {
-            res.insert(name.clone(), t.clone());
+            if let Some(r) = res.get(name) {
+                if r != t {
+                    panic!("expected '{}' and '{}' to be of the same type", r, t);
+                }
+            } else {
+                res.insert(name.clone(), t.clone());
+            }
         }
     }
 

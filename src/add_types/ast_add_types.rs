@@ -171,7 +171,7 @@ pub fn add_types(
             let name = unwrap_enum!(
                 &ast[children[0]].value, AstNode::Identifier(x), x, "function without identifier?"
             );
-            let (input, output) =  if funcs.contains_key(name){
+            let (input, output) = if funcs.contains_key(name) {
                 (&funcs[name].input, &funcs[name].output)
             } else if built_ins.contains_key(name.as_str()) {
                 (built_ins[name.as_str()].input(), built_ins[name.as_str()].output())

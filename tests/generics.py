@@ -23,4 +23,6 @@ def main():
     s := Same { B { 1 }, False, B { 2 } }
     x := s.a.x
     a: Same[int, bool] = Same { 1, False, 2 }
-    sm := same_t(1, False)
+    sm := same_t(1, 12)
+
+
