@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::construct_ast::mold_ast::{VarTypes};
-use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, generify, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u};
+use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u};
 use lazy_static::lazy_static;
 use regex::Regex;
 use crate::built_in_funcs::BuiltIn;
@@ -333,18 +333,49 @@ pub fn add_types(
         }
         AstNode::ForVars | AstNode::Pass | AstNode::Continue
         | AstNode::Break | AstNode::Trait(_) | AstNode::Traits => {}
-        AstNode::ListLiteral => {
+        AstNode::ListLiteral | AstNode::SetLiteral => {
+            let inner_types: Vec<usize> = children.iter().map(|x| {
+                add_types(ast, *x, vars, funcs, structs, traits, parent_struct, built_ins);
+                *x
+            }).collect(); //1 collecting so that all of them get a type
             ast[pos].typ = Some(typ_with_child!{
-                TypeKind::Struct(TypName::Static("Vec")),
+                TypeKind::Struct(TypName::Static(
+                    if let AstNode::ListLiteral = &ast[pos].value { "Vec" } else { "HashSet" }
+                )),
                 typ_with_child!{
                     TypeKind::GenericsMap,
                     typ_with_child!{
                         TypeKind::Generic(GenericType::Of(String::from("T"))),
-                        generify(&children.iter().map(|x| {
-                            add_types(ast, *x, vars, funcs, structs, traits, parent_struct, built_ins);
+                        if let Some(x) = inner_types.first() {
                             ast[*x].typ.clone().unwrap()
-                        }).collect())
+                        } else { UNKNOWN_TYPE }
                     }
+                }
+            });
+        }
+        AstNode::DictLiteral => {
+            let inner_types: Vec<usize> = children.iter().map(|x| {
+                add_types(ast, *x, vars, funcs, structs, traits, parent_struct, built_ins);
+                *x
+            }).collect(); //1 collecting so that all of them get a type
+            ast[pos].typ = Some(typ_with_child!{
+                TypeKind::Struct(TypName::Static("HashMap")),
+                Type{
+                    kind: TypeKind::GenericsMap,
+                    children: some_vec![
+                        typ_with_child!{
+                            TypeKind::Generic(GenericType::Of(String::from("K"))),
+                            if let Some(x) = inner_types.first() {
+                                ast[*x].typ.clone().unwrap()
+                            } else { UNKNOWN_TYPE }
+                        },
+                        typ_with_child!{
+                            TypeKind::Generic(GenericType::Of(String::from("V"))),
+                            if let Some(x) = inner_types.get(1) {
+                                ast[*x].typ.clone().unwrap()
+                            } else { UNKNOWN_TYPE }
+                        },
+                    ]
                 }
             });
         }

@@ -175,7 +175,8 @@ fn make_ast_expression(
                     //1 list-literal or comprehension
                     add_to_tree(parent, ast, Ast::new(AstNode::ListLiteral));
                     let list_parent = ast.len() - 1;
-                    while let SolidToken::Comma | SolidToken::Bracket(IsOpen::True) = &tokens[pos] {
+                    let starting_pos = pos;
+                    while matches!(&tokens[pos], SolidToken::Comma) || pos == starting_pos {
                         pos = make_ast_expression(
                             tokens, pos + 1, ast, list_parent, vars, funcs, structs, traits
                         );
@@ -185,6 +186,27 @@ fn make_ast_expression(
             },
             SolidToken::Brace(IsOpen::True) => {
                 amount_of_open += 1;
+                //1 set\dict-literal or comprehension
+                //3                                         | this is a placeholder |
+                add_to_tree(parent, ast, Ast::new(AstNode::SetLiteral));
+                let list_parent = ast.len() - 1;
+                let starting_pos = pos;
+                while matches!(&tokens[pos], SolidToken::Comma | SolidToken::Colon) || pos == starting_pos {
+                    if let SolidToken::Colon = tokens[pos] {
+                        if let AstNode::DictLiteral = ast[list_parent].value {
+                            if unwrap_u(&ast[list_parent].children).len() % 2 != 1 { panic!() }
+                        } else {
+                            if unwrap_u(&ast[list_parent].children).len() != 1 { panic!() }
+                            ast[list_parent].value = AstNode::DictLiteral;
+                        }
+                    } else if let AstNode::DictLiteral = ast[list_parent].value {
+                        if unwrap_u(&ast[list_parent].children).len() % 2 == 1 { panic!() }
+                    }
+                    pos = make_ast_expression(
+                        tokens, pos + 1, ast, list_parent, vars, funcs, structs, traits
+                    );
+                }
+                pos -= 1;
             },
             SolidToken::Parenthesis(IsOpen::False)
             | SolidToken::Bracket(IsOpen::False)

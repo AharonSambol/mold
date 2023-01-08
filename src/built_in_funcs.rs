@@ -15,7 +15,7 @@ macro_rules! get_types {
 }
 macro_rules! to_py {
     ($x: expr) => {
-        fn to_str_python(&self, ast: &Vec<Ast>, res: &mut String, children: &Vec<usize>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
+        fn to_str_python(&self, ast: &[Ast], res: &mut String, children: &[usize], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
             write!(res, $x).unwrap();
             close_python(ast, res, children, built_ins);
         }
@@ -127,9 +127,25 @@ pub fn put_at_start(data: &mut String) {
                 "append(t: T)",
                 "index(pos: usize) -> T",
             ],
-            static_methods: vec![
-                "new() -> Vec[T]"
+            static_methods: vec![],
+            _parameters: vec![],
+        }),
+        //1 Set
+        StructFunc::Struct(BuiltInStruct{
+            name: "HashSet",
+            generics: Some(vec!["T"]),
+            methods: vec![ // todo
+                "add(t: T)",
             ],
+            static_methods: vec![],
+            _parameters: vec![],
+        }),
+        //1 Dict
+        StructFunc::Struct(BuiltInStruct{
+            name: "HashMap",
+            generics: Some(vec!["K", "V"]),
+            methods: vec![], // todo
+            static_methods: vec![],
             _parameters: vec![],
         }),
         /* //1 Rev
@@ -345,13 +361,13 @@ pub trait BuiltIn {
     fn output(&self) -> &Option<Type>;
     fn to_str_rust(
         &self,
-        ast: &Vec<Ast>,
+        ast: &[Ast],
         res: &mut String,
-        children: &Vec<usize>,
+        children: &[usize],
         built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
         enums: &mut HashMap<String, String>,
     );
-    fn to_str_python(&self, ast: &Vec<Ast>, res: &mut String, children: &Vec<usize>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>);
+    fn to_str_python(&self, ast: &[Ast], res: &mut String, children: &[usize], built_ins: &HashMap<&str, Box<dyn BuiltIn>>);
 }
 
 struct Print {
@@ -364,22 +380,19 @@ impl BuiltIn for Print {
     // TODO get inputs and then based off of types put {} or {:?}
     fn to_str_rust(
         &self,
-        ast: &Vec<Ast>,
+        ast: &[Ast],
         res: &mut String,
-        children: &Vec<usize>,
+        children: &[usize],
         built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
         enums: &mut HashMap<String, String>,
     ) {
         write!(
             res,
-            "{}",
-            format!(
-                "println!(\"{}\", ",
-                "{} "
-                    .repeat(unwrap_u(&ast[children[1]].children).len())
-                    .strip_suffix(' ')
-                    .unwrap()
-            )
+            "println!(\"{}\", ",
+            "{} "
+                .repeat(unwrap_u(&ast[children[1]].children).len())
+                .strip_suffix(' ')
+                .unwrap()
         )
         .unwrap();
         close_rust(ast, res, children, built_ins, enums);
@@ -397,22 +410,19 @@ impl BuiltIn for DPrint {
     // TODO get inputs and then based off of types put {} or {:?}
     fn to_str_rust(
         &self,
-        ast: &Vec<Ast>,
+        ast: &[Ast],
         res: &mut String,
-        children: &Vec<usize>,
+        children: &[usize],
         built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
         enums: &mut HashMap<String, String>,
     ) {
         write!(
             res,
-            "{}",
-            format!(
-                "println!(\"{}\", ",
-                "{:?} "
-                    .repeat(unwrap_u(&ast[children[1]].children).len())
-                    .strip_suffix(' ')
-                    .unwrap()
-            )
+            "println!(\"{}\", ",
+            "{:?} "
+                .repeat(unwrap_u(&ast[children[1]].children).len())
+                .strip_suffix(' ')
+                .unwrap()
         )
         .unwrap();
         close_rust(ast, res, children, built_ins, enums);
@@ -431,9 +441,9 @@ impl BuiltIn for Range {
 
     fn to_str_rust(
         &self,
-        ast: &Vec<Ast>,
+        ast: &[Ast],
         res: &mut String,
-        children: &Vec<usize>,
+        children: &[usize],
         built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
         enums: &mut HashMap<String, String>,
     ) {
@@ -477,9 +487,9 @@ impl BuiltIn for Rev {
 
     fn to_str_rust(
         &self,
-        ast: &Vec<Ast>,
+        ast: &[Ast],
         res: &mut String,
-        children: &Vec<usize>,
+        children: &[usize],
         built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
         enums: &mut HashMap<String, String>,
     ) {
@@ -500,9 +510,9 @@ impl BuiltIn for Enumerate {
 
     fn to_str_rust(
         &self,
-        ast: &Vec<Ast>,
+        ast: &[Ast],
         res: &mut String,
-        children: &Vec<usize>,
+        children: &[usize],
         built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
         enums: &mut HashMap<String, String>,
     ) {
@@ -523,9 +533,9 @@ impl BuiltIn for Str {
 
     fn to_str_rust(
         &self,
-        ast: &Vec<Ast>,
+        ast: &[Ast],
         res: &mut String,
-        children: &Vec<usize>,
+        children: &[usize],
         built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
         enums: &mut HashMap<String, String>,
     ) {
@@ -546,9 +556,9 @@ impl BuiltIn for Int {
 
     fn to_str_rust(
         &self,
-        ast: &Vec<Ast>,
+        ast: &[Ast],
         res: &mut String,
-        children: &Vec<usize>,
+        children: &[usize],
         built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
         enums: &mut HashMap<String, String>,
     ) {
@@ -569,9 +579,9 @@ impl BuiltIn for Float {
 
     fn to_str_rust(
         &self,
-        ast: &Vec<Ast>,
+        ast: &[Ast],
         res: &mut String,
-        children: &Vec<usize>,
+        children: &[usize],
         built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
         enums: &mut HashMap<String, String>,
     ) {
@@ -583,16 +593,16 @@ impl BuiltIn for Float {
 }
 
 
-fn close_python(ast: &Vec<Ast>, res: &mut String, children: &Vec<usize>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
+fn close_python(ast: &[Ast], res: &mut String, children: &[usize], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     if children.len() > 1 {
         to_python(ast, children[1], 0, res, built_ins);
     }
     write!(res, ")").unwrap();
 }
 fn close_rust(
-    ast: &Vec<Ast>,
+    ast: &[Ast],
     res: &mut String,
-    children: &Vec<usize>,
+    children: &[usize],
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
     enums: &mut HashMap<String, String>,
 ) {

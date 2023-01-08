@@ -41,6 +41,7 @@ pub enum AstNode {
     Bool(bool),             // no children
     Char(String),
     ColonParentheses,       // children[0] = inside
+    DictLiteral, // children = elements
     FirstAssignment,
     ForIter,        // children[0] = iter
     ForStatement,   // children[0] = colon_parentheses(ForVars, ForIter), children[1] = body
@@ -60,6 +61,7 @@ pub enum AstNode {
     Property,           // children[0] = obj, children[1] = prop
     Return,     // children[0] = return val
     ReturnType,
+    SetLiteral, // children = elements
     StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
     String { val: String, mutable: bool, },
     Struct(String), // children[0] = args, children[1] = functions, children[2] = body
@@ -85,6 +87,8 @@ impl AstNode {
             | AstNode::UnaryOp(_)
             | AstNode::Parentheses
             | AstNode::ListLiteral
+            | AstNode::SetLiteral
+            | AstNode::DictLiteral
             | AstNode::Index => true,
             AstNode::FirstAssignment
             | AstNode::Pass
@@ -147,6 +151,8 @@ impl Display for AstNode {
             AstNode::Continue => write!(f, "CONTINUE"),
             AstNode::Break => write!(f, "BREAK"),
             AstNode::ListLiteral => write!(f, "[LIST]"),
+            AstNode::SetLiteral => write!(f, "[SET]"),
+            AstNode::DictLiteral => write!(f, "[DICT]"),
             AstNode::Index => write!(f, "[INDEX]"),
             AstNode::Args => write!(f, "(ARGS)"),
             AstNode::ArgsDef => write!(f, "(ARGS_DEF)"),

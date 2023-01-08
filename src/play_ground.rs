@@ -1,6 +1,37 @@
+use std::collections::{HashMap, HashSet};
 use std::slice::Iter;
 
+trait P {
+    fn p(&self) -> i8;
+}
+#[derive(Eq)]
+struct D {
+
+}
+impl P for D {
+    fn p(&self) -> i8 {
+        1
+    }
+}
+
+impl PartialEq for D {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
+}
+
 fn _a(){
+    let mut a: HashMap::<i32, Box<dyn P>> = HashMap::from([
+        (1i32, Box::new(D{ }) as Box<dyn P>),
+    ]);
+    // let mut a: Vec<Box<dyn P>> = vec![
+    //     Box::new(D{ }),
+    //     Box::new(D{ }),
+    //     Box::new(D{ })
+    // ];
+    // let mut a: HashSet<Box<dyn P>> = HashSet::from([
+    //     Box::new(D{ }) as Box<dyn P>
+    // ]);
     let b = "wow";
     let _c = format!("{}{}", b, "1");
     let v = vec![1, 2];

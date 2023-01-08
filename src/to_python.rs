@@ -11,7 +11,7 @@ lazy_static!{
     static ref NUM_TYP_RE: Regex = Regex::new(r"[uif]").unwrap();
 }
 
-pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
+pub fn to_python(ast: &[Ast], pos: usize, indentation: usize, res: &mut String, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     let children = unwrap_u(&ast[pos].children);
 
     match &ast[pos].value {
@@ -82,11 +82,11 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         },
         AstNode::Operator(op) => {
             to_python(ast, children[0], indentation, res, built_ins);
-            write!(res, " {} ", op.to_string()).unwrap();
+            write!(res, " {} ", op).unwrap();
             to_python(ast, children[1], indentation, res, built_ins);
         },
         AstNode::UnaryOp(op) => {
-            write!(res, " {}", op.to_string()).unwrap();
+            write!(res, " {}", op).unwrap();
             to_python(ast, children[0], indentation, res, built_ins);
         },
         AstNode::Parentheses => {
@@ -107,7 +107,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             write!(res, "]").unwrap();
         },
         AstNode::Number(num) => write!(res, "{}", NUM_TYP_RE.split(num).next().unwrap()).unwrap(),
-        AstNode::String { val, .. } => write!(res, "\"\"{val}\"\"").unwrap(),
+        AstNode::String { val, .. } => write!(res, "{val}").unwrap(),
         AstNode::Char(chr) => write!(res, "'{chr}'").unwrap(),
         AstNode::Bool(b) => write!(res, "{}", if *b { "True" } else { "False" }).unwrap(),
         AstNode::ListLiteral => {
@@ -121,6 +121,32 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             write!(res, "]").unwrap();
 
         },
+        AstNode::SetLiteral => {
+            write!(res, "{{").unwrap();
+            for (i, child) in children.iter().enumerate() {
+                if i != 0{
+                    write!(res, ", ").unwrap();
+                }
+                to_python(ast, *child, indentation + 1, res, built_ins);
+            }
+            write!(res, "}}").unwrap();
+
+        },
+        AstNode::DictLiteral => {
+            write!(res, "{{").unwrap();
+            for (i, child) in children.iter().enumerate() {
+                if i != 0{
+                    if i % 2 == 0 {
+                        write!(res, ", ").unwrap();
+                    } else {
+                        write!(res, ": ").unwrap();
+                    }
+                }
+                to_python(ast, *child, indentation + 1, res, built_ins);
+            }
+            write!(res, "}}").unwrap();
+
+        },
         AstNode::Pass => {
             write!(res, "pass").unwrap();
         },
@@ -130,7 +156,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
                     built_ins[name.as_str()].to_str_python(ast, res, children, built_ins);
                     return;
                 }
-                if built_in_funcs(&ast, name, indentation, res, built_ins, &children) {
+                if built_in_funcs(ast, name, indentation, res, built_ins, children) {
                     return;
                 }
             }
@@ -143,7 +169,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             write!(res, ")").unwrap();
         },
         AstNode::ArgsDef => {
-            if children.len() == 0 {
+            if children.is_empty() {
                 return;
             }
             to_python(ast, children[0], indentation, res, built_ins);
@@ -153,7 +179,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
             }
         }
         AstNode::Args => {
-            if children.len() == 0 {
+            if children.is_empty() {
                 return;
             }
             write!(res, "__cpy_strct(").unwrap();
@@ -168,7 +194,7 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
         },
         AstNode::Return => {
             write!(res, "return ").unwrap();
-            if children.len() != 0 {
+            if !children.is_empty() {
                 to_python(ast, children[0], indentation, res, built_ins);
             }
         },
@@ -235,9 +261,9 @@ pub fn to_python(ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut Strin
 
 
 fn built_in_methods(
-    ast: &Vec<Ast>, indentation: usize, res: &mut String,
+    ast: &[Ast], indentation: usize, res: &mut String,
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-    children: &Vec<usize>
+    children: &[usize]
 ) -> bool {
     if let AstNode::Identifier(func_name) = &ast[unwrap_u(&ast[children[1]].children)[0]].value {
         // let arg_pos = unwrap_u(&ast[children[1]].children)[1];
@@ -254,12 +280,12 @@ fn built_in_methods(
 }
 
 fn built_in_funcs(
-    ast: &Vec<Ast>, name: &String, indentation: usize, res: &mut String,
+    ast: &[Ast], name: &str, indentation: usize, res: &mut String,
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-    children: &Vec<usize>
+    children: &[usize]
 ) -> bool {
     // let arg_pos = unwrap_u(&ast[children[1]].children)[1];
-    match name.as_str() {
+    match name {
         "reversed" => {
             to_python(ast, children[1], indentation, res, built_ins);
             write!(res, ".rev()").unwrap();

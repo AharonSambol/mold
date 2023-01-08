@@ -37,7 +37,7 @@ pub const ITER_NAME: TypName = TypName::Static("Iter");
 //     children: None
 // };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GenericType {
     Declaration(String),
     Of(String),
@@ -48,7 +48,6 @@ pub enum TypName {
     Str(String),
     Static(&'static str)
 }
-
 
 impl PartialEq for TypName {
     fn eq(&self, other: &Self) -> bool {
@@ -178,7 +177,7 @@ impl Display for Type {
                 // todo repeat of same code in TypeKind::Struct?
                 let mut gens = String::new();
                 if let Some(children) = &self.children {
-                    if children.len() != 0 {
+                    if !children.is_empty() {
                         if let TypeKind::GenericsMap = children[0].kind {
                             if let Some(generics) = &children[0].children {
                                 gens = format!("::<{}>", join(generics.iter(), ","));
@@ -270,19 +269,6 @@ pub fn unwrap_u(children: &Option<Vec<usize>>) -> &Vec<usize> {
     if let Some(c) = &children { c } else { &EMPTY_VEC_US }
 }
 
-pub fn generify(types: &Vec<Type>) -> Type {
-    if types.len() == 0 {
-        return UNKNOWN_TYPE;
-    }
-    // TODO !!
-    // Type {
-    //     kind: TypeKind::Generic(GenericType::Of(generic_name)),
-    //     children: Some(vec![
-            types[0].clone()
-    //     ]),
-    // }
-}
-
 pub fn clean_type(st: String) -> TypName {
     TypName::Static(
         match st.as_str() {
@@ -290,6 +276,8 @@ pub fn clean_type(st: String) -> TypName {
             "int" => "i32",
             "float" => "f32",
             "List" => "Vec",
+            "Set" => "HashSet",
+            "Dict" => "HashMap",
             _ => return TypName::Str(st)
         }
     )

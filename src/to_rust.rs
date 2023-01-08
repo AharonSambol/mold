@@ -11,7 +11,7 @@ use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType};
 
 
 pub fn to_rust(
-    ast: &Vec<Ast>, pos: usize, indentation: usize, res: &mut String,
+    ast: &[Ast], pos: usize, indentation: usize, res: &mut String,
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
     enums: &mut HashMap<String, String>
 ) {
@@ -156,6 +156,32 @@ pub fn to_rust(
                 to_rust(ast, *child, indentation + 1, res, built_ins, enums);
             }
             write!(res, "]").unwrap();
+
+        },
+        AstNode::SetLiteral => {
+            write!(res, "HashSet::from([").unwrap();
+            for (i, child) in children.iter().enumerate() {
+                if i != 0{
+                    write!(res, ", ").unwrap();
+                }
+                to_rust(ast, *child, indentation + 1, res, built_ins, enums);
+            }
+            write!(res, "])").unwrap();
+
+        },
+        AstNode::DictLiteral => {
+            write!(res, "HashMap::from([").unwrap();
+            for (i, children) in children.windows(2).step_by(2).enumerate() {
+                if i != 0{
+                    write!(res, ", ").unwrap();
+                }
+                write!(res, "(").unwrap();
+                to_rust(ast, children[0], indentation + 1, res, built_ins, enums);
+                write!(res, ", ").unwrap();
+                to_rust(ast, children[1], indentation + 1, res, built_ins, enums);
+                write!(res, ")").unwrap();
+            }
+            write!(res, "])").unwrap();
 
         },
         AstNode::Pass => {
@@ -335,7 +361,7 @@ pub fn to_rust(
 
 fn print_function_rust(
     name: &str,
-    ast: &Vec<Ast>, indentation: usize, res: &mut String,
+    ast: &[Ast], indentation: usize, res: &mut String,
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
     enums: &mut HashMap<String, String>,
     children: &[usize]
@@ -365,7 +391,7 @@ fn print_function_rust(
 }
 
 fn built_in_methods(
-    ast: &Vec<Ast>, indentation: usize, res: &mut String,
+    ast: &[Ast], indentation: usize, res: &mut String,
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>, enums: &mut HashMap<String, String>,
     children: &[usize]
 ) -> bool {
@@ -451,7 +477,7 @@ fn built_in_methods(
 }
 
 fn built_in_funcs(
-    ast: &Vec<Ast>, name: &str, indentation: usize, res: &mut String,
+    ast: &[Ast], name: &str, indentation: usize, res: &mut String,
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>, enums: &mut HashMap<String, String>,
     children: &[usize]
 ) -> bool {

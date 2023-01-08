@@ -8,6 +8,7 @@ use crate::construct_ast::mold_ast::VarTypes;
 use crate::construct_ast::tree_utils::add_to_tree;
 use crate::types::{GenericType, Type, TypeKind, TypName, unwrap, unwrap_u};
 
+// TODO also cast: `as Box<dyn P>`
 fn add_box(ast: &mut Vec<Ast>, pos: usize) {
     let ast_len = ast.len();
     let inner_val = ast[pos].clone();
@@ -115,12 +116,18 @@ pub fn check_for_boxes(
             let expected_children = unwrap(&expected.children).clone();
             let got_children = unwrap_u(&got.children).clone();
             let typ = match &got.value {
-                AstNode::ListLiteral => {
-                    if ex_name.get_str() != "Vec" {
-                        panic!("expected: `{}` but found: `Vec`", ex_name.get_str())
+                AstNode::ListLiteral | AstNode::SetLiteral => {
+                    match &got.value {
+                        AstNode::ListLiteral => if ex_name.get_str() != "Vec" {
+                            panic!("expected: `{}` but found: `Vec`", ex_name.get_str())
+                        }
+                        AstNode::SetLiteral => if ex_name.get_str() != "HashSet" {
+                            panic!("expected: `{}` but found: `HashSet`", ex_name.get_str())
+                        }
+                        _ => unreachable!()
                     }
                     if expected_children.len() != 1 { panic!() }
-                    let got_c = if let Type{
+                    let exp_c = if let Type{
                         kind: TypeKind::GenericsMap,
                         children: Some(c)
                     } = &expected_children[0] {
@@ -136,7 +143,36 @@ pub fn check_for_boxes(
 
                     for i in got_children {
                         check_for_boxes(
-                            got_c.clone(), ast, i, structs, traits, vars, funcs
+                            exp_c.clone(), ast, i, structs, traits, vars, funcs
+                        );
+                    }
+                    expected.clone()  //1 got what expected, no need to panic
+                },
+                AstNode::DictLiteral => {
+                    if ex_name.get_str() != "HashMap" {
+                        panic!("expected: `{}` but found: `HashMap`", ex_name.get_str())
+                    }
+                    if expected_children.len() != 1 { panic!() }
+                    let exp_c: [&Type; 2] = if let Type{
+                        kind: TypeKind::GenericsMap,
+                        children: Some(c)
+                    } = &expected_children[0] {
+                        if c.len() != 2 { panic!() }
+                        let mut iter = c.iter().map(|t| {
+                            if let Type {
+                                kind: TypeKind::Generic(GenericType::Of(_)),
+                                children: Some(c)
+                            } = &t {
+                                if c.len() != 1 { panic!() }
+                                &c[0]
+                            } else { panic!() }
+                        });
+                        [iter.next().unwrap(), iter.next().unwrap()]
+                    } else { panic!() };
+
+                    for i in got_children {
+                        check_for_boxes(
+                            exp_c[i % 2].clone(), ast, i, structs, traits, vars, funcs
                         );
                     }
                     expected.clone()  //1 got what expected, no need to panic

@@ -141,7 +141,7 @@ pub fn make_struct(
 
     unwrap_enum!(tokens[pos], SolidToken::Colon, "expected colon");
     pos += 2 + indent;
-    if let SolidToken::Tab = &tokens[pos] {
+    if pos < tokens.len() && matches!(&tokens[pos], SolidToken::Tab) {
         pos += 1;
         while let SolidToken::Word(word) = &tokens[pos] {
             pos += 1;
@@ -186,7 +186,7 @@ pub fn make_struct(
         );
     }
     let mut vars = vec![vars]; //1 stack
-    while let SolidToken::Def | SolidToken::Static = tokens[pos] {
+    while pos < tokens.len() && matches!(tokens[pos], SolidToken::Def | SolidToken::Static) {
         vars.push(HashMap::new());
         pos = make_func(
             tokens, pos, ast, body_pos, indent + 1,

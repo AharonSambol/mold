@@ -136,6 +136,8 @@ pub fn get_arg_typ(
                         }
                     })
                 } else {
+                    // TODO check that its a generic otherwise panic
+                    //  panic!("typ `{}` doesnt exist", wrd)
                     Some(Type::new(wrd.clone()))
                 };
 
