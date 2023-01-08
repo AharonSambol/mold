@@ -37,14 +37,18 @@ pub fn construct_ast(
 }
 
 fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
-    let traits: Vec<(String, Vec<(usize, String)>)> = traits.iter().map(
-        |(trt_name, trt)| (trt_name.clone(), {
+    let traits: Vec<(String, Vec<(usize, String)>)> = traits.iter().filter_map(
+        |(trt_name, trt)| {
             let trt_def = &ast[trt.pos];
-            let trt_module = &ast[unwrap_u(&trt_def.children)[1]];
-            unwrap_u(&trt_module.children).iter().map(|func| {
-                (*func, unwrap_enum!(&ast[*func].value, AstNode::Function(name), name.clone()))
-            }).collect()
-        })
+            if let AstNode::Trait { strict: true, .. } = trt_def.value {
+                None
+            } else {
+                let trt_module = &ast[unwrap_u(&trt_def.children)[1]];
+                Some((trt_name.clone(), unwrap_u(&trt_module.children).iter().map(|func| {
+                    (*func, unwrap_enum!(&ast[*func].value, AstNode::Function(name), name.clone()))
+                }).collect()))
+            }
+        }
     ).collect();
     for (strct_name, strct) in structs {
         let strct_def = &ast[strct.pos];
@@ -66,7 +70,9 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
         );
         for (trt, trt_funcs) in traits.iter() {
             if strct_traits.contains(trt) { continue }
+
             if trt_funcs.iter().all(|(_, x)| funcs.contains(x)) {
+
                 //1 add the trait
                 add_to_tree(
                     strct_traits_pos, ast,
@@ -118,7 +124,7 @@ pub fn make_ast_statement(
                 pos = make_func(tokens, pos, ast, parent, indent, vars, funcs, structs, traits) - 1;
                 vars.pop();
             },
-            SolidToken::Trait => {
+            SolidToken::Trait | SolidToken::StrictTrait => {
                 pos = make_trait(tokens, pos + 1, ast, parent, indent, funcs, structs, traits);
             },
             SolidToken::For => {

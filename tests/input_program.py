@@ -4,7 +4,7 @@ trait P:
 trait P2:
     def p() -> i8
 
-trait Duck:
+TRAIT Duck:
     def quack()
     def swim()
 struct D:

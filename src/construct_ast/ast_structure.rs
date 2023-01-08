@@ -66,7 +66,7 @@ pub enum AstNode {
     String { val: String, mutable: bool, },
     Struct(String), // children[0] = args, children[1] = functions, children[2] = body
     StructInit,         // children[0] = struct, children[1] = Args,
-    Trait(String),  // children[0] = Module (functions)
+    Trait { name: String, strict: bool },  // children[0] = Module (functions)
     Traits,
     UnaryOp(OperatorType),  // children[0] = elem
     WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
@@ -100,7 +100,7 @@ impl AstNode {
             | AstNode::Function { .. }
             | AstNode::StaticFunction { .. }
             | AstNode::Struct(_)
-            | AstNode::Trait(_)
+            | AstNode::Trait { .. }
             | AstNode::Traits
             | AstNode::ColonParentheses
             | AstNode::IfStatement
@@ -160,7 +160,7 @@ impl Display for AstNode {
             AstNode::ReturnType => write!(f, "RETURNS"),
             AstNode::GenericsDeclaration => write!(f, "GENERIC_DECLARATION"),
             AstNode::Struct(name) => write!(f, "STRUCT({name})"),
-            AstNode::Trait(name) => write!(f, "TRAIT({name})"),
+            AstNode::Trait { name, strict } => write!(f, "TRAIT({name}, {strict})"),
             AstNode::Bool(b) => write!(f, "{b}"),
         }
     }

@@ -64,7 +64,7 @@ pub fn check_for_boxes(
     ) -> bool {
         match &got.value {
             AstNode::Struct(bx) => bx == "Box",
-            AstNode::Trait(_) => true,
+            AstNode::Trait { .. } => true,
             AstNode::Identifier(idf) => {
                 let typ = get_from_stack(vars, idf).unwrap();
                 let typ = ast[typ].typ.clone().unwrap();

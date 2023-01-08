@@ -41,7 +41,7 @@ pub fn get_struct_and_func_names(tokens: &[SolidToken]) -> (StructTypes, FuncTyp
                         funcs.insert(name.clone(), UNKNOWN_FUNC_TYPE);
                     }
                 },
-            SolidToken::Struct | SolidToken::Trait =>
+            SolidToken::Struct | SolidToken::Trait | SolidToken::StrictTrait =>
                 if let SolidToken::Word(name) = &tokens[i + 1] {
                     if let SolidToken::Operator(OperatorType::Smaller) = &tokens[i + 2] {
                         let mut pos = i + 3;

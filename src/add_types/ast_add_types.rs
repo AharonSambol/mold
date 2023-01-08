@@ -91,7 +91,7 @@ pub fn add_types(
                     n
                 } else { unreachable!() };
             let return_type = if let Some(p) = ast[ast[func_pos].parent.unwrap()].parent {
-                if let AstNode::Trait(_) | AstNode::Struct(_) = &ast[p].value {
+                if let AstNode::Trait { .. } | AstNode::Struct(_) = &ast[p].value {
                     ast[unwrap_u(&ast[func_pos].children)[2]].typ.clone()
                 } else { unreachable!() }
             } else {
@@ -331,7 +331,7 @@ pub fn add_types(
             ast[pos].typ = ast[children[0]].typ.clone();
         }
         AstNode::ForVars | AstNode::Pass | AstNode::Continue
-        | AstNode::Break | AstNode::Trait(_) | AstNode::Traits => {}
+        | AstNode::Break | AstNode::Trait { .. } | AstNode::Traits => {}
         AstNode::ListLiteral | AstNode::SetLiteral => {
             let inner_types: Vec<usize> = children.iter().map(|x| {
                 add_types(ast, *x, vars, funcs, structs, traits, parent_struct, built_ins);

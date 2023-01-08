@@ -52,7 +52,7 @@ pub enum SolidToken {
     Operator(OperatorType), UnaryOperator(OperatorType),
     Colon, Comma, Period,
     Tab, NewLine,
-    Def, Class, Enum, Struct, Trait,
+    Def, Class, Enum, Struct, Trait, StrictTrait,
     If, Else, Elif,
     Match, Case, While, For,
     Break, Continue, Return, Pass,
@@ -302,7 +302,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                 match st {
                     "def" => SolidToken::Def, "class" => SolidToken::Class,
                     "enum" => SolidToken::Enum, "struct" => SolidToken::Struct,
-                    "trait" => SolidToken::Trait,
+                    "trait" => SolidToken::Trait, "TRAIT" => SolidToken::StrictTrait,
                     "if" => SolidToken::If, "else" => SolidToken::Else,
                     "elif" => SolidToken::Elif,
                     "match" => SolidToken::Match, "case" => SolidToken::Case,

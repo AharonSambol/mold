@@ -257,7 +257,12 @@ pub fn make_trait(
         if let SolidToken::Word(name) = &tokens[pos] { name.clone() }
         else { panic!("Invalid name for function {:?}", tokens[pos]) };
 
-    let index = add_to_tree(parent, ast, Ast::new(AstNode::Trait(name.clone())));
+    let index = add_to_tree(parent, ast, Ast::new(
+        AstNode::Trait {
+            name: name.clone(),
+            strict: matches!(tokens[pos-1], SolidToken::StrictTrait)
+        }
+    ));
 
     pos += 1;
     let generics_names = get_generics(&mut pos, tokens, index, ast);

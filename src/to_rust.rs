@@ -338,7 +338,7 @@ pub fn to_rust(
         AstNode::Continue => write!(res, "continue").unwrap(),
         AstNode::Break => write!(res, "break").unwrap(),
         AstNode::ReturnType => { unreachable!() },
-        AstNode::Trait(name) => {
+        AstNode::Trait { name, .. } => {
             let generics_ast = &ast[children[0]];
             let generic = format_generics(generics_ast);
             let functions = unwrap_u(&ast[children[1]].children);

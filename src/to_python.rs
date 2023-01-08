@@ -253,7 +253,7 @@ pub fn to_python(ast: &[Ast], pos: usize, indentation: usize, res: &mut String, 
         }
         AstNode::Continue => write!(res, "continue").unwrap(),
         AstNode::Break => write!(res, "break").unwrap(),
-        AstNode::GenericsDeclaration | AstNode::Trait(_) => {},
+        AstNode::GenericsDeclaration | AstNode::Trait { .. } => {},
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }
