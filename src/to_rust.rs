@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::ast_structure::{Ast, AstNode, join};
+use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
 use crate::built_in_funcs::BuiltIn;

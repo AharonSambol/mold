@@ -1,10 +1,10 @@
-use crate::ast_structure::Ast;
+use crate::construct_ast::ast_structure::{Ast, join};
 use crate::to_python::to_python;
 use crate::to_rust::to_rust;
 use crate::types::{unwrap_u, Type, TypeKind, INT_TYPE, GenericType, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE, MUT_STR_TYPE, ITER_NAME, TypName};
 use std::collections::HashMap;
 use std::fmt::Write;
-use crate::{some_vec, typ_with_child};
+use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, make_primitive, some_vec, typ_with_child};
 
 macro_rules! get_types {
     () => {
@@ -21,6 +21,181 @@ macro_rules! to_py {
         }
     };
 }
+
+
+
+
+enum StructFunc { Struct(BuiltInStruct), Func(BuiltInFunc) }
+struct BuiltInStruct {
+    name: &'static str,
+    generics: Option<Vec<&'static str>>,
+    methods: Vec<&'static str>,
+    static_methods: Vec<&'static str>,
+    _parameters: Vec<&'static str>
+}
+struct BuiltInFunc {
+    name: &'static str,
+    generics: Option<Vec<&'static str>>,
+    args: Vec<&'static str>,
+    return_typ: Option<&'static str>
+}
+pub fn put_at_start(data: &mut String) {
+    let to_add = [
+        make_primitive!(i8),  make_primitive!(i16), make_primitive!(i32),
+        make_primitive!(i64), make_primitive!(i128), make_primitive!(isize),
+        make_primitive!(u8),  make_primitive!(u16), make_primitive!(u32),
+        make_primitive!(u64), make_primitive!(u128), make_primitive!(usize),
+        make_primitive!(f32), make_primitive!(f64),
+        make_primitive!(bool), make_primitive!(str), make_primitive!(char),
+        //1 String
+        StructFunc::Struct(BuiltInStruct{
+            name: "String",
+            generics: None,
+            methods: vec![
+                "clone() -> str", // todo do automatically?
+                "split(s: str) -> List[str]", //todo (optional) s: str | char    if rust: -> Iter[str]
+                "strip() -> str",        //todo (optional) c: char
+                "lstrip() -> str",        //todo (optional) c: char
+                "rstrip() -> str",        //todo (optional) c: char
+                "len() -> int",         //todo -> usize technically
+                "contains(s: str) -> bool", //todo s: str | char
+                "replace(orig: str, new: str) -> str", //todo orig/new: str | char
+                "startswith(s: str) -> bool",
+                "endswith(s: str) -> bool",
+                "find(s: str) -> int",  //todo s: str | char
+                "count(s: str) -> int",  //todo s: str | char
+                "removeprefix(s: str) -> str",
+                "removesuffix(s: str) -> str",
+                "lower(s: str) -> str",
+                "upper(s: str) -> str",
+                // todo chars()
+                // todo is(digit\numeric\ascii...)
+                // todo "join(lst: List[T]) -> int",
+            ],
+            static_methods: vec![],
+            _parameters: vec![],
+        }),
+        //1 Iter
+        StructFunc::Struct(BuiltInStruct{
+            name: "Iter",
+            generics: Some(vec!["T"]),
+            methods: vec![
+                "into_iter() -> IntoIter[T]",
+            ],
+            static_methods: vec![],
+            _parameters: vec![],
+        }),
+        //1 IntoIter
+        StructFunc::Struct(BuiltInStruct{
+            name: "IntoIter",
+            generics: Some(vec!["T"]),
+            methods: vec![
+                "into_iter() -> IntoIter[T]",
+                "next() -> T"
+            ],
+            static_methods: vec![],
+            _parameters: vec![],
+        }),
+        //1 IterMut
+        StructFunc::Struct(BuiltInStruct{
+            name: "IterMut",
+            generics: Some(vec!["T"]),
+            methods: vec![
+                "into_iter() -> IntoIter[T]",
+            ],
+            static_methods: vec![],
+            _parameters: vec![],
+        }),
+        //1 Box
+        StructFunc::Struct(BuiltInStruct{
+            name: "Box",
+            generics: Some(vec!["T"]),
+            methods: vec![],
+            static_methods: vec![
+                "new(t: T) -> Box[T]",
+            ],
+            _parameters: vec![],
+        }),
+        //1 Vec
+        StructFunc::Struct(BuiltInStruct{
+            name: "Vec",
+            generics: Some(vec!["T"]),
+            methods: vec![
+                "into_iter() -> IntoIter[T]",
+                "iter_mut() -> IterMut[T]",
+                "iter() -> Iter[T]",
+                "append(t: T)",
+                "index(pos: usize) -> T",
+            ],
+            static_methods: vec![
+                "new() -> Vec[T]"
+            ],
+            _parameters: vec![],
+        }),
+        /* //1 Rev
+        StructFunc::Struct(BuiltInStruct{
+            name: "Rev",
+            generics: Some(vec!["T"]), // this should be Iter[T]
+            methods: vec![
+                "into_iter() -> IntoIter[T::Item]", //3 this is what's wrong
+                "iter() -> Iter[T]",
+            ],
+            _parameters: vec![],
+        }),
+        //1 reversed
+        StructFunc::Func(BuiltInFunc{
+            name: "reversed",
+            generics: Some(vec!["T"]),
+            args: vec!["t: Iter[T]"],
+            return_typ: Some("Rev[Iter[T]]"),
+        }),
+         */
+    ];
+    writeln!(data).unwrap();
+    for add in to_add {
+        match add {
+            StructFunc::Struct(stct) => {
+                unsafe {
+                    IGNORE_STRUCTS.insert(stct.name);
+                }
+                if let Some(generics) = stct.generics {
+                    write!(data, "struct {}<{}>:", stct.name, join(generics.iter(), ",")).unwrap();
+                } else {
+                    write!(data, "struct {}:", stct.name).unwrap();
+                }
+                // todo parameters
+                for func in stct.methods {
+                    write!(data, "\n\tdef {}:", func).unwrap();
+                }
+                for func in stct.static_methods {
+                    write!(data, "\n\tstatic def {}:", func).unwrap();
+                }
+                writeln!(data).unwrap();
+            },
+            StructFunc::Func(func) => {
+                unsafe {
+                    IGNORE_FUNCS.insert(func.name);
+                }
+                let args = join(func.args.iter(), ",");
+                let rtrn = if let Some(t) = func.return_typ {
+                    format!("-> {t}")
+                } else {
+                    String::new()
+                };
+                let generics = if let Some(generics) = func.generics {
+                    format!("<{}>", join(generics.iter(), ","))
+                } else {
+                    String::new()
+                };
+                write!(data, "def {}{generics}({args}){rtrn}:", func.name).unwrap();
+                writeln!(data).unwrap();
+            },
+        }
+    }
+    // println!("{data}");
+}
+
+
 
 
 // TODO  instead of doing it like this write the func\struct signatures

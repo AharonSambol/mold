@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
-use crate::ast_structure::join;
+use pretty_print_tree::{Color, PrettyPrintTree};
+use crate::construct_ast::ast_structure::join;
 
 pub const UNKNOWN_TYPE: Type = Type {
     kind: TypeKind::Unknown,
@@ -98,6 +99,47 @@ impl PartialEq for Type {
     }
 }
 
+
+#[allow(dead_code)]
+pub fn print_type(typ: &Option<Type>) {
+    let ppt: PrettyPrintTree<Type> = {
+        PrettyPrintTree::<Type>::new(
+            Box::new(|typ| {
+                format!("{:?}", typ.kind)
+            }),
+            Box::new(|typ| {
+                unwrap(&typ.children).clone()
+            }),
+        )
+    };
+    if let Some(t) = typ {
+        println!("{}", ppt.to_str(t));
+    } else {
+        println!("None");
+    }
+    println!("\n");
+}
+
+#[allow(dead_code)]
+pub fn print_type_b(typ: &Option<Type>){
+    let mut ppt: PrettyPrintTree<Type> = {
+        PrettyPrintTree::<Type>::new(
+            Box::new(|typ| {
+                format!("{:?}", typ.kind)
+            }),
+            Box::new(|typ| {
+                unwrap(&typ.children).clone()
+            }),
+        )
+    };
+    ppt.color = Color::Black;
+    if let Some(t) = typ {
+        println!("{}", ppt.to_str(t));
+    } else {
+        println!("None");
+    }
+    println!("\n");
+}
 
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

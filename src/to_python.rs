@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::ast_structure::{Ast, AstNode, join};
+use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use lazy_static::lazy_static;
 use regex::Regex;

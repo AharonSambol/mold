@@ -363,7 +363,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
         };
         res.push(st);
     }
-    if res.len() > 0{
+    if !res.is_empty(){
         if let SolidToken::NewLine = res.last().unwrap() {} else {
             res.push(SolidToken::NewLine)
         }
@@ -421,7 +421,7 @@ fn str_to_op_type(st: &str) -> Option<OperatorType> {
     })
 }
 
-fn make_char(tokens: &mut Vec<Token>, skip: &mut i32, chars: &Vec<char>, i: usize) {
+fn make_char(tokens: &mut Vec<Token>, skip: &mut i32, chars: &[char], i: usize) {
     if chars[i + 1] != '\\' {
         *skip = 2;
         tokens.push(Char(chars[i + 1]));
@@ -440,14 +440,14 @@ fn make_char(tokens: &mut Vec<Token>, skip: &mut i32, chars: &Vec<char>, i: usiz
     ));
 }
 
-fn join_num(tokens: &mut Vec<Token>, new_end: usize) -> bool {
+fn join_num(tokens: &mut [Token], new_end: usize) -> bool {
     if let Some(Num { end, .. }) = tokens.last_mut() {
         *end = new_end;
         true
     } else { false }
 }
 
-fn join_num_to_word(tokens: &mut Vec<Token>, new_end: usize) -> bool {
+fn join_num_to_word(tokens: &mut [Token], new_end: usize) -> bool {
     if let Some(Word { end, is_spaced: false, .. }) = tokens.last_mut() {
         *end = new_end;
         true
@@ -458,7 +458,7 @@ fn is_tab(chars: &Vec<char>, i: usize) -> bool {
     chars.len() > i + 3 && chars[i + 1] == ' ' && chars[i + 2] == ' ' && chars[i + 3] == ' '
 }
 
-fn space_prev_token(tokens: &mut Vec<Token>) {
+fn space_prev_token(tokens: &mut [Token]) {
     if let Some(Operator { is_spaced, .. }) = tokens.last_mut() {
         *is_spaced = true;
     } else if let Some(Word { is_spaced, .. }) = tokens.last_mut() {
@@ -468,21 +468,21 @@ fn space_prev_token(tokens: &mut Vec<Token>) {
     }
 }
 
-fn join_to_word(tokens: &mut Vec<Token>, new_end: usize) -> bool {
+fn join_to_word(tokens: &mut [Token], new_end: usize) -> bool {
     if let Some(Word { end, is_spaced: false, .. }) = tokens.last_mut() {
         *end = new_end;
         true
     } else { false }
 }
 
-fn join_to_num(tokens: &mut Vec<Token>, new_end: usize) -> bool {
+fn join_to_num(tokens: &mut [Token], new_end: usize) -> bool {
     if let Some(Num { end, is_spaced: false, .. }) = tokens.last_mut() {
         *end = new_end;
         true
     } else { false }
 }
 
-fn join_op(tokens: &mut Vec<Token>, new_end: usize) -> bool {
+fn join_op(tokens: &mut [Token], new_end: usize) -> bool {
     if let Some(Operator { end, is_spaced: false, .. }) = tokens.last_mut() {
         *end = new_end;
         true
@@ -490,9 +490,9 @@ fn join_op(tokens: &mut Vec<Token>, new_end: usize) -> bool {
 }
 
 fn clean(st: &str) -> String {
-    st.replace("\n", "\\n")
-        .replace("\t", "\\t")
-        .replace("\r", "\\r")
+    st.replace('\n', "\\n")
+        .replace('\t', "\\t")
+        .replace('\r', "\\r")
 }
 fn clean_char(st: char) -> String {
     match st {
