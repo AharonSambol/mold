@@ -16,20 +16,26 @@ pub fn is_generic(typ: &Type, generics_hs: &HashSet<String>) -> Type {
     typ.clone()
 }
 
-pub fn get_generics(pos: &mut usize, tokens: &[SolidToken], index: usize, ast: &mut Vec<Ast>) -> Vec<String> {
-    let mut generics_vec = vec![];
+pub fn get_generic_names(pos: &mut usize, tokens: &[SolidToken]) -> Vec<String> {
     let mut generics_names = vec![];
     if let SolidToken::Operator(OperatorType::Smaller) = tokens[*pos] { //1 generics
         *pos += 1;
         while let SolidToken::Word(name) = &tokens[*pos] {
-            generics_vec.push(Type {
-                kind: TypeKind::Generic(GenericType::Declaration(name.clone())),
-                children: None,
-            });
             generics_names.push(name.clone());
             *pos += 2;
         }
     }
+    generics_names
+}
+
+pub fn get_generics(pos: &mut usize, tokens: &[SolidToken], index: usize, ast: &mut Vec<Ast>) -> Vec<String> {
+    let generics_names = get_generic_names(pos, tokens);
+    let generics_vec: Vec<Type> = generics_names.iter().map(|name|
+        Type {
+            kind: TypeKind::Generic(GenericType::Declaration(name.clone())),
+            children: None,
+        }
+    ).collect();
     add_to_tree(index, ast, Ast::new_w_typ(
         AstNode::GenericsDeclaration,
         Some(Type {

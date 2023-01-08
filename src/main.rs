@@ -35,7 +35,7 @@ static mut IGNORE_FUNCS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 fn main() {
     // todo remove
     unsafe {
-        // IS_COMPILED = true;
+        IS_COMPILED = true;
     }
     let mut path = String::from("tests/input_program.py");
     // let mut path = String::from("tests/generics.py");

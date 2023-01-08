@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
@@ -297,16 +298,25 @@ pub fn to_rust(
             }
             let indent = "\t".repeat(indentation);
             write!(res, "\n{indent}}}").unwrap();
+            let mut trait_to_funcs: HashMap<&str, Vec<(usize, &str)>> = HashMap::new();
             for (func_pos, func_name) in trait_functions {
                 let mut func_name = func_name.split("::");
                 let trait_name = func_name.next().unwrap();
                 let func_name = func_name.next().unwrap();
-                write!(res, "\n{indent}impl {trait_name} for {name} {{\n{indent}    ").unwrap();
-
-                print_function_rust(
-                    func_name, ast, indentation+1, res, built_ins, enums,
-                    unwrap_u(&ast[func_pos].children)
-                );
+                match trait_to_funcs.entry(trait_name) {
+                    Entry::Vacant(e) => { e.insert(vec![(func_pos, func_name)]); },
+                    Entry::Occupied(mut e) => { e.get_mut().push((func_pos, func_name)); }
+                }
+            }
+            for (trait_name, funcs) in trait_to_funcs.iter() {
+                write!(res, "\n{indent}impl {trait_name} for {name} {{").unwrap();
+                for (func_pos, func_name) in funcs {
+                    write!(res, "\n{indent}    ").unwrap();
+                    print_function_rust(
+                        func_name, ast, indentation + 1, res, built_ins, enums,
+                        unwrap_u(&ast[*func_pos].children)
+                    );
+                }
                 write!(res, "\n{indent}}}").unwrap();
             }
         },

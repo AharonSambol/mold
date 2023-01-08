@@ -29,7 +29,7 @@ pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNod
     index
 }
 
-pub fn add_to_tree(parent: usize, ast: &mut Vec<Ast>, mut new_node: Ast) {
+pub fn add_to_tree(parent: usize, ast: &mut Vec<Ast>, mut new_node: Ast) -> usize {
     new_node.parent = Some(parent);
     ast.push(new_node);
     let pos = ast.len() - 1;
@@ -38,6 +38,7 @@ pub fn add_to_tree(parent: usize, ast: &mut Vec<Ast>, mut new_node: Ast) {
     } else {
         ast[parent].children = some_vec![pos]
     }
+    pos
 }
 
 

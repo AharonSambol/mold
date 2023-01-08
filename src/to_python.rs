@@ -13,7 +13,6 @@ lazy_static!{
 
 pub fn to_python(ast: &[Ast], pos: usize, indentation: usize, res: &mut String, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     let children = unwrap_u(&ast[pos].children);
-
     match &ast[pos].value {
         AstNode::Module | AstNode::Body => {
             for child in children {

@@ -203,8 +203,7 @@ pub fn add_types(
             if let AstNode::Identifier(name) = &ast[children[0]].value.clone() {
                 let mut generics_map = HashMap::new();
 
-                add_to_tree(pos, ast, Ast::new(AstNode::Args));
-                let names_pos = ast.len() - 1;
+                let names_pos = add_to_tree(pos, ast, Ast::new(AstNode::Args));
                 let args_def = &ast[unwrap_u(&ast[structs[name].pos].children)[1]];
                 let args = args_def.children.clone();
                 if let Some(args) = args {
@@ -265,7 +264,6 @@ pub fn add_types(
                         }
                         _ => unreachable!()
                     };
-
                 }
                 TypeKind::Trait(trait_name) => {
                     let trait_description = &ast[traits[trait_name.get_str()].pos];
@@ -282,6 +280,7 @@ pub fn add_types(
                         _ => unreachable!()
                     };
                 }
+                TypeKind::MutPointer => {} // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! jhklh
                 _ => panic!("{:?}", left_kind)
             }
         }
@@ -385,6 +384,7 @@ pub fn add_types(
             ast[pos].typ = find_index_typ(ast, structs, traits, &children);
         }
         AstNode::Struct(_) => {
+            println!("!!: {}", &ast[pos].value);
             vars.push(HashMap::new());
             add_types(ast, children[1], vars, funcs, structs, traits, parent_struct, built_ins);
             vars.pop();

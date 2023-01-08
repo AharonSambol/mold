@@ -392,7 +392,7 @@ impl BuiltIn for Print {
             "{} "
                 .repeat(unwrap_u(&ast[children[1]].children).len())
                 .strip_suffix(' ')
-                .unwrap()
+                .unwrap_or("")
         )
         .unwrap();
         close_rust(ast, res, children, built_ins, enums);
