@@ -236,6 +236,13 @@ pub fn make_struct(
                 is_mut: false
             });
             let self_pos = ast.len() - 1;
+            if self_pos == ast[self_pos].parent.unwrap() {
+                panic!("1")
+            }
+            let p = ast[self_pos].parent.unwrap();
+            if ast[p].parent.unwrap() == p {
+                panic!("2")
+            }
             let args_def = &mut ast[args_def_pos];
             if let Some(children) = &mut args_def.children {
                 children.insert(0, self_pos);

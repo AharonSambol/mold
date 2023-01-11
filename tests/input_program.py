@@ -17,7 +17,6 @@ def func(a: &mut int):
 def main():
     a := A { B { 2 } }
     b := a.get()
-    print(b)
 #     x := 325
 #     a := 5 + -(4 / -2)
 #     a_val := a + 1

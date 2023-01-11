@@ -9,8 +9,6 @@ use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType};
 
 
-
-
 pub fn to_rust(
     ast: &[Ast], pos: usize, indentation: usize, res: &mut String,
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>,

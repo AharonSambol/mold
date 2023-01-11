@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::thread::sleep;
+use std::time::Duration;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::construct_ast::mold_ast::{VarTypes};
 use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, print_type, clean_type};
@@ -247,15 +249,13 @@ pub fn add_types(
             );
             let mut lk = &left_kind;
             while let TypeKind::MutPointer | TypeKind::Pointer = &lk.kind {
-                println!("lk--");
                 lk = &unwrap(&lk.children)[0];
-                println!("lk: {lk}");
             }
             match &lk.kind {
                 TypeKind::Struct(struct_name) => {
-
                     let struct_description = if struct_name.get_str() == "Self" {
                         let mut struct_pos = ast[pos].parent.unwrap();
+
                         while !matches!(ast[struct_pos].value, AstNode::Struct(_)) {
                             struct_pos = ast[struct_pos].parent.unwrap();
                         }

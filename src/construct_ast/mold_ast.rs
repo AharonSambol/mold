@@ -24,6 +24,7 @@ pub fn construct_ast(
         tokens, pos, &mut ast, 0, 0,
         &mut vec![HashMap::new()], &mut funcs, &mut structs, &mut traits
     );
+
     duck_type(&mut ast, &traits, &structs);
     print_tree((ast.clone(), 0));
     if unsafe { IS_COMPILED } {

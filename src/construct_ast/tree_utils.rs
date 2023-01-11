@@ -8,7 +8,7 @@ pub fn get_last(arr: &mut Option<Vec<usize>>) -> usize {
 
 pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNode) -> usize {
     let index = get_last(&mut ast[parent].children);
-    ast[index].parent = Some(index);
+    ast[index].parent = Some(index - 1); //1 will be adjusted in the for loop +1
     ast.insert(index, Ast {
         value,
         children: some_vec![index + 1],
@@ -16,9 +16,13 @@ pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNod
         typ: None,
         is_mut: true
     });
-    for node in ast[index + 1..].iter_mut() {
+    for node in ast.iter_mut().skip(index + 1) {
         if let Some(children) = &node.children {
-            node.children = Some(children.iter().map(|x| x+1).collect())
+            node.children = Some(children.iter().map(|x|
+                if *x >= index {
+                    x + 1
+                } else { *x }
+            ).collect())
         }
         if let Some(parent) = &node.parent {
             if *parent >= index {
@@ -47,9 +51,9 @@ pub fn print_tree(tree: (Vec<Ast>, usize)){
         PrettyPrintTree::<(Vec<Ast>, usize)>::new(
             Box::new(|(vc, pos)| {
                 if let Some(t) = &vc[*pos].typ {
-                    format!("{}\n:{t}", vc[*pos].value)
+                    format!("{}\n:{t}\n({:?})", vc[*pos].value, vc[*pos].parent)
                 } else {
-                    vc[*pos].value.to_string()
+                    format!("{}\n({:?})", vc[*pos].value.to_string(), vc[*pos].parent)
                 }
             }),
             Box::new(|(vc, pos)| {
