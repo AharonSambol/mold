@@ -1,32 +1,30 @@
-trait P:
-    def p() -> i8
+struct B:
+    inner: int
 
-trait P2:
-    def p() -> i8
+struct A:
+    inner: B
+    def get() -> int:
+        a := self.inner.inner
+        return a
 
-TRAIT Duck:
-    def quack()
-    def swim()
-struct D:
-    def quack():
-        pass
 
-    def P::p() -> i8:
-        return 1
+def func(a: &mut int):
+    *a = *a + 1
 
-    def P2::p() -> i8:
-        return 2
-struct D2:
-    def quack():
-        pass
-    def swim():
-        pass
-
-def f(s: Set[P]):
-    pass
+# def get_ptr(a: int) -> &mut int:
+#     return &mut a
 
 def main():
-    a := {1, 2, 3, 4}
-    b := { 1: "1" }
-    a := [1, 2, 3]
-
+    a := A { B { 2 } }
+    b := a.get()
+    print(b)
+#     x := 325
+#     a := 5 + -(4 / -2)
+#     a_val := a + 1
+#     b := &mut a
+# #     c := get_ptr(a)
+# #     d: &mut int = b
+# #     c : List[&mut int] = [&mut x, b]
+#     func(b)
+#     func(&mut a)
+#     print(a)

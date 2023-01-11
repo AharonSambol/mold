@@ -53,8 +53,8 @@ pub fn make_func(
     if let Some(struct_parent) = ast[parent].parent {
         if let AstNode::Struct(_) = ast[struct_parent].value {
             let struct_generics = &ast[unwrap_u(&ast[struct_parent].children)[0]];
-            print_tree((ast.clone(), struct_parent));
-            print_tree((ast.clone(), unwrap_u(&ast[struct_parent].children)[0]));
+            // print_tree((ast.clone(), struct_parent));
+            // print_tree((ast.clone(), unwrap_u(&ast[struct_parent].children)[0]));
             let stct_g_typ = unwrap_enum!(&struct_generics.typ);
             for child in unwrap(&stct_g_typ.children) {
                 unwrap_enum!(

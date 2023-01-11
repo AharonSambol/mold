@@ -7,31 +7,13 @@ pub const UNKNOWN_TYPE: Type = Type {
     children: None
 };
 
-pub const STR_TYPE: Type = Type {
-    kind: TypeKind::Struct(TypName::Static("str")),
-    children: None
-};
-pub const MUT_STR_TYPE: Type = Type {
-    kind: TypeKind::Struct(TypName::Static("String")),
-    children: None
-};
-pub const BOOL_TYPE: Type = Type {
-    kind: TypeKind::Struct(TypName::Static("bool")),
-    children: None
-};
-pub const INT_TYPE: Type = Type {
-    kind: TypeKind::Struct(TypName::Static("i32")),
-    children: None
-};
-pub const FLOAT_TYPE: Type = Type {
-    kind: TypeKind::Struct(TypName::Static("f32")),
-    children: None
-};
-pub const CHAR_TYPE: Type = Type {
-    kind: TypeKind::Struct(TypName::Static("char")),
-    children: None
-};
-pub const ITER_NAME: TypName = TypName::Static("Iter");
+pub const STR_TYPE: TypeKind = TypeKind::Struct(TypName::Static("str"));
+pub const MUT_STR_TYPE: TypeKind = TypeKind::Struct(TypName::Static("String"));
+pub const BOOL_TYPE: TypeKind = TypeKind::Struct(TypName::Static("bool"));
+pub const INT_TYPE: TypeKind = TypeKind::Struct(TypName::Static("i32"));
+pub const FLOAT_TYPE: TypeKind = TypeKind::Struct(TypName::Static("f32"));
+pub const CHAR_TYPE: TypeKind = TypeKind::Struct(TypName::Static("char"));
+pub const ITER_TYPE: TypeKind = TypeKind::Struct(TypName::Static("Iter"));
 // pub const ITER_TYPE: Type = Type {
 //     kind: TypeKind::Struct(ITER_NAME),
 //     children: None
@@ -79,7 +61,7 @@ pub enum TypeKind {
     Function(String),
     Struct(TypName), // child[0] = generics
     _Class(String),
-    _Pointer,
+    Pointer,
     MutPointer,
 }
 
@@ -214,7 +196,7 @@ impl Display for Type {
             TypeKind::_Class(_) => {
                 todo!()
             }
-            TypeKind::_Pointer => write!(f, "&{}", unwrap(&self.children)[0]),
+            TypeKind::Pointer => write!(f, "&{}", unwrap(&self.children)[0]),
             TypeKind::MutPointer => write!(f, "&mut {}", unwrap(&self.children)[0]),
         }
     }

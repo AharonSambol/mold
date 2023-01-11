@@ -1,7 +1,7 @@
 use crate::construct_ast::ast_structure::{Ast, join};
 use crate::to_python::to_python;
 use crate::to_rust::to_rust;
-use crate::types::{unwrap_u, Type, TypeKind, INT_TYPE, GenericType, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE, MUT_STR_TYPE, ITER_NAME, TypName};
+use crate::types::{unwrap_u, Type, TypeKind, INT_TYPE, GenericType, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE, MUT_STR_TYPE, TypName, ITER_TYPE};
 use std::collections::HashMap;
 use std::fmt::Write;
 use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, make_primitive, some_vec, typ_with_child};
@@ -15,9 +15,13 @@ macro_rules! get_types {
 }
 macro_rules! to_py {
     ($x: expr) => {
-        fn to_str_python(&self, ast: &[Ast], res: &mut String, children: &[usize], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
-            write!(res, $x).unwrap();
-            close_python(ast, res, children, built_ins);
+        fn to_str_python(
+            &self, ast: &[Ast], children: &[usize],
+            built_ins: &HashMap<&str, Box<dyn BuiltIn>>
+        ) -> String {
+            format!($x,
+                close_python(ast, children, built_ins, false)
+            )
         }
     };
 }
@@ -219,8 +223,50 @@ pub fn put_at_start(data: &mut String) {
 pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
     let mut res: HashMap<&'static str, Box<dyn BuiltIn>> = HashMap::new();
 
+    let int_type = typ_with_child! {
+        INT_TYPE,
+        Type {
+            kind: TypeKind::GenericsMap,
+            children: None
+        }
+    };
+    let mut_str_type = typ_with_child! {
+        MUT_STR_TYPE,
+        Type {
+            kind: TypeKind::GenericsMap,
+            children: None
+        }
+    };
+    let str_type = typ_with_child! {
+        STR_TYPE,
+        Type {
+            kind: TypeKind::GenericsMap,
+            children: None
+        }
+    };
+    let bool_type = typ_with_child! {
+        BOOL_TYPE,
+        Type {
+            kind: TypeKind::GenericsMap,
+            children: None
+        }
+    };
+    let char_type = typ_with_child! {
+        CHAR_TYPE,
+        Type {
+            kind: TypeKind::GenericsMap,
+            children: None
+        }
+    };
+    let float_type = typ_with_child! {
+        FLOAT_TYPE,
+        Type {
+            kind: TypeKind::GenericsMap,
+            children: None
+        }
+    };
     let generic_iter = typ_with_child! {
-        TypeKind::Struct(ITER_NAME),
+        ITER_TYPE,
         Type {
             kind: TypeKind::Generic(GenericType::Declaration(String::from("T"))),
             children: None,
@@ -258,15 +304,15 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
             "range",
             Box::new(Range {
                 input_types: some_vec![
-                    INT_TYPE,
+                    int_type.clone(),
                     Type {
                         kind: TypeKind::Optional,
-                        children: some_vec![ INT_TYPE, INT_TYPE ],
+                        children: some_vec![ int_type.clone(), int_type.clone() ],
                     }
                 ],
                 output_types: Some(Type {
-                    kind: TypeKind::Struct(ITER_NAME),
-                    children: some_vec![INT_TYPE],
+                    kind: ITER_TYPE,
+                    children: some_vec![int_type.clone()],
                 }),
                 for_strct: None,
             }),
@@ -288,7 +334,7 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
             Box::new(Enumerate {
                 input_types: some_vec![generic_iter],
                 output_types: Some(Type {
-                    kind: TypeKind::Struct(ITER_NAME),
+                    kind: ITER_TYPE,
                     children: some_vec![
                         Type {
                             kind: TypeKind::Tuple,
@@ -316,7 +362,7 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
                         children: some_vec![Type::new(String::from("Display"))]
                     }
                 ],
-                output_types: Some(MUT_STR_TYPE),
+                output_types: Some(mut_str_type.clone()),
                 for_strct: None,
             }),
         );
@@ -328,10 +374,10 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
                 input_types: some_vec![
                     Type{
                         kind: TypeKind::_OneOf,
-                        children: some_vec![MUT_STR_TYPE, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE]
+                        children: some_vec![mut_str_type.clone(), str_type.clone(), char_type.clone(), bool_type.clone(), float_type.clone()]
                     }
                 ],
-                output_types: Some(INT_TYPE),
+                output_types: Some(int_type.clone()),
                 for_strct: None,
             }),
         );
@@ -343,10 +389,13 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
                 input_types: some_vec![
                     Type{
                         kind: TypeKind::_OneOf,
-                        children: some_vec![MUT_STR_TYPE, STR_TYPE, CHAR_TYPE, BOOL_TYPE, INT_TYPE]
+                        children: some_vec![
+                            mut_str_type.clone(), str_type.clone(), char_type.clone(),
+                            bool_type.clone(), int_type.clone()
+                        ]
                     }
                 ],
-                output_types: Some(FLOAT_TYPE),
+                output_types: Some(float_type.clone()),
                 for_strct: None,
             }),
         );
@@ -367,7 +416,9 @@ pub trait BuiltIn {
         built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
         enums: &mut HashMap<String, String>,
     );
-    fn to_str_python(&self, ast: &[Ast], res: &mut String, children: &[usize], built_ins: &HashMap<&str, Box<dyn BuiltIn>>);
+    fn to_str_python(
+        &self, ast: &[Ast], children: &[usize],
+        built_ins: &HashMap<&str, Box<dyn BuiltIn>>) -> String;
 }
 
 struct Print {
@@ -397,7 +448,7 @@ impl BuiltIn for Print {
         .unwrap();
         close_rust(ast, res, children, built_ins, enums);
     }
-    to_py!("print(");
+    to_py!("print({}");
 }
 struct DPrint {
     input_types: Option<Vec<Type>>,
@@ -428,7 +479,7 @@ impl BuiltIn for DPrint {
         close_rust(ast, res, children, built_ins, enums);
     }
 
-    to_py!("print(");
+    to_py!("print({}");
 }
 
 struct Range {
@@ -474,7 +525,7 @@ impl BuiltIn for Range {
         }
     }
 
-    to_py!("range(");
+    to_py!("range({}");
 }
 
 struct Rev {
@@ -497,7 +548,7 @@ impl BuiltIn for Rev {
         write!(res, ".rev()").unwrap();
     }
 
-    to_py!("reversed(");
+    to_py!("reversed({}");
 }
 
 struct Enumerate {
@@ -520,7 +571,7 @@ impl BuiltIn for Enumerate {
         write!(res, ".enumerate()").unwrap();
     }
 
-    to_py!("enumerate(");
+    to_py!("enumerate({}");
 }
 
 struct Str {
@@ -543,7 +594,7 @@ impl BuiltIn for Str {
         write!(res, ".to_string()").unwrap();
     }
 
-    to_py!("str(");
+    to_py!("str({}");
 }
 
 struct Int {
@@ -566,7 +617,7 @@ impl BuiltIn for Int {
         write!(res, ".parse::<i32>().unwrap()").unwrap();
     }
 
-    to_py!("int(");
+    to_py!("int({}");
 }
 
 struct Float {
@@ -589,15 +640,19 @@ impl BuiltIn for Float {
         write!(res, ".parse::<f32>().unwrap()").unwrap();
     }
 
-    to_py!("float(");
+    to_py!("float({}");
 }
 
 
-fn close_python(ast: &[Ast], res: &mut String, children: &[usize], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
+fn close_python(
+    ast: &[Ast], children: &[usize],
+    built_ins: &HashMap<&str, Box<dyn BuiltIn>>, add_index: bool
+) -> String {
     if children.len() > 1 {
-        to_python(ast, children[1], 0, res, built_ins);
+        format!("{})", to_python(ast, children[1], 0, built_ins, add_index))
+    } else {
+        String::from(")")
     }
-    write!(res, ")").unwrap();
 }
 fn close_rust(
     ast: &[Ast],

@@ -35,7 +35,7 @@ static mut IGNORE_FUNCS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 fn main() {
     // todo remove
     unsafe {
-        IS_COMPILED = true;
+        // IS_COMPILED = true;
     }
     let mut path = String::from("tests/input_program.py");
     // let mut path = String::from("tests/generics.py");
@@ -65,12 +65,28 @@ fn main() {
     }
 }
 
-fn interpret(ast: &Vec<Ast>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
-    let mut py = String::new();
-    to_python::to_python(ast, 0, 0, &mut py, built_ins);
-    py = format!(
+fn interpret(ast: &[Ast], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
+    let py = to_python::to_python(ast, 0, 0, built_ins, true);
+    let py = py.trim();
+    let py = format!(
         r#"from typing import *
 from copy import deepcopy
+
+
+class _value_:
+    def __init__(self, v):
+        self.v = v
+
+    def __str__(self):
+        return f'{{self.v}}'
+
+
+class _pointer_:
+    def __init__(self, p):
+        self.p = p
+
+    def __str__(self):
+        return f'&{{self.p}}'
 
 def __cpy_strct(x):
     return deepcopy(x) if hasattr(x, "_is_STRUCT__") else x
@@ -92,10 +108,11 @@ if __name__ == '__main__':
     output.wait().unwrap();
 }
 
-fn compile(ast: &Vec<Ast>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
+fn compile(ast: &[Ast], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     let mut rs = String::new();
     let mut enums = HashMap::new();
     to_rust::to_rust(ast, 0, 0, &mut rs, built_ins, &mut enums);
+    let rs = rs.trim();
     println!("\n{}", join(enums.values(), "\n\n"));
     println!("\n{rs}");
 
@@ -108,7 +125,8 @@ fn compile(ast: &Vec<Ast>, built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     }
     let mut file = File::create("out/src/main.rs").unwrap();
     file.write_all(
-        format!("#![allow(warnings, unused)]
+        format!("//#![allow(warnings, unused)]
+#![allow(unused)]
 
 use std::slice::{{Iter, IterMut}};
 use std::iter::Rev;
@@ -130,6 +148,13 @@ use std::collections::{{HashMap, HashSet}};
         .unwrap();
 
     if check.status.success() {
+        Command::new("cargo")
+            .arg("fix")
+            .args(["--allow-no-vcs", "--broken-code"])
+            .current_dir("out")
+            .output()
+            .unwrap();
+
         let mut a = Command::new("cargo")
             .arg("build")
             .args(["--release", "--quiet", "--color", "always"])

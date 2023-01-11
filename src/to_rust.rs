@@ -95,9 +95,9 @@ pub fn to_rust(
         // todo floor div
         AstNode::Operator(op) => {
             if let OperatorType::FloorDiv = op {
-                panic!()
+                todo!()
             } else if let OperatorType::FloorDivEq = op {
-                panic!()
+                todo!()
             } else if let OperatorType::Pow = op {
                 to_rust(ast, children[0], indentation, res, built_ins, enums);
                 write!(res, ".pow(").unwrap();
@@ -119,8 +119,7 @@ pub fn to_rust(
             }
         },
         AstNode::UnaryOp(op) => {
-            let st = if let OperatorType::BinNot = op { String::from("!") } else { op.to_string() };
-            write!(res, " {st}").unwrap();
+            write!(res, "{op}").unwrap();
             to_rust(ast, children[0], indentation, res, built_ins, enums);
         },
         AstNode::Parentheses => {

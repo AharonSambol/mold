@@ -118,7 +118,13 @@ pub fn get_arg_typ(
                 }
                 let wrd = clean_type(wrd.clone()).to_string();
                 res = if wrd == "str" {
-                    Some(MUT_STR_TYPE)
+                    Some(typ_with_child! {
+                        MUT_STR_TYPE,
+                        Type {
+                            kind: TypeKind::GenericsMap,
+                            children: None
+                        }
+                    })
                 } else if structs.contains_key(&wrd) {
                     Some(typ_with_child! {
                         TypeKind::Struct(TypName::Str(wrd)),
@@ -138,10 +144,27 @@ pub fn get_arg_typ(
                 } else {
                     // TODO check that its a generic otherwise panic
                     //  panic!("typ `{}` doesnt exist", wrd)
+                    println!("generic typ: {wrd}");
                     Some(Type::new(wrd.clone()))
                 };
 
             },
+            SolidToken::UnaryOperator(OperatorType::Pointer) => {
+                *pos += 1;
+                res = Some(Type {
+                    kind: TypeKind::Pointer,
+                    children: some_vec![get_arg_typ(tokens, pos, _funcs, structs, traits)]
+                });
+                *pos -= 1;
+            }
+            SolidToken::UnaryOperator(OperatorType::MutPointer) => {
+                *pos += 1;
+                res = Some(Type {
+                    kind: TypeKind::MutPointer,
+                    children: some_vec![get_arg_typ(tokens, pos, _funcs, structs, traits)]
+                });
+                *pos -= 1;
+            }
             _ => panic!("unexpected token {:?}, at {}", tokens[*pos], *pos)
         }
         *pos += 1;

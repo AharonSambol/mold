@@ -69,7 +69,8 @@ pub enum OperatorType {
     OrEq, AndEq, XorEq,
     ShiftR, ShiftL,
     And, Or, Not,
-    Returns
+    Returns,
+    MutPointer, Pointer, Dereference
 }
 
 // todo is, in, not
@@ -86,21 +87,24 @@ impl Display for OperatorType {
             OperatorType::Plus => "+",
             OperatorType::Minus => "-",
             OperatorType::Mul => "*",
-            OperatorType::Pow => "**",
+            OperatorType::Pow => if unsafe { IS_COMPILED } { todo!() } else { "**" },
             OperatorType::Div => "/",
             OperatorType::Mod => "%",
-            OperatorType::FloorDiv=> "//",
+            OperatorType::FloorDiv => if unsafe { IS_COMPILED } { todo!() } else { "//" },
             OperatorType::PlusEq => "+=",
             OperatorType::MinusEq => "-=",
             OperatorType::MulEq => "*=",
-            OperatorType::PowEq => "**=",
+            OperatorType::PowEq => if unsafe { IS_COMPILED } { todo!() } else { "**=" },
             OperatorType::DivEq => "/=",
             OperatorType::ModEq => "%=",
             OperatorType::FloorDivEq => "//=",
             OperatorType::BinOr => "|",
+            OperatorType::Pointer => "&", //1 python ignores this
+            OperatorType::MutPointer => "&mut ", //1 python ignores this
+            OperatorType::Dereference => "*", //1 python ignores this
             OperatorType::BinAnd => "&",
             OperatorType::Xor => "^",
-            OperatorType::BinNot => "~",
+            OperatorType::BinNot => if unsafe { IS_COMPILED } { "!" } else { "~" },
             OperatorType::OrEq => "|=",
             OperatorType::AndEq => "&=",
             OperatorType::XorEq => "^=",
@@ -288,9 +292,13 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
 fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
     let mut res = Vec::with_capacity(tokens.len());
     let mut is_empty_line = true;
-    for token in tokens {
+    for (i, token) in tokens.iter().enumerate() {
         if !matches!(token, Tab | NewLine) {
             is_empty_line = false;
+        }
+        if is_mut_pointer(tokens, &res, i, &input_code) {
+            *res.last_mut().unwrap() = SolidToken::UnaryOperator(OperatorType::MutPointer);
+            continue
         }
         let st = match token {
             Brace(is_open) =>        SolidToken::Brace(is_open.clone()),
@@ -390,11 +398,22 @@ fn unary_or_bin(res: &Vec<SolidToken>, op: OperatorType) -> SolidToken {
     | SolidToken::Brace(IsOpen::True)
     | SolidToken::Parenthesis(IsOpen::True)
     | SolidToken::Comma
+    | SolidToken::Return
+    | SolidToken::While
+    | SolidToken::If
+    | SolidToken::Elif
+    | SolidToken::For
+    | SolidToken::Is
+    | SolidToken::In
     | SolidToken::Colon = res[idx] {
-        if let OperatorType::Minus | OperatorType::BinNot = op {
-            SolidToken::UnaryOperator(op)
-        } else {
-            panic!("Invalid unary operator {op}")
+        match op {
+            OperatorType::Minus | OperatorType::BinNot =>
+                SolidToken::UnaryOperator(op),
+            OperatorType::BinAnd =>
+                SolidToken::UnaryOperator(OperatorType::Pointer),
+            OperatorType::Mul =>
+                SolidToken::UnaryOperator(OperatorType::Dereference),
+            _ => panic!("Invalid unary operator {op}")
         }
     } else {
         SolidToken::Operator(op)
@@ -501,4 +520,15 @@ fn clean_char(st: char) -> String {
         '\r' => String::from("\\r"),
         _ => st.to_string()
     }
+}
+
+fn is_mut_pointer(tokens: &[Token], solid_tokens: &[SolidToken], pos: usize, input_code: &str) -> bool {
+    if pos == 0 { return false }
+    let Some(SolidToken::UnaryOperator(OperatorType::Pointer)) = solid_tokens.last() else {
+        return false
+    };
+    if let Word {start, end, ..} = tokens[pos] {
+        return &input_code[start..end] == "mut"
+    }
+    false
 }

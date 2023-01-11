@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::construct_ast::mold_ast::{VarTypes};
-use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u};
+use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, print_type, clean_type};
 use lazy_static::lazy_static;
 use regex::Regex;
 use crate::built_in_funcs::BuiltIn;
@@ -11,6 +11,7 @@ use crate::add_types::polymorphism::check_for_boxes;
 use crate::add_types::utils::{find_function_in_struct, find_function_in_trait, get_from_stack};
 use crate::construct_ast::get_functions_and_types::{FuncTypes, StructTypes, TraitTypes};
 use crate::construct_ast::tree_utils::{add_to_tree};
+use crate::mold_tokens::OperatorType;
 
 lazy_static! {
     pub static ref SPECIFIED_NUM_TYPE_RE: Regex = Regex::new(r"(?:[iu](?:8|16|32|64|128|size)|f32|f64)$").unwrap();
@@ -102,7 +103,8 @@ pub fn add_types(
                 check_for_boxes(return_typ, ast, children[0], structs, traits, vars, funcs);
             } else {
                 // doesnt return anything
-                todo!()
+
+                // todo!()
             }
 
 
@@ -243,9 +245,24 @@ pub fn add_types(
             let left_kind = ast[children[0]].typ.clone().unwrap_or_else(||
                 panic!("{:?}", ast[children[0]].value)
             );
-            match &left_kind.kind {
+            let mut lk = &left_kind;
+            while let TypeKind::MutPointer | TypeKind::Pointer = &lk.kind {
+                println!("lk--");
+                lk = &unwrap(&lk.children)[0];
+                println!("lk: {lk}");
+            }
+            match &lk.kind {
                 TypeKind::Struct(struct_name) => {
-                    let struct_description = &ast[structs[&struct_name.to_string()].pos];
+
+                    let struct_description = if struct_name.get_str() == "Self" {
+                        let mut struct_pos = ast[pos].parent.unwrap();
+                        while !matches!(ast[struct_pos].value, AstNode::Struct(_)) {
+                            struct_pos = ast[struct_pos].parent.unwrap();
+                        }
+                        &ast[struct_pos]
+                    } else {
+                        &ast[structs[&struct_name.to_string()].pos]
+                    };
                     ast[pos].typ = match &ast[children[1]].value {
                         AstNode::Identifier(right) =>
                             get_property_idf_typ(ast, &left_kind, struct_description, right, true),
@@ -280,43 +297,75 @@ pub fn add_types(
                         _ => unreachable!()
                     };
                 }
-                TypeKind::MutPointer => {} // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! jhklh
                 _ => panic!("{:?}", left_kind)
             }
         }
         AstNode::Number(num) => {
             ast[pos].typ = Some(
-                if let Some(cap) = SPECIFIED_NUM_TYPE_RE.captures(num) {
-                    Type::new(String::from(
-                        cap.get(0).unwrap().as_str()
-                    ))
-                } else if num.contains('.') {
-                    FLOAT_TYPE
-                } else {
-                    INT_TYPE
+                typ_with_child! {
+                    if let Some(cap) = SPECIFIED_NUM_TYPE_RE.captures(num) {
+                        TypeKind::Struct(TypName::Str(String::from(cap.get(0).unwrap().as_str())))
+                    } else if num.contains('.') {
+                        FLOAT_TYPE
+                    } else {
+                        INT_TYPE
+                    },
+                    Type {
+                        kind: TypeKind::GenericsMap,
+                        children: None
+                    }
                 }
             );
         }
         AstNode::Char(_) => {
-            ast[pos].typ = Some(CHAR_TYPE);
+            ast[pos].typ = Some(typ_with_child! {
+                CHAR_TYPE,
+                Type {
+                    kind: TypeKind::GenericsMap,
+                    children: None
+                }
+            });
         }
         AstNode::String{ mutable, .. } => {
-            if *mutable {
-                ast[pos].typ = Some(MUT_STR_TYPE);
-            } else {
-                ast[pos].typ = Some(STR_TYPE);
-            }
+            ast[pos].typ = Some(typ_with_child! {
+                if *mutable {
+                    MUT_STR_TYPE
+                } else {
+                    STR_TYPE
+                },
+                Type {
+                    kind: TypeKind::GenericsMap,
+                    children: None
+                }
+            });
         }
         AstNode::Bool(_) => {
-            ast[pos].typ = Some(BOOL_TYPE);
+            ast[pos].typ = Some(typ_with_child! {
+                BOOL_TYPE,
+                Type {
+                    kind: TypeKind::GenericsMap,
+                    children: None
+                }
+            });
         }
         AstNode::Operator(_) => {
             add_types(ast, children[0], vars, funcs, structs, traits, parent_struct, built_ins);
             add_types(ast, children[1], vars, funcs, structs, traits, parent_struct, built_ins);
 
-            let t1 = ast[children[0]].typ.clone().unwrap();
-
-            let t2 = unwrap_enum!(&ast[children[1]].typ);
+            let mut t1 = unwrap_enum!(&ast[children[0]].typ);
+            let mut t2 = unwrap_enum!(&ast[children[1]].typ);
+            let t1 = {
+                while let TypeKind::Pointer | TypeKind::MutPointer = t1.kind {
+                    t1 = &unwrap(&t1.children)[0];
+                }
+                t1
+            };
+            let t2 = {
+                while let TypeKind::Pointer | TypeKind::MutPointer = t2.kind {
+                    t2 = &unwrap(&t2.children)[0];
+                }
+                t2
+            };
             let t1_name = unwrap_enum!(&t1.kind, TypeKind::Struct(t), t, "operator not valid for this type");
             let t2_name = unwrap_enum!(&t2.kind, TypeKind::Struct(t), t, "operator not valid for this type");
             if *t1_name != *t2_name && !(*t1_name == TypName::Static("String") && *t2_name  == TypName::Static("str")) {
@@ -326,7 +375,28 @@ pub fn add_types(
             }
             ast[pos].typ = Some(t1.clone());
         }
-        AstNode::ForIter | AstNode::Parentheses | AstNode::UnaryOp(_) => {
+        AstNode::UnaryOp(op) => {
+            let op = op.clone();
+            add_types(ast, children[0], vars, funcs, structs, traits, parent_struct, built_ins);
+            ast[pos].typ = match op {
+                OperatorType::Pointer => {
+                    Some(typ_with_child! {
+                        TypeKind::Pointer,
+                        ast[children[0]].typ.clone().unwrap()
+                    })
+                },
+                OperatorType::MutPointer => {
+                    Some(typ_with_child! {
+                        TypeKind::MutPointer,
+                        ast[children[0]].typ.clone().unwrap()
+                    })
+                }
+                _ => {
+                    ast[children[0]].typ.clone()
+                }
+            }
+        }
+        AstNode::ForIter | AstNode::Parentheses => {
             add_types(ast, children[0], vars, funcs, structs, traits, parent_struct, built_ins);
             ast[pos].typ = ast[children[0]].typ.clone();
         }
@@ -384,11 +454,9 @@ pub fn add_types(
             ast[pos].typ = find_index_typ(ast, structs, traits, &children);
         }
         AstNode::Struct(_) => {
-            println!("!!: {}", &ast[pos].value);
             vars.push(HashMap::new());
             add_types(ast, children[1], vars, funcs, structs, traits, parent_struct, built_ins);
             vars.pop();
-
             let mut hm = HashMap::from([(String::from("self"), pos)]);
             for child in unwrap_u(&ast[children[1]].children) {
                 hm.insert(

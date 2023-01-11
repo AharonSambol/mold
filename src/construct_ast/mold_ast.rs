@@ -50,7 +50,7 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
             }
         }
     ).collect();
-    for (strct_name, strct) in structs {
+    for strct in structs.values() {
         let strct_def = &ast[strct.pos];
         let strct_children = unwrap_u(&strct_def.children);
 
@@ -58,7 +58,6 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
         let strct_traits_pos = strct_children[3];
         let funcs: HashSet<String> = HashSet::from_iter(
             unwrap_u(&ast[strct_module_pos].children).iter().filter_map(|func| {
-                println!(":: {}", &ast[*func].value);
                 if let AstNode::Function(name) = &ast[*func].value { Some(name.clone()) }
                 else { None }
             })
@@ -204,6 +203,12 @@ pub fn make_ast_statement(
                 let assignment = *unwrap_u(&ast[parent].children).last().unwrap();
                 let assignment = &mut ast[assignment];
                 assignment.is_mut = false;
+            }
+            SolidToken::UnaryOperator(OperatorType::Dereference) => {
+                let deref_pos = add_to_tree(parent, ast, Ast::new(AstNode::UnaryOp(OperatorType::Dereference)));
+                pos = make_ast_statement(
+                    tokens, pos + 1, ast, deref_pos, indent, vars, funcs, structs, traits
+                ) - 1;
             }
             _ => panic!("unexpected token `{:?}`", token)
         }

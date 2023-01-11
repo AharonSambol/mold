@@ -5,8 +5,9 @@ use crate::add_types::ast_add_types::{find_index_typ, get_property_idf_typ, get_
 use crate::add_types::utils::get_from_stack;
 use crate::construct_ast::get_functions_and_types::{FuncTypes, StructTypes, TraitTypes};
 use crate::construct_ast::mold_ast::VarTypes;
-use crate::construct_ast::tree_utils::add_to_tree;
-use crate::types::{GenericType, Type, TypeKind, TypName, unwrap, unwrap_u};
+use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
+use crate::mold_tokens::OperatorType;
+use crate::types::{GenericType, print_type, print_type_b, Type, TypeKind, TypName, unwrap, unwrap_u};
 
 // TODO also cast: `as Box<dyn P>`
 fn add_box(ast: &mut Vec<Ast>, pos: usize) {
@@ -302,10 +303,62 @@ pub fn check_for_boxes(
                 _ => panic!("expected: {:?}, got.kind: {:?}", expected.kind, got.value)
             };
             if typ != expected {
+                print_type(&Some(expected.clone()));
+                print_type(&Some(typ.clone()));
                 panic!("expected: `{expected}` got: `{typ}`");
             }
         },
         TypeKind::Generic(_) => {}
+        TypeKind::Pointer | TypeKind::MutPointer => {
+            let got_children = unwrap_u(&got.children).clone();
+            let typ = match &got.value {
+                AstNode::UnaryOp(OperatorType::Pointer | OperatorType::MutPointer) => {
+                    let expected_children = unwrap(&expected.children).clone();
+                    check_for_boxes(
+                        expected_children[0].clone(), ast, got_children[0],
+                        structs, traits, vars, funcs
+                    );
+                    expected.clone()  //1 got what expected, no need to panic
+                }
+                AstNode::Identifier(idf) => {
+                    let typ = get_from_stack(vars, idf).unwrap();
+                    ast[typ].typ.clone().unwrap()
+                }
+                AstNode::Property => {
+                    get_property_typ(got, ast, structs, traits).unwrap()
+                }
+                AstNode::Index => {
+                    find_index_typ(
+                        ast, structs, traits, unwrap_u(&got.children)
+                    ).unwrap()
+                }
+                AstNode::FunctionCall(_) => {
+                    let func_name = unwrap_enum!(
+                        &ast[unwrap_u(&got.children)[0]].value,
+                        AstNode::Identifier(n), n
+                    );
+                    unwrap_enum!(funcs[func_name].output.clone())
+                }
+                AstNode::Parentheses => {
+                    check_for_boxes(
+                        expected.clone(), ast, got_children[0],
+                        structs, traits, vars, funcs
+                    )
+                }
+                AstNode::Operator(_) | AstNode::UnaryOp(_) => {
+                    for child in got_children {
+                        check_for_boxes(expected.clone(), ast, child, structs, traits, vars, funcs);
+                    }
+                    expected.clone()  //1 got what expected, no need to panic
+                },
+                _ => panic!("expected: {:?}, got.kind: {:?}", expected.kind, got.value)
+            };
+            if typ != expected {
+                print_type(&Some(expected.clone()));
+                print_type(&Some(typ.clone()));
+                panic!("expected: `{expected}` got: `{typ}`");
+            }
+        }
         _ => panic!("{:?}", expected),
     }
     expected

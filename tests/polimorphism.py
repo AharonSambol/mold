@@ -12,6 +12,27 @@ struct Wow(Printable):
     static def new() -> Wow:
         return Wow { }
 
+TRAIT P:
+    def p() -> i8
+TRAIT P2:
+    def p() -> i8
+trait Duck:
+    def quack()
+    def swim()
+struct D:
+    def quack():
+        pass
+    def P::p() -> i8:
+        return 1
+    def P2::p() -> i8:
+        return 2
+struct D2:
+    def quack():
+        pass
+    def swim():
+        pass
+
+
 def f(a: Printable):
     print(a.to_str())
 
