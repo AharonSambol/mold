@@ -1,29 +1,12 @@
-struct B:
-    inner: int
-
-struct A:
-    inner: B
-    def get() -> int:
-        a := self.inner.inner
-        return a
-
-
-def func(a: &mut int):
-    *a = *a + 1
-
-# def get_ptr(a: int) -> &mut int:
-#     return &mut a
-
+# def bubble_sort(lst: List[int]):
+#     a := range(0, 10, 2)
+#     for i in range(10):
+#         print(i)
+def a<T>() -> List[T]:
+    return []
+type i = int
+type IList = List[i]
 def main():
-    a := A { B { 2 } }
-    b := a.get()
-#     x := 325
-#     a := 5 + -(4 / -2)
-#     a_val := a + 1
-#     b := &mut a
-# #     c := get_ptr(a)
-# #     d: &mut int = b
-# #     c : List[&mut int] = [&mut x, b]
-#     func(b)
-#     func(&mut a)
-#     print(a)
+    lst: IList = [1, 2, 64, 214, 43, 56, 32, 3, 23, 5, 12, 532, 634, 2, 35, 34, 6]
+#     a := len(lst)
+#     bubble_sort(lst)

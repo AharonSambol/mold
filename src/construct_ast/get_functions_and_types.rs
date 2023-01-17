@@ -1,17 +1,22 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use lazy_static::lazy_static;
+use crate::construct_ast::get_typ::{try_get_arg_typ};
 use crate::mold_tokens::{OperatorType, SolidToken};
-use crate::types::Type;
-use crate::unwrap_enum;
+use crate::types::{Type};
+use crate::{unwrap_enum};
+use crate::construct_ast::mold_ast::Info;
 
 pub type TraitTypes = HashMap<String, TraitType>;
 pub type StructTypes = HashMap<String, StructType>;
 pub type FuncTypes = HashMap<String, FuncType>;
+pub type TypeTypes = HashMap<String, Type>;
 
 #[derive(Clone, Debug)]
 pub struct StructType {
     pub generics: Option<Vec<String>>,
     pub pos: usize
 }
+
 #[derive(Clone, Debug)]
 pub struct TraitType {
     pub generics: Option<Vec<String>>,
@@ -23,13 +28,21 @@ pub struct FuncType {
     pub output: Option<Type>
 }
 const UNKNOWN_FUNC_TYPE: FuncType = FuncType{ input: None, output: None };
+lazy_static! {
+    static ref EMPTY_HS: HashSet<String> = HashSet::new();
+}
 
-
-pub fn get_struct_and_func_names(tokens: &[SolidToken]) -> (StructTypes, FuncTypes, TraitTypes){
+pub fn get_struct_and_func_names(tokens: &[SolidToken]) -> (StructTypes, FuncTypes, TraitTypes, TypeTypes){
     let mut funcs = HashMap::new();
     let mut structs = HashMap::new();
     let mut traits = HashMap::new();
+    let mut types = HashMap::new();
 
+    // for (i, tok) in tokens.iter().enumerate() {
+    //     if let SolidToken::Type = tok {
+    //
+    //     }
+    // }
     for (i, tok) in tokens.iter().enumerate() {
         match tok {
             SolidToken::Def =>
@@ -61,8 +74,36 @@ pub fn get_struct_and_func_names(tokens: &[SolidToken]) -> (StructTypes, FuncTyp
                         traits.insert(name.clone(), TraitType { generics: None, pos: 0 });
                     }
                 },
+            SolidToken::Type => {
+                types.insert(unwrap_enum!(&tokens[i + 1], SolidToken::Word(w), w), i + 3); //1 skip the `=` too
+            }
             _ => ()
         }
     }
-    (structs, funcs, traits)
+    let mut resolved_types = HashMap::new();
+    //3 NOT EFFICIENT
+    while resolved_types.len() < types.len() {
+        let prev_ln = resolved_types.len();
+        for (typ, pos) in &types {
+            if resolved_types.contains_key(*typ) {
+                continue
+            }
+            let res = try_get_arg_typ(
+                tokens, &mut pos.clone(),
+                &Info {
+                    funcs: &mut funcs,
+                    structs: &mut structs,
+                    traits: &mut traits,
+                    types: &resolved_types
+                }, false, &EMPTY_HS
+            );
+            if let Some(res) = res {
+                resolved_types.insert((*typ).clone(), res);
+            }
+        }
+        if resolved_types.len() == prev_ln {
+            panic!("circular type definition")
+        }
+    }
+    (structs, funcs, traits, resolved_types)
 }

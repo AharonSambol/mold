@@ -12,10 +12,16 @@ lazy_static!{
     static ref NUM_TYP_RE: Regex = Regex::new(r"[uif]").unwrap();
 }
 
-// TODO remove all the places where it says _value_(...).v  (to just ... )
+pub enum ToWrapVal {
+    Nothing,
+    GetAsValue,
+    GetInnerValue,
+    GetName
+}
+
 pub fn to_python(
     ast: &[Ast], pos: usize, indentation: usize,
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>, add_index: bool
+    built_ins: &HashMap<&str, Box<dyn BuiltIn>>, add_val_wrapper: ToWrapVal
 ) -> String {
     let children = unwrap_u(&ast[pos].children);
     match &ast[pos].value {
@@ -26,7 +32,7 @@ pub fn to_python(
                     res,
                     "\n{}{}",
                     "\t".repeat(indentation),
-                    to_python(ast, *child, indentation, built_ins, true)
+                    to_python(ast, *child, indentation, built_ins, ToWrapVal::GetInnerValue)
                 ).unwrap();
             }
             res
@@ -42,17 +48,17 @@ pub fn to_python(
                 format!(
 "def {name}({}){}:
 {}self = _value_(self){}",
-                    to_python(ast, children[1], indentation, built_ins, false), // param
-                    to_python(ast, children[2], indentation, built_ins, false), // return
+                    to_python(ast, children[1], indentation, built_ins, ToWrapVal::Nothing), // param
+                    to_python(ast, children[2], indentation, built_ins, ToWrapVal::Nothing), // return
                     "\t".repeat(indentation + 1),
-                    to_python(ast, children[3], indentation + 1, built_ins, true) // body
+                    to_python(ast, children[3], indentation + 1, built_ins, ToWrapVal::Nothing) // body
                 )
             } else {
                 format!(
                     "def {name}({}){}:{}",
-                    to_python(ast, children[1], indentation, built_ins, false), // param
-                    to_python(ast, children[2], indentation, built_ins, false), // return
-                    to_python(ast, children[3], indentation + 1, built_ins, true) // body
+                    to_python(ast, children[1], indentation, built_ins, ToWrapVal::Nothing), // param
+                    to_python(ast, children[2], indentation, built_ins, ToWrapVal::Nothing), // return
+                    to_python(ast, children[3], indentation + 1, built_ins, ToWrapVal::Nothing) // body
                 )
             }
         },
@@ -60,16 +66,16 @@ pub fn to_python(
             format!(
                 "@staticmethod\n{}def {name}({}){}:{}",
                 "\t".repeat(indentation),
-                to_python(ast, children[1], indentation, built_ins, false), // param
-                to_python(ast, children[2], indentation, built_ins, false), // return
-                to_python(ast, children[3], indentation + 1, built_ins, true) // body
+                to_python(ast, children[1], indentation, built_ins, ToWrapVal::Nothing), // param
+                to_python(ast, children[2], indentation, built_ins, ToWrapVal::Nothing), // return
+                to_python(ast, children[3], indentation + 1, built_ins, ToWrapVal::Nothing) // body
             )
         },
         AstNode::ReturnType => { String::new() },
         AstNode::IfStatement => {
             let mut res = format!("if {}{}",
-                to_python(ast, children[0], indentation, built_ins, true), //1 ():
-                to_python(ast, children[1], indentation + 1, built_ins, true) //1 body
+                to_python(ast, children[0], indentation, built_ins, ToWrapVal::Nothing), //1 ():
+                to_python(ast, children[1], indentation + 1, built_ins, ToWrapVal::Nothing) //1 body
             );
             for child in children.iter().skip(2){
                 match &ast[*child].value {
@@ -78,15 +84,15 @@ pub fn to_python(
                         write!(
                             res, "\n{}elif {}{}",
                             "\t".repeat(indentation),
-                            to_python(ast, c_children[0], indentation, built_ins, true), //1 ():
-                            to_python(ast, c_children[1], indentation + 1, built_ins, true) //1 body
+                            to_python(ast, c_children[0], indentation, built_ins, ToWrapVal::Nothing), //1 ():
+                            to_python(ast, c_children[1], indentation + 1, built_ins, ToWrapVal::Nothing) //1 body
                         ).unwrap();
                     },
                     AstNode::Body => {
                         write!(
                             res, "\n{}else:{}",
                             "\t".repeat(indentation),
-                            to_python(ast, *child, indentation + 1, built_ins, true) //1 body
+                            to_python(ast, *child, indentation + 1, built_ins, ToWrapVal::Nothing) //1 body
                         ).unwrap();
                     },
                     _ => panic!()
@@ -96,154 +102,266 @@ pub fn to_python(
         },
         AstNode::WhileStatement => {
             format!("while {}{}",
-                to_python(ast, children[0], indentation, built_ins, true), //1 ():
-                to_python(ast, children[1], indentation + 1, built_ins, true) //1 body
+                to_python(ast, children[0], indentation, built_ins, ToWrapVal::Nothing), //1 ():
+                to_python(ast, children[1], indentation + 1, built_ins, ToWrapVal::Nothing) //1 body
             )
         },
         AstNode::FirstAssignment => {
             format!("{}={}",
-                to_python(ast, children[0], indentation, built_ins, false),
-                to_python(ast, children[1], indentation, built_ins, true)
+                to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetName),
+                to_python(ast, children[1], indentation, built_ins, ToWrapVal::GetAsValue)
             )
         },
         AstNode::Assignment => {
-            let val = format!("{}.v", to_python(ast, children[1], indentation, built_ins, true));
-
             format!("{}.v = {}",
-                to_python(ast, children[0], indentation, built_ins, false),
-                remove_unnecessary_val_creation(&val)
+                to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetName),
+                to_python(ast, children[1], indentation, built_ins, ToWrapVal::GetInnerValue)
             )
         },
-        AstNode::Identifier(name) => { String::from(name) },
+        AstNode::Identifier(name) => {
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetName | ToWrapVal::GetAsValue => String::from(name),
+                ToWrapVal::GetInnerValue =>
+                    String::from(remove_unnecessary_val_creation(&format!("{}.v", name)))
+            }
+        },
         AstNode::Operator(op) => {
-            let c1 = format!("{}.v", to_python(ast, children[0], indentation, built_ins, true));
-            let c2 = format!("{}.v", to_python(ast, children[1], indentation, built_ins, true));
-            format!(
-                "_value_({} {op} {})",
-                remove_unnecessary_val_creation(&c1),
-                remove_unnecessary_val_creation(&c2)
-            )
+            // let c1 = format!("{}.v", to_python(ast, children[0], indentation, built_ins, false));
+            // let c2 = format!("{}.v", to_python(ast, children[1], indentation, built_ins, false));
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => format!(
+                    "_value_({} {op} {})",
+                    to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetInnerValue),
+                    to_python(ast, children[1], indentation, built_ins, ToWrapVal::GetInnerValue)
+                ),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!(
+                    "{} {op} {}",
+                    to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetInnerValue),
+                    to_python(ast, children[1], indentation, built_ins, ToWrapVal::GetInnerValue)
+                ),
+            }
         },
         AstNode::UnaryOp(op) => {
             match op {
                 OperatorType::MutPointer => {
-                    format!("_value_(_pointer_({}))",
-                        to_python(ast, children[0], indentation, built_ins, false)
+                    format!("_pointer_({})",
+                        to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetName)
                     )
                 }
                 OperatorType::Pointer => {
-                    format!("_value_(_pointer_({}))",
-                             to_python(ast, children[0], indentation, built_ins, false)
+                    format!("_pointer_({})",
+                             to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetName)
                     )
                 }
                 OperatorType::Dereference => {
-                    let r = format!("{}.v",
-                             to_python(ast, children[0], indentation, built_ins, false)
+
+                    let r = format!("{}.p",
+                         to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetName) //todo GetAsValue?
                     );
-                    format!("{}.p", remove_unnecessary_val_creation(&r))
+                    match add_val_wrapper {
+                        ToWrapVal::Nothing => panic!(),
+                        ToWrapVal::GetInnerValue => remove_unnecessary_val_creation(&format!("{r}.v")).to_string(),
+                        ToWrapVal::GetAsValue => r,
+                        ToWrapVal::GetName => r
+                    }
                 }
                 _ => {
-                    let r = format!("{}.v",
-                        to_python(ast, children[0], indentation, built_ins, true)
-                    );
-                    format!("_value_({op} {})", remove_unnecessary_val_creation(&r))
+                    match add_val_wrapper {
+                        ToWrapVal::Nothing => panic!(),
+                        ToWrapVal::GetAsValue =>
+                            format!("_value_({op}{})", to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetInnerValue)),
+                        ToWrapVal::GetName | ToWrapVal::GetInnerValue =>
+                            format!("{op}{}", to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetInnerValue)),
+                    }
                 }
             }
         },
         AstNode::Parentheses => {
             // todo this sometimes causes unneeded _value_() calls
             format!("({})",
-                to_python(ast, children[0], indentation, built_ins, add_index)
+                to_python(ast, children[0], indentation, built_ins, add_val_wrapper)
             )
         },
         AstNode::ColonParentheses => {
             let mut res = String::new();
             for child in children {
-                write!(res, "{}", to_python(ast, *child, indentation, built_ins, true)).unwrap();
+                write!(res, "{}", to_python(ast, *child, indentation, built_ins, ToWrapVal::GetInnerValue)).unwrap();
             }
             write!(res, ":").unwrap();
             res
         },
         AstNode::Index => {
-            let r = format!("{}.v",
-                to_python(ast, children[0], indentation, built_ins, true)
-            );
-            format!("_value_({}.v[{}])",
-                remove_unnecessary_val_creation(&r),
-                to_python(ast, children[1], indentation, built_ins, true)
-            )
-        },
-        AstNode::Number(num) => format!("_value_({})", NUM_TYP_RE.split(num).next().unwrap()),
-        AstNode::String { val, .. } => format!("_value_({val})"),
-        AstNode::Char(chr) => format!("_value_('{chr}')"),
-        AstNode::Bool(b) => String::from(if *b { "_value_(True)" } else { "_value_(False)" }),
-        AstNode::ListLiteral => {
-            let mut res = String::from("_value_([");
-            for (i, child) in children.iter().enumerate() {
-                if i != 0{
-                    write!(res, ", ").unwrap();
-                }
-                let r = format!("{}.v", to_python(ast, *child, indentation + 1, built_ins, true));
-                write!(res, "{}", remove_unnecessary_val_creation(&r)).unwrap();
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => format!(
+                    "_value_({}[{}])",
+                    to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetInnerValue),
+                    to_python(ast, children[1], indentation, built_ins, ToWrapVal::GetInnerValue)
+                ),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!(
+                    "{}[{}]",
+                    to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetInnerValue),
+                    to_python(ast, children[1], indentation, built_ins, ToWrapVal::GetInnerValue)
+                ),
             }
-            write!(res, "])").unwrap();
-            res
+        },
+        AstNode::Number(num) => {
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => format!("_value_({})", NUM_TYP_RE.split(num).next().unwrap()),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => NUM_TYP_RE.split(num).next().unwrap().to_string(),
+            }
+        },
+        AstNode::String { val, .. } => {
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => format!("_value_({val})"),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => val.clone(),
+            }
+        },
+        AstNode::Char(chr) => {
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => format!("_value_('{chr}')"),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!("'{chr}'"),
+            }
+        },
+        AstNode::Bool(b) => {
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => String::from(if *b { "_value_(True)" } else { "_value_(False)" }),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => String::from(if *b { "True" } else { "False" }),
+            }
+        },
+        AstNode::ListLiteral => {
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => {
+                    let mut res = String::from("_value_([");
+                    for (i, child) in children.iter().enumerate() {
+                        if i != 0 {
+                            write!(res, ", ").unwrap();
+                        }
+                        write!(res, "{}", to_python(ast, *child, indentation + 1, built_ins, ToWrapVal::GetInnerValue)).unwrap();
+                    }
+                    write!(res, "])").unwrap();
+                    res
+                },
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => {
+                    let mut res = String::from("[");
+                    for (i, child) in children.iter().enumerate() {
+                        if i != 0 {
+                            write!(res, ", ").unwrap();
+                        }
+                        write!(res, "{}", to_python(ast, *child, indentation + 1, built_ins, ToWrapVal::GetInnerValue)).unwrap();
+                    }
+                    write!(res, "]").unwrap();
+                    res
+                },
+            }
         },
         AstNode::SetLiteral => {
-            let mut res = String::from("_value_({{");
-            for (i, child) in children.iter().enumerate() {
-                if i != 0{
-                    write!(res, ", ").unwrap();
-                }
-                write!(res, "{}", to_python(ast, *child, indentation + 1, built_ins, true)).unwrap();
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => {
+                    let mut res = String::from("_value_({");
+                    for (i, child) in children.iter().enumerate() {
+                        if i != 0 {
+                            write!(res, ", ").unwrap();
+                        }
+                        write!(res, "{}", to_python(ast, *child, indentation + 1, built_ins, ToWrapVal::GetInnerValue)).unwrap();
+                    }
+                    write!(res, "}})").unwrap();
+                    res
+                },
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => {
+                    let mut res = String::from("{");
+                    for (i, child) in children.iter().enumerate() {
+                        if i != 0 {
+                            write!(res, ", ").unwrap();
+                        }
+                        write!(res, "{}", to_python(ast, *child, indentation + 1, built_ins, ToWrapVal::GetInnerValue)).unwrap();
+                    }
+                    write!(res, "}}").unwrap();
+                    res
+                },
             }
-            write!(res, "}})").unwrap();
-            res
         },
         AstNode::DictLiteral => {
-            let mut res = String::from("_value_({{");
-            for (i, child) in children.iter().enumerate() {
-                if i != 0{
-                    if i % 2 == 0 {
-                        write!(res, ", ").unwrap();
-                    } else {
-                        write!(res, ": ").unwrap();
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => {
+                    let mut res = String::from("_value_({");
+                    for (i, child) in children.iter().enumerate() {
+                        if i != 0 {
+                            if i % 2 == 0 {
+                                write!(res, ", ").unwrap();
+                            } else {
+                                write!(res, ": ").unwrap();
+                            }
+                        }
+                        write!(res, "{}", to_python(ast, *child, indentation + 1, built_ins, ToWrapVal::GetInnerValue)).unwrap();
                     }
-                }
-                write!(res, "{}", to_python(ast, *child, indentation + 1, built_ins, true)).unwrap();
+                    write!(res, "}})").unwrap();
+                    res
+                },
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => {
+                    let mut res = String::from("{");
+                    for (i, child) in children.iter().enumerate() {
+                        if i != 0{
+                            if i % 2 == 0 {
+                                write!(res, ", ").unwrap();
+                            } else {
+                                write!(res, ": ").unwrap();
+                            }
+                        }
+                        write!(res, "{}", to_python(ast, *child, indentation + 1, built_ins, ToWrapVal::GetInnerValue)).unwrap();
+                    }
+                    write!(res, "}})").unwrap();
+                    res
+                },
             }
-            write!(res, "}})").unwrap();
-            res
         },
         AstNode::Pass => { String::from("pass") },
         AstNode::FunctionCall(_) => {
+            // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             if let AstNode::Identifier(name) = &ast[children[0]].value {
                 if built_ins.contains_key(name.as_str()) {
                     return built_ins[name.as_str()].to_str_python(ast, children, built_ins);
                 }
-                if let Some(res) = built_in_funcs(ast, name, indentation, built_ins, children, add_index) {
+                if let Some(res) = built_in_funcs(ast, name, indentation, built_ins, children, false) {
                     return res;
                 }
             }
 
             let mut res = format!("{}(",
-                to_python(ast, children[0], indentation, built_ins, false)
+                to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetName)
             );
             if children.len() > 1 {
-                write!(res, "{}", to_python(ast, children[1], indentation, built_ins, false)).unwrap();
+                write!(res, "{}", to_python(ast, children[1], indentation, built_ins, ToWrapVal::Nothing)).unwrap();
             }
             write!(res, ")").unwrap();
-            res
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => format!("_value_({})", res),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => res,
+            }
         },
         AstNode::ArgsDef => {
             if children.is_empty() {
                 return String::new();
             }
-            let mut res = to_python(ast, children[0], indentation, built_ins, false);
-            // write!(res, "{}", unwrap_enum!(&ast[children[0]].value, AstNode::Identifier(name), name)).unwrap();
+            let mut res = to_python(
+                ast, children[0], indentation, built_ins, ToWrapVal::GetName
+            );
             for child in children.iter().skip(1) {
-                // write!(res, ",{}", unwrap_enum!(&ast[*child].value, AstNode::Identifier(name), name)).unwrap();
-                write!(res, "{}", to_python(ast, *child, indentation, built_ins, false)).unwrap();
+                write!(
+                    res, ", {}", to_python(
+                        ast, *child, indentation, built_ins, ToWrapVal::GetName
+                    )
+                ).unwrap();
             }
             res
         }
@@ -251,96 +369,125 @@ pub fn to_python(
             if children.is_empty() {
                 return String::new();
             }
-            let r = format!("{}.v", to_python(ast, children[0], indentation, built_ins, false));
-            let mut res = format!("_value_(__cpy_strct({}))",
-                remove_unnecessary_val_creation(&r)
+            let mut res = to_python(
+                ast, children[0], indentation, built_ins, ToWrapVal::GetAsValue
             );
             for child in children.iter().skip(1) {
-                let r = format!("{}.v", to_python(ast, *child, indentation, built_ins, false));
-                write!(res, ", _value_(__cpy_strct({}))",
-                    remove_unnecessary_val_creation(&r)
+                write!(res, ", {}",
+                       to_python(
+                           ast, *child, indentation, built_ins, ToWrapVal::GetAsValue
+                       )
                 ).unwrap();
             }
+            println!("RES: {res}");
             res
         },
         AstNode::Return => {
             if children.is_empty() { String::from("return") }
             else {
-                let r = format!("{}.v", to_python(ast, children[0], indentation, built_ins, false));
-                format!("return _value_({})",
-                    remove_unnecessary_val_creation(&r)
+                format!("return {}",
+                    to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetInnerValue)
                 )
             }
         },
         AstNode::Property => {
-            if let Some(res) = built_in_methods(ast, indentation, built_ins, children, add_index) {
+            // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            if let Some(res) = built_in_methods(ast, indentation, built_ins, children, false) {
                 return res;
             }
-            let base = format!("{}.v", to_python(ast, children[0], indentation, built_ins, true));
-            format!("_value_({}.{}.v)",
-                remove_unnecessary_val_creation(&base),
-                to_python(ast, children[1], indentation, built_ins, true)
-            )
+            if let AstNode::FunctionCall(true) = ast[children[1]].value {
+                let func_name_pos = unwrap_u(&ast[children[1]].children)[0];
+                let func_name = unwrap_enum!(&ast[func_name_pos].value, AstNode::Identifier(n), n);
+                let res = if func_name == "__init__" {
+                    format!(
+                        "{}({})",
+                        to_python(
+                            ast, children[0], indentation, built_ins, ToWrapVal::GetName
+                        ),
+                        to_python(
+                            ast, unwrap_u(&ast[children[1]].children)[1], indentation, built_ins, ToWrapVal::GetName
+                        )
+                    )
+                } else {
+                    format!(
+                        "{}.{}",
+                        to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetName),
+                        to_python(ast, children[1], indentation, built_ins, ToWrapVal::GetName)
+                    )
+                };
+                return if let ToWrapVal::GetAsValue = add_val_wrapper {
+                    format!("_value_({res})")
+                } else {
+                    res
+                }
+            }
+            let base = to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetInnerValue);
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => format!(
+                    "_value_({}.{})",
+                    base,
+                    to_python(ast, children[1], indentation, built_ins, ToWrapVal::GetName)
+                ),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!(
+                    "{}.{}",
+                    base,
+                    to_python(ast, children[1], indentation, built_ins, ToWrapVal::GetName)
+                ),
+            }
         },
         AstNode::ForStatement => {
-            format!("for {}{}",
-                to_python(ast, children[0], indentation, built_ins, false),
-                to_python(ast, children[1], indentation + 1, built_ins, true)
+            // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            let par = to_python(ast, children[0], indentation, built_ins, ToWrapVal::Nothing);
+            let vars = to_python(ast, unwrap_u(&ast[children[0]].children)[0], indentation, built_ins, ToWrapVal::Nothing);
+            format!("for {par}\n{}({vars},)=map(_value_, ({vars},)){}",
+                    "\t".repeat(indentation + 1),
+                    to_python(ast, children[1], indentation + 1, built_ins, ToWrapVal::Nothing),
+
             )
         },
         AstNode::ForVars => {
-            let mut res = to_python(ast, children[0], indentation, built_ins, false);
+            let mut res = to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetName);
             for child in children.iter().skip(1) {
                 write!(res, ", {}",
-                    to_python(ast, *child, indentation, built_ins, false)
+                    to_python(ast, *child, indentation, built_ins, ToWrapVal::GetName)
                 ).unwrap();
             }
             res
         },
         AstNode::ForIter => {
-            let r = format!("{}.v",
-                to_python(ast, children[0], indentation, built_ins, true)
-            );
-            format!(" in {}", remove_unnecessary_val_creation(&r))
+            format!(" in {}", to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetInnerValue))
         },
         AstNode::StructInit => {
-            let mut res = format!("_value_({}(",
-                to_python(ast, children[0], indentation, built_ins, false)
+            let mut res = format!("{}(",
+                to_python(ast, children[0], indentation, built_ins, ToWrapVal::GetName)
             );
             let arg_vals = unwrap_u(&ast[children[1]].children);
             for (i, val) in arg_vals.iter().enumerate() {
                 if i == 0 {
                     write!(res, "{}",
-                           to_python(ast, *val, indentation, built_ins, true)
+                           to_python(ast, *val, indentation, built_ins, ToWrapVal::GetAsValue)
                     ).unwrap();
                 } else {
                     write!(res, ", {}",
-                           to_python(ast, *val, indentation, built_ins, true)
+                           to_python(ast, *val, indentation, built_ins, ToWrapVal::GetAsValue)
                     ).unwrap();
                 }
             }
-            write!(res, "))").unwrap();
-            res
+            write!(res, ")").unwrap();
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => format!("_value_({res})"),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => res,
+            }
         }
         AstNode::Struct(name) => {
             if unsafe { IGNORE_STRUCTS.contains(name.as_str()) } {
                 return String::new();
             }
-            let param = &ast[children[1]];
-            let param: Vec<&String> = unwrap_u(&param.children).iter()
-                .map(|&x|
-                    unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n)
-                ).collect();
-            let param_comma = join(param.iter(), ", ");
-            let param_assign = join(param.iter().map(
-                |&x| format!("self.{x} = {x}")
-            ), "\n\t\t");
             format!(
-"class {name}:
-\tdef __init__(self, {param_comma}):
-\t\tself._is_STRUCT__ = True
-\t\t{param_assign} {}",
-                to_python(ast, children[2], indentation + 1, built_ins, true)
+                "class {name}:\n{}",
+                to_python(ast, children[2], indentation + 1, built_ins, ToWrapVal::Nothing)
             )
         }
         AstNode::Continue => String::from("continue"),
@@ -352,6 +499,7 @@ pub fn to_python(
 
 fn remove_unnecessary_val_creation(st: &str) -> &str {
     if st.starts_with("_value_(") && st.ends_with(").v") {
+        panic!("just checking if this is ever useful, if so- remove this panic");
         let end = st.len() - ").v".len();
         return &st["_value_(".len()..end]
     }
@@ -371,7 +519,7 @@ fn built_in_methods(
         match func_name.as_str() {
             "iter" => {
                 //1 ignores it
-                Some(to_python(ast, children[0], indentation, built_ins, add_index))
+                Some(to_python(ast, children[0], indentation, built_ins, todo!()))
             }
 
             _ => { None }
@@ -388,7 +536,7 @@ fn built_in_funcs(
     match name {
         "reversed" => {
             Some(format!("{}.rev()",
-                to_python(ast, children[1], indentation, built_ins, add_index)
+                         to_python(ast, children[1], indentation, built_ins, todo!())
             ))
         }
         _ => { None }

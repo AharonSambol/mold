@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
+use std::slice::Iter;
 use crate::built_in_funcs::BuiltIn;
-use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
+use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType};
 
@@ -336,6 +337,9 @@ pub fn to_rust(
         AstNode::Break => write!(res, "break").unwrap(),
         AstNode::ReturnType => { unreachable!() },
         AstNode::Trait { name, .. } => {
+            if unsafe { IGNORE_TRAITS.contains(name.as_str()) } {
+                return;
+            }
             let generics_ast = &ast[children[0]];
             let generic = format_generics(generics_ast);
             let functions = unwrap_u(&ast[children[1]].children);
@@ -493,6 +497,25 @@ fn built_in_funcs(
         "reversed" => {
             to_rust(ast, children[1], indentation, res, built_ins, enums);
             write!(res, ".rev()").unwrap();
+        }
+        "len" => {
+            // todo dont cast?
+            write!(res, "(").unwrap();
+            to_rust(ast, children[1], indentation, res, built_ins, enums);
+            write!(res, ".len() as i32)").unwrap();
+        },
+        "range" => {
+            // let a: Box<dyn Iterator<Item=i32>> = Box::new((0..11).step_by(2));
+            // let a: Box<dyn Iterator<Item=i32>> = Box::new(0..11);
+            // let a: Box<dyn Iterator<Item=i32>> = Box::new(0..=11);
+            let args = unwrap_u(&ast[children[1]].children);
+            write!(res, "(").unwrap();
+            to_rust(ast, args[0], 0, res, built_ins, enums);
+            write!(res, "..").unwrap();
+            to_rust(ast, args[1], 0, res, built_ins, enums);
+            write!(res, ").step_by((").unwrap();
+            to_rust(ast, args[2], 0, res, built_ins, enums);
+            write!(res, ") as usize)").unwrap();
         }
         _ => { return false }
     }

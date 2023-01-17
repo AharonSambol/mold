@@ -22,16 +22,17 @@ use once_cell::sync::Lazy;
 use crate::built_in_funcs::{BuiltIn, make_built_ins, put_at_start};
 use crate::construct_ast::mold_ast;
 use crate::mold_tokens::SolidToken;
+use crate::to_python::ToWrapVal;
 
 static mut IS_COMPILED: bool = false;
+static mut IGNORE_TRAITS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 static mut IGNORE_STRUCTS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 static mut IGNORE_FUNCS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 
 // 2 optimizations:
 // lto = "fat"
 // codegen-units = 1
-//
-// TODO doesnt seem to check that func\struct that takes 2 of same generic are actually same typ
+// TODO some things dont need to be made into a box necessarily (e.g. when I do lst.len() it makes a box)
 fn main() {
     // todo remove
     unsafe {
@@ -51,6 +52,7 @@ fn main() {
     }
     let mut data = fs::read_to_string(path).expect("Couldn't read file");
     put_at_start(&mut data);
+    println!("{data}");
     let tokens = mold_tokens::tokenize(data);
     println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidToken)>>());
 
@@ -66,7 +68,7 @@ fn main() {
 }
 
 fn interpret(ast: &[Ast], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
-    let py = to_python::to_python(ast, 0, 0, built_ins, true);
+    let py = to_python::to_python(ast, 0, 0, built_ins, ToWrapVal::Nothing);
     let py = py.trim();
     let py = format!(
         r#"from typing import *
@@ -74,22 +76,18 @@ from copy import deepcopy
 
 
 class _value_:
-    def __init__(self, v):
-        self.v = v
-
-    def __str__(self):
-        return f'{{self.v}}'
+    def __init__(self, v): self.v = v
+    def __str__(self): return f'{{self.v}}'
 
 
 class _pointer_:
     def __init__(self, p):
+        self.__dict__ = {{x: y for x, y in p.__dict__.items()}}
         self.p = p
+    def __str__(self): return f'&{{self.p}}'
 
-    def __str__(self):
-        return f'&{{self.p}}'
 
-def __cpy_strct(x):
-    return deepcopy(x) if hasattr(x, "_is_STRUCT__") else x
+
 
 
 {}
@@ -122,6 +120,22 @@ fn compile(ast: &[Ast], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
             .arg("out")
             .output()
             .expect("ls command failed to start");
+    }
+    let cargo_contents = fs::read_to_string("out/Cargo.toml").unwrap();
+    if !cargo_contents.contains("\nlto =") && !cargo_contents.contains("\ncodegen-units = ") {
+        let cargo_contents = cargo_contents.split_once("[package]")
+            .expect("no [package] found in Cargo.toml");
+        let mut file = File::create("out/Cargo.toml").unwrap();
+
+        file.write_all(
+            format!("\
+{}[package]
+lto = \"fat\"
+codegen-units = 1{}",
+                    cargo_contents.0,
+                    cargo_contents.1
+            ).as_ref()
+        ).expect("couldn't write to cargo");
     }
     let mut file = File::create("out/src/main.rs").unwrap();
     file.write_all(

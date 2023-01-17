@@ -1,10 +1,10 @@
 use crate::construct_ast::ast_structure::{Ast, join};
-use crate::to_python::to_python;
+use crate::to_python::{to_python, ToWrapVal};
 use crate::to_rust::to_rust;
 use crate::types::{unwrap_u, Type, TypeKind, INT_TYPE, GenericType, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE, MUT_STR_TYPE, TypName, ITER_TYPE};
 use std::collections::HashMap;
 use std::fmt::Write;
-use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, make_primitive, some_vec, typ_with_child};
+use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, make_primitive, some_vec, typ_with_child};
 
 macro_rules! get_types {
     () => {
@@ -29,9 +29,17 @@ macro_rules! to_py {
 
 
 
-enum StructFunc { Struct(BuiltInStruct), Func(BuiltInFunc) }
+enum StructFunc { Struct(BuiltInStruct), Func(BuiltInFunc), Trait(BuiltInTrait) }
 struct BuiltInStruct {
     name: &'static str,
+    generics: Option<Vec<&'static str>>,
+    methods: Vec<&'static str>,
+    static_methods: Vec<&'static str>,
+    _parameters: Vec<&'static str>
+}
+struct BuiltInTrait {
+    name: &'static str,
+    duck: bool,
     generics: Option<Vec<&'static str>>,
     methods: Vec<&'static str>,
     static_methods: Vec<&'static str>,
@@ -72,6 +80,7 @@ pub fn put_at_start(data: &mut String) {
                 "removesuffix(s: str) -> str",
                 "lower(s: str) -> str",
                 "upper(s: str) -> str",
+                "__init__(self)"
                 // todo chars()
                 // todo is(digit\numeric\ascii...)
                 // todo "join(lst: List[T]) -> int",
@@ -84,6 +93,7 @@ pub fn put_at_start(data: &mut String) {
             name: "Iter",
             generics: Some(vec!["T"]),
             methods: vec![
+                "__init__(self)",
                 "into_iter() -> IntoIter[T]",
             ],
             static_methods: vec![],
@@ -94,6 +104,7 @@ pub fn put_at_start(data: &mut String) {
             name: "IntoIter",
             generics: Some(vec!["T"]),
             methods: vec![
+                "__init__(self)",
                 "into_iter() -> IntoIter[T]",
                 "next() -> T"
             ],
@@ -105,6 +116,7 @@ pub fn put_at_start(data: &mut String) {
             name: "IterMut",
             generics: Some(vec!["T"]),
             methods: vec![
+                "__init__(self)",
                 "into_iter() -> IntoIter[T]",
             ],
             static_methods: vec![],
@@ -116,6 +128,7 @@ pub fn put_at_start(data: &mut String) {
             generics: Some(vec!["T"]),
             methods: vec![],
             static_methods: vec![
+                "__init__(self)",
                 "new(t: T) -> Box[T]",
             ],
             _parameters: vec![],
@@ -125,6 +138,7 @@ pub fn put_at_start(data: &mut String) {
             name: "Vec",
             generics: Some(vec!["T"]),
             methods: vec![
+                "__init__(self)",
                 "into_iter() -> IntoIter[T]",
                 "iter_mut() -> IterMut[T]",
                 "iter() -> Iter[T]",
@@ -139,6 +153,7 @@ pub fn put_at_start(data: &mut String) {
             name: "HashSet",
             generics: Some(vec!["T"]),
             methods: vec![ // todo
+               "__init__(self)",
                 "add(t: T)",
             ],
             static_methods: vec![],
@@ -148,10 +163,42 @@ pub fn put_at_start(data: &mut String) {
         StructFunc::Struct(BuiltInStruct{
             name: "HashMap",
             generics: Some(vec!["K", "V"]),
-            methods: vec![], // todo
+            methods: vec![
+                "__init__(self)",
+            ], // todo
             static_methods: vec![],
             _parameters: vec![],
         }),
+        //2 len
+        StructFunc::Trait(BuiltInTrait {
+            name: "len",
+            duck: true,
+            generics: None,
+            methods: vec![
+                "__len__(self) -> int"
+            ],
+            static_methods: vec![],
+            _parameters: vec![],
+        }),
+
+        // //2 _Iterator_
+        // StructFunc::Trait(BuiltInTrait {
+        //     name: "_Iterator_",
+        //     duck: true,
+        //     generics: None,
+        //     methods: vec![
+        //         "__next__(self) -> int" // TODO
+        //     ],
+        //     static_methods: vec![],
+        //     _parameters: vec![],
+        // }),
+        // // 4 range
+        // StructFunc::Func(BuiltInFunc {
+        //     name: "range",
+        //     generics: None,
+        //     args: vec!["start: int", "end: int", "step: int"],
+        //     return_typ: Some("_Iterator_[int]"),
+        // }),
         /* //1 Rev
         StructFunc::Struct(BuiltInStruct{
             name: "Rev",
@@ -174,6 +221,27 @@ pub fn put_at_start(data: &mut String) {
     writeln!(data).unwrap();
     for add in to_add {
         match add {
+            StructFunc::Trait(trt) => {
+                unsafe {
+                    IGNORE_TRAITS.insert(trt.name);
+                }
+                if trt.duck {
+                    write!(data, "trait {}", trt.name).unwrap();
+                } else {
+                    write!(data, "TRAIT {}", trt.name).unwrap();
+                }
+                if let Some(generics) = trt.generics {
+                    write!(data, "<{}>", join(generics.iter(), ",")).unwrap();
+                }
+                write!(data, ":").unwrap();
+                for func in trt.methods {
+                    write!(data, "\n\tdef {}", func).unwrap();
+                }
+                for func in trt.static_methods {
+                    write!(data, "\n\tstatic def {}", func).unwrap();
+                }
+                writeln!(data).unwrap();
+            }
             StructFunc::Struct(stct) => {
                 unsafe {
                     IGNORE_STRUCTS.insert(stct.name);
@@ -299,25 +367,34 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
             }),
         );
     }
-    /*1 range */{
-        res.insert(
-            "range",
-            Box::new(Range {
-                input_types: some_vec![
-                    int_type.clone(),
-                    Type {
-                        kind: TypeKind::Optional,
-                        children: some_vec![ int_type.clone(), int_type.clone() ],
-                    }
-                ],
-                output_types: Some(Type {
-                    kind: ITER_TYPE,
-                    children: some_vec![int_type.clone()],
-                }),
-                for_strct: None,
-            }),
-        );
-    }
+    // /*1 range */{
+    //     res.insert(
+    //         "range",
+    //         Box::new(Range {
+    //             input_types: some_vec![
+    //                 int_type.clone(),
+    //                 Type {
+    //                     kind: TypeKind::Optional,
+    //                     children: some_vec![ int_type.clone(), int_type.clone() ],
+    //                 }
+    //             ],
+    //             output_types: Some(Type {
+    //                 kind: ITER_TYPE,
+    //                 children: some_vec![
+    //                     Type {
+    //                         kind: TypeKind::GenericsMap,
+    //                         children: some_vec![
+    //                             Type {
+    //                                 kind: TypeKind::Generic(GenericType::Of(String::from("T"))),
+    //                                 children: some_vec![int_type.clone()]
+    //                             }
+    //                         ]
+    //                     }],
+    //             }),
+    //             for_strct: None,
+    //         }),
+    //     );
+    // }
     /*1 rev */{
         // res.insert(
         //     "rev",
@@ -358,8 +435,8 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
             Box::new(Str {
                 input_types: some_vec![
                     Type{
-                        kind: TypeKind::Implements,
-                        children: some_vec![Type::new(String::from("Display"))]
+                        kind: TypeKind::Trait(TypName::Static("Display")),
+                        children: None
                     }
                 ],
                 output_types: Some(mut_str_type.clone()),
@@ -649,7 +726,7 @@ fn close_python(
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>, add_index: bool
 ) -> String {
     if children.len() > 1 {
-        format!("{})", to_python(ast, children[1], 0, built_ins, add_index))
+        format!("{})", to_python(ast, children[1], 0, built_ins, ToWrapVal::GetAsValue))
     } else {
         String::from(")")
     }

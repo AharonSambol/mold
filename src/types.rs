@@ -32,9 +32,16 @@ pub enum TypName {
 }
 
 impl PartialEq for TypName {
-    fn eq(&self, other: &Self) -> bool {
-        self.get_str() == other.get_str()
-    }
+    fn eq(&self, other: &Self) -> bool { self.get_str() == other.get_str() }
+}
+impl PartialEq<&'static str> for TypName {
+    fn eq(&self, other: &&'static str) -> bool { self.get_str() == *other }
+}
+impl PartialEq<str> for TypName {
+    fn eq(&self, other: &str) -> bool { self.get_str() == other }
+}
+impl PartialEq<String> for TypName {
+    fn eq(&self, other: &String) -> bool { self.get_str() == *other }
 }
 
 impl TypName {
@@ -54,7 +61,6 @@ pub enum TypeKind {
     _OneOf,
     Optional,
     Tuple,
-    Implements,
     Args,
     Trait(TypName),
     Unknown,
@@ -148,9 +154,6 @@ impl Display for Type {
             TypeKind::Generics => write!(f, "GENERICS({})", join(unwrap(&self.children).iter(), ",")),
             TypeKind::Optional => {
                 write!(f, "OPTIONAL({})", join(unwrap(&self.children).iter(), ","))
-            },
-            TypeKind::Implements => {
-                write!(f, "IMPL({})", join(unwrap(&self.children).iter(), ","))
             },
             TypeKind::Args => {
                 write!(f, "ARGS({})", unwrap(&self.children)[0])

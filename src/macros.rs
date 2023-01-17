@@ -37,7 +37,8 @@
             name: stringify!($val),
             generics: None,
             methods: vec![
-                concat!("clone() -> ", stringify!($val))
+                concat!("clone() -> ", stringify!($val)),
+                "__init__(self)"
             ],
             static_methods: vec![],
             _parameters: vec![],

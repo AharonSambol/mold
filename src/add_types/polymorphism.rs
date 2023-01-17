@@ -4,7 +4,7 @@ use crate::{typ_with_child, unwrap_enum, some_vec};
 use crate::add_types::ast_add_types::{find_index_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::utils::get_from_stack;
 use crate::construct_ast::get_functions_and_types::{FuncTypes, StructTypes, TraitTypes};
-use crate::construct_ast::mold_ast::VarTypes;
+use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
 use crate::mold_tokens::OperatorType;
 use crate::types::{GenericType, print_type, print_type_b, Type, TypeKind, TypName, unwrap, unwrap_u};
@@ -50,18 +50,17 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) {
 
 pub fn check_for_boxes(
     expected: Type, ast: &mut Vec<Ast>, pos: usize,
-    structs: &StructTypes, traits: &TraitTypes, vars: &VarTypes, funcs: &FuncTypes
+    info: &Info, vars: &VarTypes
 ) -> Type {
     fn is_box_typ(typ: &Type) -> bool {
         match &typ.kind {
-            TypeKind::Struct(bx) => bx.get_str() == "Box",
+            TypeKind::Struct(bx) => bx == "Box",
             TypeKind::Trait(_) => true,
             _ => false
         }
     }
     fn supplied_box(
-        got: &Ast, vars: &VarTypes, ast: &[Ast],
-        structs: &StructTypes, traits: &TraitTypes, funcs: &FuncTypes
+        got: &Ast, vars: &VarTypes, ast: &[Ast], info: &Info
     ) -> bool {
         match &got.value {
             AstNode::Struct(bx) => bx == "Box",
@@ -71,7 +70,7 @@ pub fn check_for_boxes(
                 let typ = ast[typ].typ.clone().unwrap();
                 match &typ.kind {
                     TypeKind::Struct(name)  =>
-                        if name.get_str() == "Box" { return true },
+                        if name == "Box" { return true },
                     TypeKind::Trait(_) => return true,
                     _ => ()
                 }
@@ -80,7 +79,7 @@ pub fn check_for_boxes(
             AstNode::Index => {
                 is_box_typ(
                     &find_index_typ(
-                        ast, structs, traits, unwrap_u(&got.children)
+                        ast, info, unwrap_u(&got.children)
                     ).unwrap()
                 )
             }
@@ -89,11 +88,11 @@ pub fn check_for_boxes(
                     &ast[unwrap_u(&got.children)[0]].value,
                     AstNode::Identifier(n), n
                 );
-                let return_type = unwrap_enum!(&funcs[func_name].output);
+                let return_type = unwrap_enum!(&info.funcs[func_name].output);
                 is_box_typ(return_type)
             }
             AstNode::Property => {
-                let typ = get_property_typ(got, ast, structs, traits);
+                let typ = get_property_typ(got, ast, info);
                 if let Some(t) = typ { is_box_typ(&t) } else { false }
             }
             _ => false
@@ -102,14 +101,15 @@ pub fn check_for_boxes(
 
     let got = &ast[pos].clone();
     if is_box_typ(&expected) {
-        if !supplied_box(got, vars, ast, structs, traits, funcs) {
+        if !supplied_box(got, vars, ast, info) {
             add_box(ast, pos);
+        } else {
+            let TypeKind::Trait(_) = &expected.kind else {
+                return check_for_boxes(
+                    unwrap(&expected.children)[0].clone(), ast, pos, info, vars
+                )
+            };
         }
-        let TypeKind::Trait(_) = &expected.kind else {
-            return check_for_boxes(
-                unwrap(&expected.children)[0].clone(), ast, pos, structs, traits, vars, funcs
-            )
-        };
         return expected;
     }
     match expected.kind.clone() {
@@ -119,11 +119,11 @@ pub fn check_for_boxes(
             let typ = match &got.value {
                 AstNode::ListLiteral | AstNode::SetLiteral => {
                     match &got.value {
-                        AstNode::ListLiteral => if ex_name.get_str() != "Vec" {
-                            panic!("expected: `{}` but found: `Vec`", ex_name.get_str())
+                        AstNode::ListLiteral => if ex_name != "Vec" {
+                            panic!("expected: `{}` but found: `Vec`", ex_name)
                         }
-                        AstNode::SetLiteral => if ex_name.get_str() != "HashSet" {
-                            panic!("expected: `{}` but found: `HashSet`", ex_name.get_str())
+                        AstNode::SetLiteral => if ex_name != "HashSet" {
+                            panic!("expected: `{}` but found: `HashSet`", ex_name)
                         }
                         _ => unreachable!()
                     }
@@ -144,13 +144,13 @@ pub fn check_for_boxes(
 
                     for i in got_children {
                         check_for_boxes(
-                            exp_c.clone(), ast, i, structs, traits, vars, funcs
+                            exp_c.clone(), ast, i, info, vars
                         );
                     }
                     expected.clone()  //1 got what expected, no need to panic
                 },
                 AstNode::DictLiteral => {
-                    if ex_name.get_str() != "HashMap" {
+                    if ex_name != "HashMap" {
                         panic!("expected: `{}` but found: `HashMap`", ex_name.get_str())
                     }
                     if expected_children.len() != 1 { panic!() }
@@ -173,7 +173,7 @@ pub fn check_for_boxes(
 
                     for i in got_children {
                         check_for_boxes(
-                            exp_c[i % 2].clone(), ast, i, structs, traits, vars, funcs
+                            exp_c[i % 2].clone(), ast, i, info, vars
                         );
                     }
                     expected.clone()  //1 got what expected, no need to panic
@@ -183,7 +183,7 @@ pub fn check_for_boxes(
                         let struct_name = unwrap_enum!(
                             &ast[unwrap_u(&got.children)[0]].value, AstNode::Identifier(x), x.clone()
                         );
-                        let struct_pos = structs[&struct_name].pos;
+                        let struct_pos = info.structs[&struct_name].pos;
                         let traits = &ast[unwrap_u(&ast[struct_pos].children)[3]];
                         if !unwrap_u(&traits.children).iter().any(|x|
                             unwrap_enum!(&ast[*x].value, AstNode::Identifier(trt), trt) == ex_name.get_str()
@@ -210,7 +210,7 @@ pub fn check_for_boxes(
                                 }
                             }
                         }
-                        let struct_pos = structs[ex_name.get_str()].pos;
+                        let struct_pos = info.structs[ex_name.get_str()].pos;
                         let args_def = &ast[unwrap_u(&ast[struct_pos].children)[1]];
                         let expected_args: Vec<Type> = unwrap_u(&args_def.children).iter().map(|x|
                             if let Some(Type { kind: TypeKind::Generic(GenericType::Of(name)), .. }) = &ast[*x].typ {
@@ -225,7 +225,7 @@ pub fn check_for_boxes(
                         }
                         for (got_c, exp_c) in got_args.iter().zip(expected_args) {
                             check_for_boxes(
-                                exp_c, ast, *got_c, structs, traits, vars, funcs
+                                exp_c, ast, *got_c, info, vars
                             );
                         }
                     }
@@ -276,11 +276,11 @@ pub fn check_for_boxes(
                     expected.clone()  //1 got what expected, no need to panic
                 },
                 AstNode::Property => {
-                    get_property_typ(got, ast, structs, traits).unwrap()
+                    get_property_typ(got, ast, info).unwrap()
                 }
                 AstNode::Index => {
                     find_index_typ(
-                        ast, structs, traits, unwrap_u(&got.children)
+                        ast, info, unwrap_u(&got.children)
                     ).unwrap()
                 }
                 AstNode::FunctionCall(_) => {
@@ -288,15 +288,15 @@ pub fn check_for_boxes(
                         &ast[unwrap_u(&got.children)[0]].value,
                         AstNode::Identifier(n), n
                     );
-                    unwrap_enum!(funcs[func_name].output.clone())
+                    unwrap_enum!(info.funcs[func_name].output.clone())
 
                 }
                 AstNode::Parentheses => {
-                    check_for_boxes(expected.clone(), ast, got_children[0], structs, traits, vars, funcs)
+                    check_for_boxes(expected.clone(), ast, got_children[0], info, vars)
                 }
                 AstNode::Operator(_) | AstNode::UnaryOp(_) => {
                     for child in got_children {
-                        check_for_boxes(expected.clone(), ast, child, structs, traits, vars, funcs);
+                        check_for_boxes(expected.clone(), ast, child, info, vars);
                     }
                     expected.clone()  //1 got what expected, no need to panic
                 },
@@ -316,7 +316,7 @@ pub fn check_for_boxes(
                     let expected_children = unwrap(&expected.children).clone();
                     check_for_boxes(
                         expected_children[0].clone(), ast, got_children[0],
-                        structs, traits, vars, funcs
+                        info, vars
                     );
                     expected.clone()  //1 got what expected, no need to panic
                 }
@@ -325,11 +325,11 @@ pub fn check_for_boxes(
                     ast[typ].typ.clone().unwrap()
                 }
                 AstNode::Property => {
-                    get_property_typ(got, ast, structs, traits).unwrap()
+                    get_property_typ(got, ast, info).unwrap()
                 }
                 AstNode::Index => {
                     find_index_typ(
-                        ast, structs, traits, unwrap_u(&got.children)
+                        ast, info, unwrap_u(&got.children)
                     ).unwrap()
                 }
                 AstNode::FunctionCall(_) => {
@@ -337,17 +337,17 @@ pub fn check_for_boxes(
                         &ast[unwrap_u(&got.children)[0]].value,
                         AstNode::Identifier(n), n
                     );
-                    unwrap_enum!(funcs[func_name].output.clone())
+                    unwrap_enum!(info.funcs[func_name].output.clone())
                 }
                 AstNode::Parentheses => {
                     check_for_boxes(
                         expected.clone(), ast, got_children[0],
-                        structs, traits, vars, funcs
+                        info, vars
                     )
                 }
                 AstNode::Operator(_) | AstNode::UnaryOp(_) => {
                     for child in got_children {
-                        check_for_boxes(expected.clone(), ast, child, structs, traits, vars, funcs);
+                        check_for_boxes(expected.clone(), ast, child, info, vars);
                     }
                     expected.clone()  //1 got what expected, no need to panic
                 },
@@ -365,29 +365,30 @@ pub fn check_for_boxes(
 }
 
 
-fn get_property_typ(got: &Ast, ast: &[Ast], structs: &StructTypes, traits: &TraitTypes) -> Option<Type> {
+fn get_property_typ(got: &Ast, ast: &[Ast], info: &Info) -> Option<Type> {
     let children = unwrap_u(&got.children);
     let left_kind = ast[children[0]].typ.clone().unwrap_or_else(||
         panic!("{:?}", ast[children[0]].value)
     );
     let typ = match &left_kind.kind {
         TypeKind::Struct(struct_name) => {
-            let struct_description = &ast[structs[&struct_name.to_string()].pos];
+            println!("s name: {}", struct_name);
+            let struct_description = &ast[info.structs[&struct_name.to_string()].pos];
             match &ast[children[1]].value {
                 AstNode::Identifier(right) =>
                     get_property_idf_typ(ast, &left_kind, struct_description, right, true),
                 AstNode::FunctionCall(_) =>
-                    get_property_method_typ(ast, structs, traits, children, &left_kind, struct_name, true).0,
+                    get_property_method_typ(ast, info, children, &left_kind, struct_name, true).0,
                 _ => unreachable!(),
             }
         }
         TypeKind::Trait(trait_name) => {
-            let trait_description = &ast[traits[trait_name.get_str()].pos];
+            let trait_description = &ast[info.traits[trait_name.get_str()].pos];
             match &ast[children[1]].value {
                 AstNode::Identifier(right) =>
                     get_property_idf_typ(ast, &left_kind, trait_description, right, false),
                 AstNode::FunctionCall(_) =>
-                    get_property_method_typ(ast, structs, traits, children, &left_kind, trait_name, false).0,
+                    get_property_method_typ(ast, info, children, &left_kind, trait_name, false).0,
                 _ => unreachable!()
             }
         }

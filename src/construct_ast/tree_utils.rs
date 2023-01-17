@@ -1,6 +1,7 @@
 use pretty_print_tree::PrettyPrintTree;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::{some_vec, unwrap_enum};
+use crate::types::unwrap_u;
 
 pub fn get_last(arr: &mut Option<Vec<usize>>) -> usize {
     *unwrap_enum!(arr).last().unwrap()
@@ -8,7 +9,6 @@ pub fn get_last(arr: &mut Option<Vec<usize>>) -> usize {
 
 pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNode) -> usize {
     let index = get_last(&mut ast[parent].children);
-    ast[index].parent = Some(index - 1); //1 will be adjusted in the for loop +1
     ast.insert(index, Ast {
         value,
         children: some_vec![index + 1],
@@ -16,10 +16,13 @@ pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNod
         typ: None,
         is_mut: true
     });
-    for node in ast.iter_mut().skip(index + 1) {
+    for (i, node) in ast.iter_mut().enumerate() {
+        if i == index {
+            continue
+        }
         if let Some(children) = &node.children {
             node.children = Some(children.iter().map(|x|
-                if *x >= index {
+                if *x > index {
                     x + 1
                 } else { *x }
             ).collect())
@@ -30,6 +33,7 @@ pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNod
             }
         }
     }
+    ast[index + 1].parent = Some(index);
     index
 }
 
@@ -51,9 +55,9 @@ pub fn print_tree(tree: (Vec<Ast>, usize)){
         PrettyPrintTree::<(Vec<Ast>, usize)>::new(
             Box::new(|(vc, pos)| {
                 if let Some(t) = &vc[*pos].typ {
-                    format!("{}\n:{t}\n({:?})", vc[*pos].value, vc[*pos].parent)
+                    format!("{pos}. {}\n:{t}\n({:?})", vc[*pos].value, vc[*pos].parent)
                 } else {
-                    format!("{}\n({:?})", vc[*pos].value.to_string(), vc[*pos].parent)
+                    format!("{pos}. {}\n({:?})", vc[*pos].value, vc[*pos].parent)
                 }
             }),
             Box::new(|(vc, pos)| {
