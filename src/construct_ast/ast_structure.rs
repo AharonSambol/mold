@@ -68,6 +68,8 @@ pub enum AstNode {
     StructInit,         // children[0] = struct, children[1] = Args,
     Trait { name: String, strict: bool },  // children[0] = Module (functions)
     Traits,
+    Type(String), // e.g.  struct A: \n type Inner
+    Types,
     UnaryOp(OperatorType),  // children[0] = elem
     WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
 }
@@ -102,6 +104,8 @@ impl AstNode {
             | AstNode::Struct(_)
             | AstNode::Trait { .. }
             | AstNode::Traits
+            | AstNode::Type(_)
+            | AstNode::Types
             | AstNode::ColonParentheses
             | AstNode::IfStatement
             | AstNode::WhileStatement
@@ -120,10 +124,12 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            AstNode::Types => write!(f, "TYPES"),
+            AstNode::Type(name) => write!(f, "TYPE({name})"),
             AstNode::Traits => write!(f, "TRAITS"),
             AstNode::Body => write!(f, "BODY"),
             AstNode::Module => write!(f, "MODULE"),
-            AstNode::Function(func) => write!(f, "FUNC({})", func),
+            AstNode::Function(func) => write!(f, "FUNC({func})"),
             AstNode::StaticFunction(func) => {
                 write!(f, "STATIC_FUNC({})", func)
             }
@@ -160,7 +166,7 @@ impl Display for AstNode {
             AstNode::ReturnType => write!(f, "RETURNS"),
             AstNode::GenericsDeclaration => write!(f, "GENERIC_DECLARATION"),
             AstNode::Struct(name) => write!(f, "STRUCT({name})"),
-            AstNode::Trait { name, strict } => write!(f, "TRAIT({name}, {strict})"),
+            AstNode::Trait { name, strict } => write!(f, "TRAIT({name}, strict: {strict})"),
             AstNode::Bool(b) => write!(f, "{b}"),
         }
     }

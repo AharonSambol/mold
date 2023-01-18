@@ -1,6 +1,6 @@
 trait Iter_ {
     type Item;
-    fn next(&mut self) -> Self::Item;
+    fn next(self: &mut Self) -> Self::Item;
 }
 
 struct A {
@@ -9,7 +9,7 @@ struct A {
 impl Iter_ for A {
     type Item = i32;
 
-    fn next(&mut self) -> Self::Item {
+    fn next(mut self: &mut Self) -> Self::Item {
         self.inner[0]
     }
 }

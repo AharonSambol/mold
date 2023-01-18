@@ -34,7 +34,6 @@ struct BuiltInStruct {
     name: &'static str,
     generics: Option<Vec<&'static str>>,
     methods: Vec<&'static str>,
-    static_methods: Vec<&'static str>,
     _parameters: Vec<&'static str>
 }
 struct BuiltInTrait {
@@ -42,8 +41,9 @@ struct BuiltInTrait {
     duck: bool,
     generics: Option<Vec<&'static str>>,
     methods: Vec<&'static str>,
-    static_methods: Vec<&'static str>,
-    _parameters: Vec<&'static str>
+    types: Option<Vec<&'static str>>,
+    _parameters: Vec<&'static str>,
+    ignore: bool
 }
 struct BuiltInFunc {
     name: &'static str,
@@ -51,7 +51,9 @@ struct BuiltInFunc {
     args: Vec<&'static str>,
     return_typ: Option<&'static str>
 }
-pub fn put_at_start(data: &mut String) {
+
+pub fn put_at_start(input: &str) -> String {
+    let mut data = String::new();
     let to_add = [
         make_primitive!(i8),  make_primitive!(i16), make_primitive!(i32),
         make_primitive!(i64), make_primitive!(i128), make_primitive!(isize),
@@ -85,7 +87,6 @@ pub fn put_at_start(data: &mut String) {
                 // todo is(digit\numeric\ascii...)
                 // todo "join(lst: List[T]) -> int",
             ],
-            static_methods: vec![],
             _parameters: vec![],
         }),
         //1 Iter
@@ -96,7 +97,6 @@ pub fn put_at_start(data: &mut String) {
                 "__init__(self)",
                 "into_iter() -> IntoIter[T]",
             ],
-            static_methods: vec![],
             _parameters: vec![],
         }),
         //1 IntoIter
@@ -108,7 +108,6 @@ pub fn put_at_start(data: &mut String) {
                 "into_iter() -> IntoIter[T]",
                 "next() -> T"
             ],
-            static_methods: vec![],
             _parameters: vec![],
         }),
         //1 IterMut
@@ -119,15 +118,13 @@ pub fn put_at_start(data: &mut String) {
                 "__init__(self)",
                 "into_iter() -> IntoIter[T]",
             ],
-            static_methods: vec![],
             _parameters: vec![],
         }),
         //1 Box
         StructFunc::Struct(BuiltInStruct{
             name: "Box",
             generics: Some(vec!["T"]),
-            methods: vec![],
-            static_methods: vec![
+            methods: vec![
                 "__init__(self)",
                 "new(t: T) -> Box[T]",
             ],
@@ -145,7 +142,6 @@ pub fn put_at_start(data: &mut String) {
                 "append(t: T)",
                 "index(pos: usize) -> T",
             ],
-            static_methods: vec![],
             _parameters: vec![],
         }),
         //1 Set
@@ -156,7 +152,6 @@ pub fn put_at_start(data: &mut String) {
                "__init__(self)",
                 "add(t: T)",
             ],
-            static_methods: vec![],
             _parameters: vec![],
         }),
         //1 Dict
@@ -166,32 +161,40 @@ pub fn put_at_start(data: &mut String) {
             methods: vec![
                 "__init__(self)",
             ], // todo
-            static_methods: vec![],
             _parameters: vec![],
         }),
-        //2 len
+        //2 __len__
         StructFunc::Trait(BuiltInTrait {
-            name: "len",
+            name: "__len__",
             duck: true,
             generics: None,
             methods: vec![
                 "__len__(self) -> int"
             ],
-            static_methods: vec![],
+            types: None,
             _parameters: vec![],
+            ignore: false
+        }),
+        //4 len
+        StructFunc::Func(BuiltInFunc {
+            name: "len",
+            generics: None,
+            args: vec!["x: __len__"],
+            return_typ: Some("int"),
+        }),
+        //2 __next__
+        StructFunc::Trait(BuiltInTrait {
+            name: "__next__",
+            duck: true,
+            generics: None,
+            methods: vec![
+                "__next__(self: &mut Self) -> Inner"
+            ],
+            types: Some(vec!["Inner"]),
+            _parameters: vec![],
+            ignore: false
         }),
 
-        // //2 _Iterator_
-        // StructFunc::Trait(BuiltInTrait {
-        //     name: "_Iterator_",
-        //     duck: true,
-        //     generics: None,
-        //     methods: vec![
-        //         "__next__(self) -> int" // TODO
-        //     ],
-        //     static_methods: vec![],
-        //     _parameters: vec![],
-        // }),
         // // 4 range
         // StructFunc::Func(BuiltInFunc {
         //     name: "range",
@@ -222,8 +225,10 @@ pub fn put_at_start(data: &mut String) {
     for add in to_add {
         match add {
             StructFunc::Trait(trt) => {
-                unsafe {
-                    IGNORE_TRAITS.insert(trt.name);
+                if trt.ignore {
+                    unsafe {
+                        IGNORE_TRAITS.insert(trt.name);
+                    }
                 }
                 if trt.duck {
                     write!(data, "trait {}", trt.name).unwrap();
@@ -234,11 +239,13 @@ pub fn put_at_start(data: &mut String) {
                     write!(data, "<{}>", join(generics.iter(), ",")).unwrap();
                 }
                 write!(data, ":").unwrap();
+                if let Some(typs) = trt.types {
+                    for typ in typs {
+                        write!(data, "\n\ttype {typ}").unwrap();
+                    }
+                }
                 for func in trt.methods {
                     write!(data, "\n\tdef {}", func).unwrap();
-                }
-                for func in trt.static_methods {
-                    write!(data, "\n\tstatic def {}", func).unwrap();
                 }
                 writeln!(data).unwrap();
             }
@@ -254,9 +261,6 @@ pub fn put_at_start(data: &mut String) {
                 // todo parameters
                 for func in stct.methods {
                     write!(data, "\n\tdef {}:", func).unwrap();
-                }
-                for func in stct.static_methods {
-                    write!(data, "\n\tstatic def {}:", func).unwrap();
                 }
                 writeln!(data).unwrap();
             },
@@ -280,14 +284,13 @@ pub fn put_at_start(data: &mut String) {
             },
         }
     }
+    write!(data, "\n{input}").unwrap();
     // println!("{data}");
+    data
 }
 
 
 
-
-// TODO  instead of doing it like this write the func\struct signatures
-// TODO  in mold & put it at the start of the file then ignore it when to_rust\to_python
 pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
     let mut res: HashMap<&'static str, Box<dyn BuiltIn>> = HashMap::new();
 

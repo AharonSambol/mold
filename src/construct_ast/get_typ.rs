@@ -1,17 +1,15 @@
-use std::collections::HashSet;
 use crate::construct_ast::ast_structure::Param;
-use crate::construct_ast::get_functions_and_types::{FuncTypes, StructTypes, TraitTypes, TypeTypes};
+use crate::construct_ast::mold_ast::Info;
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
 use crate::types::{clean_type, MUT_STR_TYPE, Type, UNKNOWN_TYPE, TypeKind, GenericType, TypName};
 use crate::{typ_with_child, unwrap_enum, some_vec};
-use crate::construct_ast::mold_ast::Info;
 
 // should be passed pos = one after the opening parenthesis
 // returns where pos = the index of the closing brace
 // e.g.     x, y: bool | int ) -> int:
 //                           ^
 pub fn get_params(
-    tokens: &[SolidToken], pos: &mut usize, info: &mut Info, generics: &HashSet<String>
+    tokens: &[SolidToken], pos: &mut usize, info: &mut Info
 ) -> Vec<Param> {
     let mut params = Vec::new();
     let mut is_mut = true;
@@ -23,7 +21,7 @@ pub fn get_params(
                     typ:
                         if let SolidToken::Colon = &tokens[*pos + 1] {
                             *pos += 2;
-                            get_arg_typ(tokens, pos, info, generics)
+                            get_arg_typ(tokens, pos, info)
                         } else { UNKNOWN_TYPE },
                     is_mut
                 });
@@ -51,16 +49,16 @@ pub fn get_params(
 //                       ^              ^        ^
 pub fn get_arg_typ(
     tokens: &[SolidToken], pos: &mut usize,
-    info: &Info, generics: &HashSet<String>
+    info: &Info
 ) -> Type {
-    try_get_arg_typ(tokens, pos, info, true, generics).unwrap()
+    try_get_arg_typ(tokens, pos, info, true).unwrap()
 }
 
 // TODO get generics defined in scope
 //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 pub fn try_get_arg_typ(
-    tokens: &[SolidToken], pos: &mut usize, info: &Info, panic: bool, generics: &HashSet<String>
+    tokens: &[SolidToken], pos: &mut usize, info: &Info, panic: bool
 ) -> Option<Type> {
     if info.structs.is_empty() {
         panic!()
@@ -89,7 +87,7 @@ pub fn try_get_arg_typ(
                         t
                     }
                 };
-                let t = try_get_arg_typ(tokens, pos, info, panic, generics);
+                let t = try_get_arg_typ(tokens, pos, info, panic);
                 let mut children = if let Some(t) = t {
                     vec![add_child(
                         t,
@@ -100,7 +98,7 @@ pub fn try_get_arg_typ(
                 let mut generic_num = 1;
                 while let SolidToken::Comma = &tokens[*pos] {
                     *pos += 1;
-                    let t = try_get_arg_typ(tokens, pos, info, panic, generics);
+                    let t = try_get_arg_typ(tokens, pos, info, panic);
                     if let Some(t) = t {
                         children.push(add_child(
                             t,
@@ -125,7 +123,7 @@ pub fn try_get_arg_typ(
             SolidToken::Operator(OperatorType::BinOr) => {
                 let typ = unwrap_enum!(res, Some(x), x, "need a value before |");
                 *pos += 1;
-                let t = try_get_arg_typ(tokens, pos, info, panic, generics);
+                let t = try_get_arg_typ(tokens, pos, info, panic);
                 if let Some(t) = t {
                     res = Some(typ.add_option(t));
                 } else if panic { panic!() } else { return None };
@@ -144,7 +142,7 @@ pub fn try_get_arg_typ(
                             children: None
                         }
                     })
-                } else if info.structs.contains_key(&wrd) {
+                } else if info.structs.contains_key(&wrd) || wrd == "Self" {
                     Some(typ_with_child! {
                         TypeKind::Struct(TypName::Str(wrd)),
                         Type{
@@ -162,9 +160,11 @@ pub fn try_get_arg_typ(
                     })
                 } else if info.types.contains_key(&wrd) {
                     Some(info.types[&wrd].clone())
-                } else if generics.contains(&wrd) {
+                } else if info.generics.iter().any(|hs| hs.contains(&wrd)) {
                     Some(Type::new(wrd.clone()))
-                } else if panic { panic!("unexpected type `{wrd}`") } else { return None };
+                } else if info.struct_inner_types.contains(&wrd) {
+                    Some(Type::new(format!("Self::{}", wrd)))
+                } else if panic { panic!("unexpected type `{wrd}`") } else { println!("!!!!!{wrd}!!!"); return None };
             },
             SolidToken::UnaryOperator(op_type @ (OperatorType::Pointer | OperatorType::MutPointer)) => {
                 *pos += 1;
@@ -175,7 +175,7 @@ pub fn try_get_arg_typ(
                         _ => unreachable!()
                     },
                     children: some_vec![{
-                        let t = try_get_arg_typ(tokens, pos, info, panic, generics);
+                        let t = try_get_arg_typ(tokens, pos, info, panic);
                         if let Some(t) = t { t }
                         else if panic { panic!() }
                         else { return None }

@@ -40,7 +40,6 @@
                 concat!("clone() -> ", stringify!($val)),
                 "__init__(self)"
             ],
-            static_methods: vec![],
             _parameters: vec![],
         })
     };

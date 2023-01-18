@@ -57,7 +57,7 @@ pub enum SolidToken {
     Match, Case, While, For,
     Break, Continue, Return, Pass,
     In, Is,
-    Static, IMut
+    IMut
 }
 
 #[derive(Debug, Clone)]
@@ -149,7 +149,7 @@ impl OperatorType {
 
 enum Comment { None, Normal, Multiline(i8) }
 
-pub fn tokenize(input_code: String) -> Vec<SolidToken> {
+pub fn tokenize(input_code: &str) -> Vec<SolidToken> {
     let mut tokens = Vec::new();
     let mut skip = 0;
     let mut is_str = false;
@@ -289,7 +289,7 @@ pub fn tokenize(input_code: String) -> Vec<SolidToken> {
     solidify_tokens(&tokens, input_code)
 }
 
-fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
+fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
     let mut res = Vec::with_capacity(tokens.len());
     let mut is_empty_line = true;
     for (i, token) in tokens.iter().enumerate() {
@@ -324,7 +324,6 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: String) -> Vec<SolidToken> {
                     "in" => SolidToken::In, "is" => SolidToken::Is,
                     "True" | "true" => SolidToken::Bool(true),
                     "False" | "false" => SolidToken::Bool(false),
-                    "static" => SolidToken::Static,
                     "imut" => SolidToken::IMut,
                     _ => SolidToken::Word(clean(st))
                 }

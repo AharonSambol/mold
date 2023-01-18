@@ -3,22 +3,47 @@ use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::{IS_COMPILED, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{TypName, unwrap_u};
+use crate::types::{Type, TypeKind, unwrap, unwrap_u};
 use crate::built_in_funcs::BuiltIn;
-use crate::construct_ast::get_functions_and_types::{FuncTypes, get_struct_and_func_names, StructTypes, TraitTypes, TypeTypes};
+use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
 use crate::construct_ast::get_typ::{get_params};
 use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait};
 use crate::construct_ast::tree_utils::{add_to_tree, get_last, insert_as_parent_of_prev, print_tree};
-use crate::to_python::ToWrapVal::GetName;
+
+type TraitFuncs = HashMap<String, (usize, FuncType)>;
 
 pub type VarTypes = Vec<HashMap<String, usize>>;
+pub type GenericTypes = Vec<HashSet<String>>;
+pub type TraitTypes = HashMap<String, TraitType>;
+pub type StructTypes = HashMap<String, StructType>;
+pub type FuncTypes = HashMap<String, FuncType>;
+pub type TypeTypes = HashMap<String, Type>;
+
+#[derive(Clone, Debug)]
+pub struct StructType {
+    pub generics: Option<Vec<String>>,
+    pub pos: usize
+}
+#[derive(Clone, Debug)]
+pub struct TraitType {
+    pub generics: Option<Vec<String>>,
+    pub pos: usize
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct FuncType {
+    pub input: Option<Vec<Type>>,
+    pub output: Option<Type>
+}
+
 
 // todo I think it allows to use any type of closing )}]
 pub struct Info<'a> {
     pub funcs: &'a mut FuncTypes,
     pub structs: &'a mut StructTypes,
     pub traits: &'a mut TraitTypes,
-    pub types: &'a TypeTypes,
+    pub types: &'a mut TypeTypes,
+    pub generics: &'a mut GenericTypes,
+    pub struct_inner_types: &'a mut HashSet<String>
 }
 
 
@@ -26,17 +51,20 @@ pub fn construct_ast(
     tokens: &[SolidToken], pos: usize,
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>
 ) -> Vec<Ast> {
-    let (mut structs, mut funcs, mut traits, types) = get_struct_and_func_names(tokens);
+    let (mut structs, mut funcs, mut traits, mut types)
+        = get_struct_and_func_names(tokens);
     let mut ast = vec![Ast::new(AstNode::Module)];
     let mut info = Info {
         funcs: &mut funcs,
         structs: &mut structs,
         traits: &mut traits,
-        types: &types
+        types: &mut types,
+        generics: &mut vec![],
+        struct_inner_types: &mut HashSet::new()
     };
     make_ast_statement(
         tokens, pos, &mut ast, 0, 0,
-        &mut vec![HashMap::new()], &mut info, built_ins, &mut HashSet::new()
+        &mut vec![HashMap::new()], &mut info, built_ins
     );
 
     duck_type(&mut ast, info.traits, info.structs);
@@ -44,7 +72,7 @@ pub fn construct_ast(
     if unsafe { IS_COMPILED } {
         add_types(
             &mut ast, 0, &mut vec![HashMap::new()],
-            &info, &None, built_ins
+            &mut info, &None, built_ins
         );
         print_tree((ast.clone(), 0));
     }
@@ -52,16 +80,14 @@ pub fn construct_ast(
 }
 
 fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
-    let traits: Vec<(String, Vec<(usize, String)>)> = traits.iter().filter_map(
+    let traits: Vec<(String, TraitFuncs)> = traits.iter().filter_map(
         |(trt_name, trt)| {
             let trt_def = &ast[trt.pos];
             if let AstNode::Trait { strict: true, .. } = trt_def.value {
                 None
             } else {
                 let trt_module = &ast[unwrap_u(&trt_def.children)[1]];
-                Some((trt_name.clone(), unwrap_u(&trt_module.children).iter().map(|func| {
-                    (*func, unwrap_enum!(&ast[*func].value, AstNode::Function(name), name.clone()))
-                }).collect()))
+                Some((trt_name.clone(), get_trt_strct_functions(ast, trt_module)))
             }
         }
     ).collect();
@@ -71,60 +97,154 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
 
         let strct_module_pos = strct_children[2];
         let strct_traits_pos = strct_children[3];
-        let funcs: HashSet<String> = HashSet::from_iter(
-            unwrap_u(&ast[strct_module_pos].children).iter().filter_map(|func| {
-                if let AstNode::Function(name) = &ast[*func].value { Some(name.clone()) }
-                else { None }
-            })
-        );
+        let funcs = get_trt_strct_functions(ast, &ast[strct_module_pos]);
         let strct_traits: HashSet<String> = HashSet::from_iter(
             unwrap_u(&ast[strct_traits_pos].children).iter().map(|trt| {
                 unwrap_enum!(&ast[*trt].value, AstNode::Identifier(name), name.clone())
             })
         );
+        fn struct_matches_trait(trt_funcs: &TraitFuncs, funcs: &TraitFuncs) -> Option<HashMap<String, Type>> {
+            let mut hm = HashMap::new();
+            'trait_func_loop: for (trt_f_name, (_, trt_f_types)) in trt_funcs {
+                if let Some((_, func_types)) = funcs.get(trt_f_name) {
+                    if func_types == trt_f_types {
+                        continue 'trait_func_loop
+                    }
+                    if func_types.output.is_some() != trt_f_types.output.is_some()
+                        || func_types.input.is_some() != trt_f_types.input.is_some()
+                    { return None }
+                    let mut func_all_types = unwrap(&func_types.input).clone();
+                    let mut trt_f_all_types = unwrap(&trt_f_types.input).clone();
+                    if let Some(x) = &func_types.output {
+                        func_all_types.push(x.clone());
+                        unsafe { //1 safe cuz already checked that they both have or both dont have a return typ
+                            trt_f_all_types.push(trt_f_types.output.clone().unwrap_unchecked())
+                        }
+                    }
+                    
+                    for (trt_fnc, fnc) in trt_f_all_types.iter().zip(func_all_types) {
+                        if *trt_fnc == fnc {
+                            continue
+                        }
+                        if let TypeKind::Struct(name) = &trt_fnc.kind {
+                            if let Some(typ_name) = name.get_str().strip_prefix("Self::") { // TODO find a better way
+                                if let Some(expected_typ) = hm.get(typ_name) {
+                                    if fnc == *expected_typ {
+                                        continue
+                                    }
+                                } else {
+                                    hm.insert(String::from(typ_name), fnc);
+                                    continue
+                                }
+                            }
+                        }
+                        return None
+                    }
+                    continue 'trait_func_loop
+                }
+                return None
+            }
+            Some(hm)
+        }
         for (trt, trt_funcs) in traits.iter() {
             if strct_traits.contains(trt) { continue }
-
-            if trt_funcs.iter().all(|(_, x)| funcs.contains(x)) {
-
-                //1 add the trait
-                add_to_tree(
-                    strct_traits_pos, ast,
-                    Ast::new(AstNode::Identifier(trt.clone()))
-                );
-                for (trt_func_pos, func) in trt_funcs {
-                    let new_func_name = format!("{}::{}", trt, func);
-                    if funcs.contains(&new_func_name) { continue }
-                    let func_pos = add_to_tree(
-                        strct_module_pos, ast,
-                        Ast::new(AstNode::Function(new_func_name))
-                    );
-                    let trt_func_parts = ast[*trt_func_pos].children.clone().unwrap();
-                    // let generics_pos = add_to_tree(func_pos, ast, Ast::new(AstNode::GenericsDeclaration));
-                    add_to_tree(func_pos, ast, ast[trt_func_parts[0]].clone());
-                    add_to_tree(func_pos, ast, ast[trt_func_parts[1]].clone());
-                    add_to_tree(func_pos, ast, ast[trt_func_parts[2]].clone());
-                    let body_pos = add_to_tree(func_pos, ast, Ast::new(AstNode::Body));
-                    let prop = add_to_tree(body_pos, ast, Ast::new(AstNode::Property));
-                    add_to_tree(prop, ast, Ast::new(
-                        AstNode::Identifier(String::from("self"))
-                    ));
-                    let func_call = add_to_tree(prop, ast, Ast::new(
-                        AstNode::FunctionCall(false)
-                    ));
-                    add_to_tree(func_call, ast, Ast::new(
-                        AstNode::Identifier(func.clone())
-                    ));
-                }
+            //1 if all the functions in the trait are implemented
+            if let Some(types_hm) = struct_matches_trait(trt_funcs, &funcs) {
+                add_trait_to_struct(
+                    ast, strct_module_pos, strct_traits_pos, &funcs, trt, trt_funcs, types_hm
+                )
             }
         }
     }
 }
 
+fn add_trait_to_struct(
+    ast: &mut Vec<Ast>, strct_module_pos: usize, strct_traits_pos: usize,
+    funcs: &TraitFuncs, trt: &String, trt_funcs: &TraitFuncs, types_hm: HashMap<String, Type>
+) {
+    add_to_tree(
+        strct_traits_pos, ast,
+        Ast::new(AstNode::Identifier(trt.clone()))
+    );
+    for (func_name, (_trt_func_pos, _)) in trt_funcs {
+        let new_func_name = format!("{}::{}", trt, func_name);
+        //1 if already contains func with that name
+        if funcs.keys().any(|x| *x == new_func_name) { continue }
+        let func_pos = add_to_tree(
+            strct_module_pos, ast,
+            Ast::new(AstNode::Function(new_func_name))
+        );
+        // let trt_func_parts = ast[*trt_func_pos].children.clone().unwrap();
+        let (fp, _) = funcs.get(func_name).unwrap();
+        let func_parts = ast[*fp].children.clone().unwrap();
+        add_to_tree(func_pos, ast, ast[func_parts[0]].clone());
+        add_to_tree(func_pos, ast, ast[func_parts[1]].clone());
+        add_to_tree(func_pos, ast, ast[func_parts[2]].clone());
+        let body_pos = add_to_tree(
+            func_pos, ast, Ast::new(AstNode::Body)
+        );
+        if !types_hm.is_empty() {
+            let types_pos = add_to_tree(
+                func_pos, ast, Ast::new(AstNode::Types)
+            );
+            for (name, typ) in types_hm.iter() {
+                add_to_tree(types_pos, ast, Ast {
+                    value: AstNode::Type(name.clone()),
+                    children: None,
+                    parent: None,
+                    typ: Some(typ.clone()),
+                    is_mut: false,
+                });
+            }
+        }
+        let rtrn = add_to_tree(
+            body_pos, ast, Ast::new(AstNode::Return)
+        );
+
+        let prop = add_to_tree(
+            rtrn, ast, Ast::new(AstNode::Property)
+        );
+        add_to_tree(prop, ast, Ast::new(
+            AstNode::Identifier(String::from("self"))
+        ));
+        let func_call = add_to_tree(prop, ast, Ast::new(
+            AstNode::FunctionCall(false)
+        ));
+        add_to_tree(func_call, ast, Ast::new(
+            AstNode::Identifier(func_name.clone())
+        ));
+        add_to_tree(func_call, ast, Ast::new(
+            AstNode::Args
+        ));
+    }
+}
+
+fn get_trt_strct_functions(ast: &[Ast], module: &Ast) -> TraitFuncs {
+    unwrap_u(&module.children).iter().filter_map(|func| {
+        if let AstNode::Function(name) = &ast[*func].value {
+            let func_children = unwrap_u(&ast[*func].children);
+            let (args_pos, return_pos) = (func_children[1], func_children[2]);
+            let args_children = unwrap_u(&ast[args_pos].children);
+            let args = if args_children.is_empty() { None } else {
+                Some(
+                    args_children.iter()
+                        .map(|x| ast[*x].typ.clone().unwrap())
+                        .collect::<Vec<Type>>()
+                )
+            };
+            let return_typ = ast[return_pos].typ.clone();
+            Some((name.clone(), (*func, FuncType {
+                input: args,
+                output: return_typ
+            })))
+        } else { None }
+    }).collect()
+}
+
 pub fn make_ast_statement(
     tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
     vars: &mut VarTypes, info: &mut Info,
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>, generics: &mut HashSet<String>
+    built_ins: &HashMap<&str, Box<dyn BuiltIn>>
 ) -> usize {
     while pos < tokens.len() {
         let token = &tokens[pos];
@@ -132,36 +252,36 @@ pub fn make_ast_statement(
             SolidToken::Struct => {
                 vars.push(HashMap::new());
                 pos = make_struct(
-                    tokens, pos + 1, ast, parent, indent, info, built_ins, generics
+                    tokens, pos + 1, ast, parent, indent, info, built_ins
                 );
                 vars.pop();
             },
-            SolidToken::Def | SolidToken::Static  => {
+            SolidToken::Def  => {
                 vars.push(HashMap::new());
                 pos = make_func(
-                    tokens, pos, ast, parent, indent, vars, info, built_ins, generics
+                    tokens, pos, ast, parent, indent, vars, info, built_ins
                 ) - 1;
                 vars.pop();
             },
             SolidToken::Trait | SolidToken::StrictTrait => {
-                pos = make_trait(tokens, pos + 1, ast, parent, indent, info, generics);
+                pos = make_trait(tokens, pos + 1, ast, parent, indent, info);
             },
             SolidToken::For => {
                 pos = for_statement(
                     tokens, pos + 1, ast, parent, indent,
-                    vars, info, built_ins, generics
+                    vars, info, built_ins
                 );
             },
             SolidToken::While => {
                 pos = if_while_statement(
                     false, tokens, pos + 1, ast, parent, indent,
-                    vars, info, built_ins, generics
+                    vars, info, built_ins
                 );
             },
             SolidToken::If => {
                 pos = if_while_statement(
                     true, tokens, pos + 1, ast, parent, indent,
-                    vars, info, built_ins, generics
+                    vars, info, built_ins
                 );
             },
             SolidToken::Elif => {
@@ -169,7 +289,7 @@ pub fn make_ast_statement(
                 if let AstNode::IfStatement = ast[last].value {
                     pos = if_while_statement(
                         true, tokens, pos + 1, ast, last, indent,
-                        vars, info, built_ins, generics
+                        vars, info, built_ins
                     );
                 } else {
                     panic!("elif to unknown if")
@@ -187,7 +307,7 @@ pub fn make_ast_statement(
                     vars.push(HashMap::new());
                     pos = make_ast_statement(
                         tokens, pos + 1, ast, body_pos, indent + 1,
-                        vars, info, built_ins, generics
+                        vars, info, built_ins
                     ) - 1;
                     vars.pop();
                 } else {
@@ -200,7 +320,7 @@ pub fn make_ast_statement(
             SolidToken::Word(st) => {
                 pos = word_tok(
                     tokens, pos, ast, parent, indent, vars,
-                    info, st, false, generics
+                    info, st, false
                 );
             }
             SolidToken::NewLine => {
@@ -208,7 +328,7 @@ pub fn make_ast_statement(
                     .take_while(|&x| matches!(x, SolidToken::Tab)).count();
                 match tabs.cmp(&indent) {
                     std::cmp::Ordering::Less => return pos,
-                    std::cmp::Ordering::Greater => panic!(
+                    std::cmp::Ordering::Greater =>  panic!(
                         "unexpected indentation, expected `{indent}` found `{tabs}`"
                     ),
                     _ => ()
@@ -223,7 +343,7 @@ pub fn make_ast_statement(
 
                 } else {
                     pos = make_ast_expression(
-                        tokens, pos + 1, ast, return_pos, vars, info, generics
+                        tokens, pos + 1, ast, return_pos, vars, info
                     ) - 1;
                 }
             },
@@ -237,17 +357,19 @@ pub fn make_ast_statement(
                 let st = unwrap_enum!(&tokens[pos + 1], SolidToken::Word(st), st);
                 pos = word_tok(
                     tokens, pos + 1, ast, parent, indent,
-                    vars, info, st, false, generics
+                    vars, info, st, false
                 );
                 let assignment = *unwrap_u(&ast[parent].children).last().unwrap();
                 let assignment = &mut ast[assignment];
                 assignment.is_mut = false;
             }
             SolidToken::UnaryOperator(OperatorType::Dereference) => {
-                let deref_pos = add_to_tree(parent, ast, Ast::new(AstNode::UnaryOp(OperatorType::Dereference)));
+                let deref_pos = add_to_tree(parent, ast, Ast::new(
+                    AstNode::UnaryOp(OperatorType::Dereference)
+                ));
                 pos = make_ast_statement(
                     tokens, pos + 1, ast, deref_pos, indent,
-                    vars, info, built_ins, generics
+                    vars, info, built_ins
                 ) - 1;
             }
             SolidToken::Parenthesis(IsOpen::True) => {
@@ -267,7 +389,7 @@ pub fn make_ast_statement(
 
 fn make_ast_expression(
     tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
-    vars: &mut VarTypes, info: &mut Info, generics: &mut HashSet<String>
+    vars: &mut VarTypes, info: &mut Info
 ) -> usize {
     // println!("{}\n".to_str(&(tree.clone(), 0)));
     let mut amount_of_open = 0;
@@ -278,7 +400,7 @@ fn make_ast_expression(
                 amount_of_open += 1;
                 let par_pos = add_to_tree(parent, ast, Ast::new(AstNode::Parentheses));
                 pos = make_ast_expression(
-                    tokens, pos + 1, ast, par_pos, vars, info, generics
+                    tokens, pos + 1, ast, par_pos, vars, info
                 ) - 1;
             },
             SolidToken::Bracket(IsOpen::True) =>{
@@ -291,7 +413,7 @@ fn make_ast_expression(
                     //1 index
                     let index = insert_as_parent_of_prev(ast, parent, AstNode::Index);
                     pos = make_ast_expression(
-                        tokens, pos + 1, ast, index, vars, info, generics
+                        tokens, pos + 1, ast, index, vars, info
                     ) - 1;
                 } else {
                     //1 list-literal or comprehension
@@ -299,7 +421,7 @@ fn make_ast_expression(
                     let starting_pos = pos;
                     while matches!(&tokens[pos], SolidToken::Comma) || pos == starting_pos {
                         pos = make_ast_expression(
-                            tokens, pos + 1, ast, list_parent, vars, info, generics
+                            tokens, pos + 1, ast, list_parent, vars, info
                         );
                     }
                     pos -= 1;
@@ -323,7 +445,7 @@ fn make_ast_expression(
                         if unwrap_u(&ast[list_parent].children).len() % 2 == 1 { panic!() }
                     }
                     pos = make_ast_expression(
-                        tokens, pos + 1, ast, list_parent, vars, info, generics
+                        tokens, pos + 1, ast, list_parent, vars, info
                     );
                 }
                 pos -= 1;
@@ -357,7 +479,7 @@ fn make_ast_expression(
             SolidToken::Word(wrd) => {
                 pos = word_tok(
                     tokens, pos, ast, parent, 0, 
-                    vars, info, wrd, true, generics
+                    vars, info, wrd, true
                 );
             },
             SolidToken::UnaryOperator(op) => {
@@ -365,7 +487,7 @@ fn make_ast_expression(
                     parent, ast, Ast::new(AstNode::UnaryOp(op.clone()))
                 );
                 pos = make_ast_expression(
-                    tokens, pos + 1, ast, index, vars, info, generics
+                    tokens, pos + 1, ast, index, vars, info
                 ) - 1;
             },
             SolidToken::Operator(op) => {
@@ -378,12 +500,12 @@ fn make_ast_expression(
                 }
                 let index = insert_as_parent_of_prev(ast, parent, AstNode::Operator(op.clone()));
                 pos = make_ast_expression(
-                    tokens, pos + 1, ast, index, vars, info, generics
+                    tokens, pos + 1, ast, index, vars, info
                 ) - 1;
             },
             SolidToken::Period => {
                 pos = add_property(
-                    tokens, pos, ast, 0, vars, info, true, parent, generics
+                    tokens, pos, ast, 0, vars, info, true, parent
                 );
             }
             _ => panic!("unexpected token {:?}", token)
@@ -395,7 +517,7 @@ fn make_ast_expression(
 
 fn word_tok(
     tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
-    vars: &mut VarTypes, info: &mut Info, st: &str, is_expression: bool, generics: &mut HashSet<String>
+    vars: &mut VarTypes, info: &mut Info, st: &str, is_expression: bool
 ) -> usize {
     let mut identifier_pos = add_to_tree(
         parent, ast,
@@ -415,7 +537,7 @@ fn word_tok(
 
                 let index = insert_as_parent_of_prev(ast, parent, AstNode::Assignment);
                 return make_ast_expression(
-                    tokens, pos + 1, ast, index, vars, info, generics
+                    tokens, pos + 1, ast, index, vars, info
                 ) - 1;
             },
             SolidToken::Colon => /*4 first assignment*/{
@@ -433,11 +555,11 @@ fn word_tok(
                     pos += 1;
                 } else {
                     pos -= 1;
-                    let param = get_params(tokens, &mut pos, info, generics).remove(0); // 5 for now only taking the first
+                    let param = get_params(tokens, &mut pos, info).remove(0); // 5 for now only taking the first
                     ast[index].typ = Some(param.typ);
                 }
                 return make_ast_expression(
-                    tokens, pos + 1, ast, index, vars, info, generics
+                    tokens, pos + 1, ast, index, vars, info
                 ) - 1;
             },
             SolidToken::Brace(IsOpen::True)
@@ -461,23 +583,23 @@ fn word_tok(
                 // let index = insert_as_parent_of_prev(ast, parent, type_call);
                 let last = add_to_tree(index, ast, Ast::new(AstNode::Args));
                 pos = make_ast_expression(
-                    tokens, pos + 1, ast, last, vars, info, generics
+                    tokens, pos + 1, ast, last, vars, info
                 );
                 while let SolidToken::Comma = tokens[pos] {
                     pos = make_ast_expression(
-                        tokens, pos + 1, ast, last, vars, info, generics
+                        tokens, pos + 1, ast, last, vars, info
                     );
                 }
             },
             SolidToken::Bracket(IsOpen::True) => {
                 let index = insert_as_parent_of_prev(ast, parent, AstNode::Index);
                 pos = make_ast_expression(
-                    tokens, pos + 1, ast, index, vars, info, generics
+                    tokens, pos + 1, ast, index, vars, info
                 );
             },
             SolidToken::Period => {
                 pos = add_property(
-                    tokens, pos, ast, indent, vars, info, is_expression, parent, generics
+                    tokens, pos, ast, indent, vars, info, is_expression, parent
                 );
             },
             _ if is_expression => return pos - 1,
@@ -488,8 +610,7 @@ fn word_tok(
 
 fn add_property(
     tokens: &[SolidToken], pos: usize, ast: &mut Vec<Ast>, indent: usize,
-    vars: &mut VarTypes, info: &mut Info, is_expression: bool, mut parent: usize, 
-    generics: &mut HashSet<String>
+    vars: &mut VarTypes, info: &mut Info, is_expression: bool, mut parent: usize
 ) -> usize {
     while let AstNode::Property = ast[parent].value {
         parent = ast[parent].parent.unwrap();
@@ -497,14 +618,14 @@ fn add_property(
     let index = insert_as_parent_of_prev(ast, parent, AstNode::Property);
     let st = unwrap_enum!(&tokens[pos + 1], SolidToken::Word(st), st, "expected word after period");
     word_tok(
-        tokens, pos + 1, ast, index, indent, vars, info, st, is_expression, generics
+        tokens, pos + 1, ast, index, indent, vars, info, st, is_expression
     )
 }
 
 fn if_while_statement(
     is_if: bool, tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
     indent: usize, vars: &mut VarTypes, info: &mut Info,
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>, generics: &mut HashSet<String>
+    built_ins: &HashMap<&str, Box<dyn BuiltIn>>
 ) -> usize {
     let stmt_pos = add_to_tree(parent, ast, Ast::new(
         if is_if { AstNode::IfStatement } else { AstNode::WhileStatement }
@@ -512,14 +633,14 @@ fn if_while_statement(
     //4 condition:
     let colon_par = add_to_tree(stmt_pos, ast, Ast::new(AstNode::ColonParentheses));
     pos = make_ast_expression(
-        tokens, pos, ast, colon_par, vars, info, generics
+        tokens, pos, ast, colon_par, vars, info
     );
     //4 body:
     let body_pos = add_to_tree(stmt_pos, ast, Ast::new(AstNode::Body));
     vars.push(HashMap::new());
     pos = make_ast_statement(
         tokens, pos + 1, ast, body_pos, indent + 1,
-        vars, info, built_ins, generics
+        vars, info, built_ins
     );
     vars.pop();
     pos - 1
@@ -528,7 +649,7 @@ fn if_while_statement(
 fn for_statement(
     tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
     indent: usize, vars: &mut VarTypes, info: &mut Info,
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>, generics: &mut HashSet<String>
+    built_ins: &HashMap<&str, Box<dyn BuiltIn>>
 ) -> usize {
     let loop_pos = add_to_tree(parent, ast, Ast::new(AstNode::ForStatement));
     let pars_pos = add_to_tree(loop_pos, ast, Ast::new(AstNode::ColonParentheses));
@@ -553,12 +674,12 @@ fn for_statement(
     }
     //4 iters:
     pos = make_ast_expression(
-        tokens, pos, ast, iter_pos, vars, info, generics
+        tokens, pos, ast, iter_pos, vars, info
     );
     //4 body:
     pos = make_ast_statement(
         tokens, pos + 1, ast, body_pos, indent + 1,
-        vars, info, built_ins, generics
+        vars, info, built_ins
     );
     vars.pop();
     pos - 1

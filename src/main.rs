@@ -50,10 +50,9 @@ fn main() {
             path = p.to_string();
         }
     }
-    let mut data = fs::read_to_string(path).expect("Couldn't read file");
-    put_at_start(&mut data);
-    println!("{data}");
-    let tokens = mold_tokens::tokenize(data);
+    let data = fs::read_to_string(path).expect("Couldn't read file");
+    let data = put_at_start(&data);
+    let tokens = mold_tokens::tokenize(&data);
     println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidToken)>>());
 
     let built_ins = make_built_ins();
@@ -112,7 +111,8 @@ fn compile(ast: &[Ast], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
     to_rust::to_rust(ast, 0, 0, &mut rs, built_ins, &mut enums);
     let rs = rs.trim();
     println!("\n{}", join(enums.values(), "\n\n"));
-    println!("\n{rs}");
+    println!("\n{}", rs);
+    // println!("\n{}", rs.split_once(CODE_END_FLAG).unwrap().0.trim_end());
 
     if !Path::new("/out").exists() {
         Command::new("cargo")
@@ -140,7 +140,7 @@ codegen-units = 1{}",
     let mut file = File::create("out/src/main.rs").unwrap();
     file.write_all(
         format!("//#![allow(warnings, unused)]
-#![allow(unused)]
+#![allow(unused, non_camel_case_types)]
 
 use std::slice::{{Iter, IterMut}};
 use std::iter::Rev;

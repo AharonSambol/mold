@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
-use std::slice::Iter;
 use crate::built_in_funcs::BuiltIn;
 use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
 use crate::mold_tokens::OperatorType;
@@ -308,12 +307,27 @@ pub fn to_rust(
             }
             for (trait_name, funcs) in trait_to_funcs.iter() {
                 write!(res, "\n{indent}impl {trait_name} for {name} {{").unwrap();
+                let mut type_defs = HashMap::new();
                 for (func_pos, func_name) in funcs {
                     write!(res, "\n{indent}    ").unwrap();
+                    let func_children = unwrap_u(&ast[*func_pos].children);
+                    if func_children.len() == 5 {
+                        let types_pos = unwrap_u(&ast[func_children[4]].children);
+                        for i in types_pos {
+                            type_defs.insert(
+                                unwrap_enum!(&ast[*i].value, AstNode::Type(n), n),
+                                unwrap_enum!(&ast[*i].typ)
+                            );
+                        }
+
+                    }
                     print_function_rust(
                         func_name, ast, indentation + 1, res, built_ins, enums,
-                        unwrap_u(&ast[*func_pos].children)
+                        func_children
                     );
+                }
+                for (name, typ) in type_defs {
+                    write!(res, "\n\ttype {name} = {typ};").unwrap();
                 }
                 write!(res, "\n{indent}}}").unwrap();
             }
@@ -346,22 +360,28 @@ pub fn to_rust(
 
             write!(res, "trait {name}{generic} {{").unwrap();
             for func in functions {
+                // todo type
                 let func = &ast[*func];
-                let func_name = unwrap_enum!(&func.value, AstNode::Function(name), name);
-                let func_children = unwrap_u(&func.children);
-                let func_generics = format_generics(&ast[func_children[0]]);
-                let args = unwrap_u(&ast[func_children[1]].children).iter().map(|x| {
-                    let arg = &ast[*x];
-                    let name = unwrap_enum!(&arg.value, AstNode::Identifier(name), name);
-                    let typ = unwrap_enum!(&arg.typ);
-                    format!("{name}: {typ}")
-                });
-                let args = join(args, ", ");
-                let return_typ = &ast[func_children[2]].typ;
-                if let Some(rt) = return_typ {
-                    write!(res, "\n\tfn {func_name}{func_generics}({args}) -> {rt};").unwrap();
+                if let AstNode::Function(func_name) = &func.value {
+                    let func_children = unwrap_u(&func.children);
+                    let func_generics = format_generics(&ast[func_children[0]]);
+                    let args = unwrap_u(&ast[func_children[1]].children)
+                        .iter()
+                        .map(|x| {
+                            let arg = &ast[*x];
+                            let name = unwrap_enum!(&arg.value, AstNode::Identifier(name), name);
+                            let typ = unwrap_enum!(&arg.typ);
+                            format!("{name}: {typ}")
+                        });
+                    let args = join(args, ", ");
+                    let return_typ = &ast[func_children[2]].typ;
+                    if let Some(rt) = return_typ {
+                        write!(res, "\n\tfn {func_name}{func_generics}({args}) -> {rt};").unwrap();
+                    } else {
+                        write!(res, "\n\tfn {func_name}{func_generics}({args});").unwrap();
+                    }
                 } else {
-                    write!(res, "\n\tfn {func_name}{func_generics}({args});").unwrap();
+                    write!(res, "\n\ttype {};", unwrap_enum!(&func.value, AstNode::Type(t), t)).unwrap();
                 }
             }
             write!(res, "\n}}").unwrap();
@@ -499,10 +519,17 @@ fn built_in_funcs(
             write!(res, ".rev()").unwrap();
         }
         "len" => {
-            // todo dont cast?
             write!(res, "(").unwrap();
-            to_rust(ast, children[1], indentation, res, built_ins, enums);
-            write!(res, ".len() as i32)").unwrap();
+            let mut arg = String::new();
+            to_rust(ast, children[1], indentation, &mut arg, built_ins, enums);
+            if arg.starts_with("Box::new(") {
+                write!(res, "{}.len() as i32)", arg
+                    .strip_prefix("Box::new(").unwrap()
+                    .strip_suffix(')').unwrap()
+                ).unwrap();
+            } else {
+                write!(res, "{arg}.len() as i32)").unwrap();
+            }
         },
         "range" => {
             // let a: Box<dyn Iterator<Item=i32>> = Box::new((0..11).step_by(2));
