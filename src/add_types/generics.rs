@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use crate::{typ_with_child, unwrap_enum, some_vec};
-use crate::types::{GenericType, Type, TypeKind, unwrap};
+use crate::types::{GenericType, print_type, Type, TypeKind, unwrap};
 
 //2 only generics whose children are also T
 //  as in [Generic(Of("T"))]
@@ -43,12 +43,16 @@ pub fn apply_generics_to_method_call(return_typ: &Option<Type>, base: &Type) -> 
     if let Some(rt) = return_typ {
         if let Some(struct_def) = &base.children {
             if let Type { kind: TypeKind::GenericsMap, children: Some(generic_map) } = &struct_def[0] {
+                generic_map.iter().for_each(|x| println!("@{:?}", x.kind));
                 let hm = HashMap::from_iter(
-                    generic_map.iter().map(|x| (
-                        unwrap_enum!(&x.kind, TypeKind::Generic(GenericType::Of(name)), name.clone()),
-                        unwrap_enum!(&x.children)[0].clone()
-                    ))
+                    generic_map.iter().filter_map(|x|
+                        if let TypeKind::Generic(GenericType::Of(name)) = &x.kind {
+                            Some((name.clone(), unwrap_enum!(&x.children)[0].clone()))
+                        } else { None }
+                    )
                 );
+                println!("HM: {hm:?}");
+                print_type(&Some(rt.clone()));
                 return Some(apply_map_to_generic_typ(rt, &hm, true));
             }
         }

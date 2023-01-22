@@ -12,6 +12,7 @@ pub fn find_function_in_struct(
         }
         &ast[struct_pos]
     } else {
+        println!("struct_name: {struct_name:?}");
         &ast[structs[struct_name].pos]
     };
     let struct_module = &ast[unwrap_u(&struct_description.children)[2]];
@@ -25,12 +26,28 @@ pub fn find_function_in_struct(
     None
 }
 
-pub fn find_function_in_trait(ast: &[Ast], structs: &TraitTypes, struct_name: &str, func_name: &str) -> Option<usize> {
+pub fn find_function_in_trait(
+    ast: &[Ast], structs: &TraitTypes, struct_name: &str, func_name: &str
+) -> Option<usize> {
     let struct_description = &ast[structs[struct_name].pos];
     let struct_module = &ast[unwrap_u(&struct_description.children)[1]];
     for child_pos in unwrap_u(&struct_module.children) {
         if let AstNode::Function(name) | AstNode::StaticFunction(name) = &ast[*child_pos].value {
             if name == func_name {
+                return Some(*child_pos);
+            }
+        }
+    }
+    None
+}
+pub fn find_type_in_trait(
+    ast: &[Ast], structs: &TraitTypes, struct_name: &str, type_name: &str
+) -> Option<usize> {
+    let struct_description = &ast[structs[struct_name].pos];
+    let struct_module = &ast[unwrap_u(&struct_description.children)[1]];
+    for child_pos in unwrap_u(&struct_module.children) {
+        if let AstNode::Type(name) = &ast[*child_pos].value {
+            if name == type_name {
                 return Some(*child_pos);
             }
         }

@@ -4,7 +4,7 @@ use crate::to_rust::to_rust;
 use crate::types::{unwrap_u, Type, TypeKind, INT_TYPE, GenericType, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE, MUT_STR_TYPE, TypName, ITER_TYPE};
 use std::collections::HashMap;
 use std::fmt::Write;
-use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, make_primitive, some_vec, typ_with_child};
+use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, make_primitive, some_vec, typ_with_child};
 
 macro_rules! get_types {
     () => {
@@ -29,12 +29,13 @@ macro_rules! to_py {
 
 
 
-enum StructFunc { Struct(BuiltInStruct), Func(BuiltInFunc), Trait(BuiltInTrait) }
+enum StructFunc { Struct(BuiltInStruct), Func(BuiltInFunc), Trait(BuiltInTrait), Enum(BuiltInEnum) }
 struct BuiltInStruct {
     name: &'static str,
     generics: Option<Vec<&'static str>>,
     methods: Vec<&'static str>,
-    _parameters: Vec<&'static str>
+    _parameters: Vec<&'static str>,
+    types: Option<Vec<&'static str>>,
 }
 struct BuiltInTrait {
     name: &'static str,
@@ -51,6 +52,12 @@ struct BuiltInFunc {
     args: Vec<&'static str>,
     return_typ: Option<&'static str>
 }
+struct BuiltInEnum {
+    name: &'static str,
+    generics: Option<Vec<&'static str>>,
+    args: Vec<&'static str>,
+    ignore: bool
+}
 
 pub fn put_at_start(input: &str) -> String {
     let mut data = String::new();
@@ -65,23 +72,24 @@ pub fn put_at_start(input: &str) -> String {
         StructFunc::Struct(BuiltInStruct{
             name: "String",
             generics: None,
+            types: None,
             methods: vec![
-                "clone() -> str", // todo do automatically?
-                "split(s: str) -> List[str]", //todo (optional) s: str | char    if rust: -> Iter[str]
-                "strip() -> str",        //todo (optional) c: char
-                "lstrip() -> str",        //todo (optional) c: char
-                "rstrip() -> str",        //todo (optional) c: char
-                "len() -> int",         //todo -> usize technically
-                "contains(s: str) -> bool", //todo s: str | char
-                "replace(orig: str, new: str) -> str", //todo orig/new: str | char
-                "startswith(s: str) -> bool",
-                "endswith(s: str) -> bool",
-                "find(s: str) -> int",  //todo s: str | char
-                "count(s: str) -> int",  //todo s: str | char
-                "removeprefix(s: str) -> str",
-                "removesuffix(s: str) -> str",
-                "lower(s: str) -> str",
-                "upper(s: str) -> str",
+                "clone(self) -> str", // todo do automatically?
+                "split(self, s: str) -> List[str]", //todo (optional) s: str | char    if rust: -> Iter[str]
+                "strip(self) -> str",        //todo (optional) c: char
+                "lstrip(self) -> str",        //todo (optional) c: char
+                "rstrip(self) -> str",        //todo (optional) c: char
+                "len(self) -> int",         //todo -> usize technically
+                "contains(self, s: str) -> bool", //todo s: str | char
+                "replace(self, orig: str, new: str) -> str", //todo orig/new: str | char
+                "startswith(self, s: str) -> bool",
+                "endswith(self, s: str) -> bool",
+                "find(self, s: str) -> int",  //todo s: str | char
+                "count(self, s: str) -> int",  //todo s: str | char
+                "removeprefix(self, s: str) -> str",
+                "removesuffix(self, s: str) -> str",
+                "lower(self, s: str) -> str",
+                "upper(self, s: str) -> str",
                 "__init__(self)"
                 // todo chars()
                 // todo is(digit\numeric\ascii...)
@@ -89,41 +97,23 @@ pub fn put_at_start(input: &str) -> String {
             ],
             _parameters: vec![],
         }),
-        //1 Iter
-        StructFunc::Struct(BuiltInStruct{
-            name: "Iter",
-            generics: Some(vec!["T"]),
+        // 2 IntoIterator
+        StructFunc::Trait(BuiltInTrait{
+            name: "IntoIterator",
+            duck: false,
+            generics: None,
             methods: vec![
-                "__init__(self)",
-                "into_iter() -> IntoIter[T]",
+                "into_iter(self) -> Iterator[Item=Item]"
             ],
+            types: Some(vec!["Item"]),
             _parameters: vec![],
-        }),
-        //1 IntoIter
-        StructFunc::Struct(BuiltInStruct{
-            name: "IntoIter",
-            generics: Some(vec!["T"]),
-            methods: vec![
-                "__init__(self)",
-                "into_iter() -> IntoIter[T]",
-                "next() -> T"
-            ],
-            _parameters: vec![],
-        }),
-        //1 IterMut
-        StructFunc::Struct(BuiltInStruct{
-            name: "IterMut",
-            generics: Some(vec!["T"]),
-            methods: vec![
-                "__init__(self)",
-                "into_iter() -> IntoIter[T]",
-            ],
-            _parameters: vec![],
+            ignore: true,
         }),
         //1 Box
         StructFunc::Struct(BuiltInStruct{
             name: "Box",
             generics: Some(vec!["T"]),
+            types: None,
             methods: vec![
                 "__init__(self)",
                 "new(t: T) -> Box[T]",
@@ -134,13 +124,14 @@ pub fn put_at_start(input: &str) -> String {
         StructFunc::Struct(BuiltInStruct{
             name: "Vec",
             generics: Some(vec!["T"]),
+            types: Some(vec![
+                "IntoIterator.Item = T"
+            ]),
             methods: vec![
                 "__init__(self)",
-                "into_iter() -> IntoIter[T]",
-                "iter_mut() -> IterMut[T]",
-                "iter() -> Iter[T]",
-                "append(t: T)",
-                "index(pos: usize) -> T",
+                "into_iter(self) -> IntoIterator[Item=T]",
+                "append(self, t: T)",
+                "index(self, pos: usize) -> T",
             ],
             _parameters: vec![],
         }),
@@ -148,9 +139,10 @@ pub fn put_at_start(input: &str) -> String {
         StructFunc::Struct(BuiltInStruct{
             name: "HashSet",
             generics: Some(vec!["T"]),
+            types: None,
             methods: vec![ // todo
                "__init__(self)",
-                "add(t: T)",
+                "add(self, t: T)",
             ],
             _parameters: vec![],
         }),
@@ -158,6 +150,7 @@ pub fn put_at_start(input: &str) -> String {
         StructFunc::Struct(BuiltInStruct{
             name: "HashMap",
             generics: Some(vec!["K", "V"]),
+            types: None,
             methods: vec![
                 "__init__(self)",
             ], // todo
@@ -183,7 +176,7 @@ pub fn put_at_start(input: &str) -> String {
             return_typ: Some("int"),
         }),
         //2 __next__
-        StructFunc::Trait(BuiltInTrait {
+        /*StructFunc::Trait(BuiltInTrait {
             name: "__next__",
             duck: true,
             generics: None,
@@ -193,15 +186,36 @@ pub fn put_at_start(input: &str) -> String {
             types: Some(vec!["Inner"]),
             _parameters: vec![],
             ignore: false
+        }),*/
+        //3 Option
+        StructFunc::Enum(BuiltInEnum {
+            name: "Option",
+            generics: Some(vec!["T"]),
+            args: vec!["Some(T)", "None"],
+            ignore: true,
+        }),
+        //2 Iterator
+        StructFunc::Trait(BuiltInTrait {
+            name: "Iterator",
+            duck: false,
+            generics: None,
+            methods: vec![
+                "into_iter(self) -> IntoIterator[Item=Item]",
+                "next(self: &mut Self) -> Option[Item]"
+            ],
+            types: Some(vec!["Item"]),
+            _parameters: vec![],
+            ignore: true
         }),
 
-        // // 4 range
-        // StructFunc::Func(BuiltInFunc {
-        //     name: "range",
-        //     generics: None,
-        //     args: vec!["start: int", "end: int", "step: int"],
-        //     return_typ: Some("_Iterator_[int]"),
-        // }),
+
+        // 4 range
+        StructFunc::Func(BuiltInFunc {
+            name: "range",
+            generics: None,
+            args: vec!["start: int", "end: int", "step: int"],
+            return_typ: Some("Iterator[Item=int]"),
+        }),
         /* //1 Rev
         StructFunc::Struct(BuiltInStruct{
             name: "Rev",
@@ -258,9 +272,13 @@ pub fn put_at_start(input: &str) -> String {
                 } else {
                     write!(data, "struct {}:", stct.name).unwrap();
                 }
-                // todo parameters
+                if let Some(types) = stct.types {
+                    for typ in types {
+                        write!(data, "\n\ttype {typ}").unwrap();
+                    }
+                }
                 for func in stct.methods {
-                    write!(data, "\n\tdef {}:", func).unwrap();
+                    write!(data, "\n\tdef {func}:").unwrap();
                 }
                 writeln!(data).unwrap();
             },
@@ -272,16 +290,28 @@ pub fn put_at_start(input: &str) -> String {
                 let rtrn = if let Some(t) = func.return_typ {
                     format!("-> {t}")
                 } else {
-                    String::new()
+                    EMPTY_STR
                 };
                 let generics = if let Some(generics) = func.generics {
                     format!("<{}>", join(generics.iter(), ","))
                 } else {
-                    String::new()
+                    EMPTY_STR
                 };
-                write!(data, "def {}{generics}({args}){rtrn}:", func.name).unwrap();
-                writeln!(data).unwrap();
+                writeln!(data, "def {}{generics}({args}){rtrn}:", func.name).unwrap();
             },
+            StructFunc::Enum(enm) => {
+                if enm.ignore {
+                    unsafe { IGNORE_ENUMS.insert(enm.name); }
+                }
+                let args = join(enm.args.iter(), "\n\t");
+                let generics = if let Some(generics) = enm.generics {
+                    format!("<{}>", join(generics.iter(), ","))
+                } else {
+                    EMPTY_STR
+                };
+                writeln!(data, "enum {}{generics}:\n\t{args}", enm.name).unwrap();
+
+            }
         }
     }
     write!(data, "\n{input}").unwrap();

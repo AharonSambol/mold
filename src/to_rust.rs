@@ -4,7 +4,7 @@ use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
 use crate::built_in_funcs::BuiltIn;
-use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
+use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType};
 
@@ -40,7 +40,6 @@ pub fn to_rust(
             if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
                 return;
             }
-
             print_function_rust(name, ast, indentation, res, built_ins, enums, children);
         },
         AstNode::IfStatement => {
@@ -234,7 +233,9 @@ pub fn to_rust(
                 }
             }
 
-            if let AstNode::FunctionCall(true) = ast[children[1]].value {
+            if matches!(ast[children[1]].value, AstNode::FunctionCall(true))
+                || matches!(ast[children[0]].typ, Some(Type { kind: TypeKind::Enum(_), .. }))
+            {
                 to_rust(ast, children[0], indentation, res, built_ins, enums);
                 write!(res, "::").unwrap();
                 to_rust(ast, children[1], indentation, res, built_ins, enums);
@@ -284,7 +285,9 @@ pub fn to_rust(
             ).unwrap();
             let mut trait_functions = vec![];
             for func in unwrap_u(&ast[children[2]].children) {
-                let func_name = unwrap_enum!(&ast[*func].value, AstNode::Function(n) | AstNode::StaticFunction(n), n);
+                let func_name = unwrap_enum!(
+                    &ast[*func].value, (AstNode::Function(n) | AstNode::StaticFunction(n)), n
+                );
                 if func_name.contains("::"){
                     trait_functions.push((*func, func_name));
                     continue
@@ -301,8 +304,10 @@ pub fn to_rust(
                 let trait_name = func_name.next().unwrap();
                 let func_name = func_name.next().unwrap();
                 match trait_to_funcs.entry(trait_name) {
-                    Entry::Vacant(e) => { e.insert(vec![(func_pos, func_name)]); },
-                    Entry::Occupied(mut e) => { e.get_mut().push((func_pos, func_name)); }
+                    Entry::Vacant(e) =>
+                        { e.insert(vec![(func_pos, func_name)]); },
+                    Entry::Occupied(mut e) =>
+                        { e.get_mut().push((func_pos, func_name)); }
                 }
             }
             for (trait_name, funcs) in trait_to_funcs.iter() {
@@ -385,6 +390,32 @@ pub fn to_rust(
                 }
             }
             write!(res, "\n}}").unwrap();
+        }
+        AstNode::Enum(name) => {
+            if unsafe { IGNORE_ENUMS.contains(name.as_str()) } {
+                return;
+            }
+            let generics_ast = &ast[children[0]];
+            let generic = format_generics(generics_ast);
+            writeln!(res, "enum {name}{generic}{{").unwrap();
+            let module = unwrap_u(&ast[children[1]].children);
+            for option in module {
+                let name = unwrap_enum!(&ast[*option].value, AstNode::Identifier(n), n);
+                write!(res, "\t{name}").unwrap();
+                let types = unwrap_u(&ast[*option].children);
+                if !types.is_empty() {
+                    write!(res, "(").unwrap();
+                    for (i, typ) in types.iter().enumerate() {
+                        if i != 0 {
+                            write!(res, ", ").unwrap();
+                        }
+                        write!(res, "{}", unwrap_enum!(&ast[*typ].typ)).unwrap();
+                    }
+                    write!(res, ")").unwrap();
+                }
+                writeln!(res, ",").unwrap();
+            }
+            writeln!(res, "}}").unwrap();
         }
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
@@ -532,17 +563,41 @@ fn built_in_funcs(
             }
         },
         "range" => {
-            // let a: Box<dyn Iterator<Item=i32>> = Box::new((0..11).step_by(2));
-            // let a: Box<dyn Iterator<Item=i32>> = Box::new(0..11);
-            // let a: Box<dyn Iterator<Item=i32>> = Box::new(0..=11);
+            let pos = ast[children[0]].parent.unwrap();
+            let parent = ast[pos].parent.unwrap();
+            let is_in_for = matches!(&ast[parent].value, AstNode::ForIter);
+
             let args = unwrap_u(&ast[children[1]].children);
-            write!(res, "(").unwrap();
-            to_rust(ast, args[0], 0, res, built_ins, enums);
-            write!(res, "..").unwrap();
-            to_rust(ast, args[1], 0, res, built_ins, enums);
-            write!(res, ").step_by((").unwrap();
-            to_rust(ast, args[2], 0, res, built_ins, enums);
-            write!(res, ") as usize)").unwrap();
+            if !is_in_for {
+                write!(res, "Box::new(").unwrap();
+            }
+            match args.len() {
+                1 => {
+                    write!(res, "(0..").unwrap();
+                    to_rust(ast, args[0], 0, res, built_ins, enums);
+                    write!(res, ")").unwrap();
+                }
+                2 => {
+                    write!(res, "(").unwrap();
+                    to_rust(ast, args[0], 0, res, built_ins, enums);
+                    write!(res, "..").unwrap();
+                    to_rust(ast, args[1], 0, res, built_ins, enums);
+                    write!(res, ")").unwrap();
+                }
+                3 => {
+                    write!(res, "(").unwrap();
+                    to_rust(ast, args[0], 0, res, built_ins, enums);
+                    write!(res, "..").unwrap();
+                    to_rust(ast, args[1], 0, res, built_ins, enums);
+                    write!(res, ").step_by((").unwrap();
+                    to_rust(ast, args[2], 0, res, built_ins, enums);
+                    write!(res, ") as usize)").unwrap();
+                }
+                _ => panic!("too many args passed to range expected <=3 found {}", args.len())
+            }
+            if !is_in_for {
+                write!(res, ")").unwrap();
+            }
         }
         _ => { return false }
     }
@@ -617,7 +672,7 @@ fn format_generics(generics_ast: &Ast) -> String {
             unwrap_enum!(&x.kind, TypeKind::Generic(GenericType::Declaration(name)), name)
         ), ","))
     } else {
-        String::new()
+        EMPTY_STR
     }
 }
 

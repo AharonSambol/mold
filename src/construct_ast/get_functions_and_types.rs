@@ -2,20 +2,18 @@ use std::collections::{HashMap, HashSet};
 use crate::construct_ast::get_typ::{try_get_arg_typ};
 use crate::mold_tokens::{OperatorType, SolidToken};
 use crate::{unwrap_enum};
-use crate::construct_ast::mold_ast::{
-    FuncType, FuncTypes,
-    StructType, StructTypes,
-    TraitType, TraitTypes,
-    TypeTypes, Info
-};
+use crate::construct_ast::mold_ast::{FuncType, FuncTypes, StructType, StructTypes, TraitType, TraitTypes, TypeTypes, Info, EnumTypes, EnumType};
 
 const UNKNOWN_FUNC_TYPE: FuncType = FuncType{ input: None, output: None };
 
-pub fn get_struct_and_func_names(tokens: &[SolidToken]) -> (StructTypes, FuncTypes, TraitTypes, TypeTypes){
+pub fn get_struct_and_func_names(
+    tokens: &[SolidToken]
+) -> (StructTypes, FuncTypes, TraitTypes, TypeTypes, EnumTypes){
     let mut funcs = HashMap::new();
     let mut structs = HashMap::new();
     let mut traits = HashMap::new();
     let mut types = HashMap::new();
+    let mut enums = HashMap::new();
 
     // for (i, tok) in tokens.iter().enumerate() {
     //     if let SolidToken::Type = tok {
@@ -31,7 +29,7 @@ pub fn get_struct_and_func_names(tokens: &[SolidToken]) -> (StructTypes, FuncTyp
                         funcs.insert(name.clone(), UNKNOWN_FUNC_TYPE);
                     }
                 },
-            SolidToken::Struct | SolidToken::Trait | SolidToken::StrictTrait =>
+            SolidToken::Struct | SolidToken::Trait | SolidToken::StrictTrait | SolidToken::Enum =>
                 if let SolidToken::Word(name) = &tokens[i + 1] {
                     if let SolidToken::Operator(OperatorType::Smaller) = &tokens[i + 2] {
                         let mut pos = i + 3;
@@ -42,11 +40,15 @@ pub fn get_struct_and_func_names(tokens: &[SolidToken]) -> (StructTypes, FuncTyp
                         }
                         if let SolidToken::Struct = tok {
                             structs.insert(name.clone(), StructType { generics: Some(generics), pos: 0 });
+                        } else if let SolidToken::Enum = tok {
+                            enums.insert(name.clone(), EnumType { generics: Some(generics), pos: 0 });
                         } else {
                             traits.insert(name.clone(), TraitType { generics: Some(generics), pos: 0 });
                         }
                     } else if let SolidToken::Struct = tok {
                         structs.insert(name.clone(), StructType { generics: None, pos: 0 });
+                    } else if let SolidToken::Enum = tok {
+                        enums.insert(name.clone(), EnumType { generics: None, pos: 0 });
                     } else {
                         traits.insert(name.clone(), TraitType { generics: None, pos: 0 });
                     }
@@ -61,7 +63,7 @@ pub fn get_struct_and_func_names(tokens: &[SolidToken]) -> (StructTypes, FuncTyp
     }
     let mut resolved_types = HashMap::new();
     //3 NOT EFFICIENT
-    println!("{:?}", types);
+    dbg!(&types);
     println!("structs: {:?}", structs);
     while resolved_types.len() < types.len() {
         let prev_ln = resolved_types.len();
@@ -75,20 +77,21 @@ pub fn get_struct_and_func_names(tokens: &[SolidToken]) -> (StructTypes, FuncTyp
                     funcs: &mut funcs,
                     structs: &mut structs,
                     traits: &mut traits,
+                    enums: &mut enums,
                     types: &mut resolved_types,
                     generics: &mut vec![],
                     struct_inner_types: &mut HashSet::new(),
-                }, false
+                }, false, true
             );
             println!("res: {res:?}");
             if let Some(res) = res {
                 resolved_types.insert((*typ).clone(), res);
             }
         }
-        println!("{:?}", resolved_types);
+        dbg!(&resolved_types);
         if resolved_types.len() == prev_ln {
             panic!("circular type definition")
         }
     }
-    (structs, funcs, traits, resolved_types)
+    (structs, funcs, traits, resolved_types, enums)
 }

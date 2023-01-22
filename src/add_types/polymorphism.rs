@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::{typ_with_child, unwrap_enum, some_vec};
-use crate::add_types::ast_add_types::{find_index_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
+use crate::add_types::ast_add_types::{find_index_typ, get_enum_property_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::utils::get_from_stack;
+use crate::built_in_funcs::BuiltIn;
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
 use crate::mold_tokens::OperatorType;
-use crate::types::{GenericType, print_type, Type, TypeKind, TypName, unwrap, unwrap_u};
+use crate::types::{GenericType, print_type, print_type_b, Type, TypeKind, TypName, unwrap, unwrap_u};
 
 // TODO also cast: `as Box<dyn P>`
 fn add_box(ast: &mut Vec<Ast>, pos: usize) {
@@ -112,7 +113,7 @@ pub fn check_for_boxes(
         return expected;
     }
     match expected.kind.clone() {
-        TypeKind::Struct(ex_name) | TypeKind::Trait(ex_name) => {
+        TypeKind::Struct(ex_name) | TypeKind::Trait(ex_name) | TypeKind::Enum(ex_name) => {
             let expected_children = unwrap(&expected.children).clone();
             let got_children = unwrap_u(&got.children).clone();
             let typ = match &got.value {
@@ -170,9 +171,9 @@ pub fn check_for_boxes(
                         [iter.next().unwrap(), iter.next().unwrap()]
                     } else { panic!() };
 
-                    for i in got_children {
+                    for (i, c) in got_children.iter().enumerate() {
                         check_for_boxes(
-                            exp_c[i % 2].clone(), ast, i, info, vars
+                            exp_c[i % 2].clone(), ast, *c, info, vars
                         );
                     }
                     expected.clone()  //1 got what expected, no need to panic
@@ -211,7 +212,7 @@ pub fn check_for_boxes(
                         }
                         let struct_pos = info.structs[ex_name.get_str()].pos;
                         let args_def = &ast[unwrap_u(&ast[struct_pos].children)[1]];
-                        let expected_args: Vec<Type> = unwrap_u(&args_def.children).iter().map(|x|
+                        let expected_args: Vec<_> = unwrap_u(&args_def.children).iter().map(|x|
                             if let Some(Type { kind: TypeKind::Generic(GenericType::Of(name)), .. }) = &ast[*x].typ {
                                 generics_map[name].clone()
                             } else {
@@ -301,12 +302,13 @@ pub fn check_for_boxes(
                 },
                 _ => panic!("expected: {:?}, got.kind: {:?}", expected.kind, got.value)
             };
-            if typ != expected {
-                if let TypeKind::Struct(name) = &expected.kind {
-                    if let Some(typ_name) = name.get_str().strip_prefix("Self::") { // TODO find a better way
+            if !can_soft_cast(&typ, &expected) {
+                // if let TypeKind::Struct(name) = &expected.kind {
+                //     if let Some(typ_name) = name.get_str().strip_prefix("Self::") { // find a better way
+                //
+                //     }
+                // }
 
-                    }
-                }
                 print_type(&Some(expected.clone()));
                 print_type(&Some(typ.clone()));
                 panic!("expected: `{expected}` got: `{typ}`");
@@ -369,12 +371,16 @@ pub fn check_for_boxes(
 }
 
 
-fn get_property_typ(got: &Ast, ast: &[Ast], info: &Info, pos: usize) -> Option<Type> {
+fn get_property_typ(
+    got: &Ast, ast: &[Ast], info: &Info, pos: usize
+) -> Option<Type> {
     let children = unwrap_u(&got.children);
     let left_kind = ast[children[0]].typ.clone().unwrap_or_else(||
         panic!("{:?}", ast[children[0]].value)
     );
-    fn get_from_typ(left_kind: Type, ast: &[Ast], info: &Info, pos: usize, children: &Vec<usize>) -> Option<Type> {
+    fn get_from_typ(
+        left_kind: Type, ast: &[Ast], info: &Info, pos: usize, children: &Vec<usize>
+    ) -> Option<Type> {
         match &left_kind.kind {
             TypeKind::Struct(struct_name) => {
                 let struct_description = &ast[info.structs[&struct_name.to_string()].pos];
@@ -387,6 +393,10 @@ fn get_property_typ(got: &Ast, ast: &[Ast], info: &Info, pos: usize) -> Option<T
                         ).0,
                     _ => unreachable!(),
                 }
+            }
+            TypeKind::Enum(enum_name) => {
+                get_enum_property_typ(ast, info, children, enum_name)
+                // todo!();
             }
             TypeKind::Trait(trait_name) => {
                 let trait_description = &ast[info.traits[trait_name.get_str()].pos];
@@ -410,4 +420,29 @@ fn get_property_typ(got: &Ast, ast: &[Ast], info: &Info, pos: usize) -> Option<T
         }
     }
     get_from_typ(left_kind, ast, info, pos, children)
+}
+
+fn can_soft_cast(typ: &Type, expected: &Type) -> bool {
+    if typ == expected { return true }
+    if let TypeKind::Enum(enum_name1) = &typ.kind {
+        if matches!(&expected.kind, TypeKind::Enum(enum_name2) if enum_name1 == enum_name2) {
+            let generic_map1 = &unwrap(&typ.children)[0];
+            let generic_map2 = &unwrap(&expected.children)[0];
+            for generic1 in unwrap(&generic_map1.children) {
+                if let Some(generic2) = unwrap(&generic_map2.children).iter().find(
+                    |x| x.kind == generic1.kind
+                ) {
+                    let generic_val1 = &unwrap(&generic1.children)[0];
+                    let generic_val2 = &unwrap(&generic2.children)[0];
+                    if !can_soft_cast(generic_val1, generic_val2) {
+                        return false
+                    }
+                }
+            }
+            return true
+        }
+        return false
+    }
+    // TODO can probably cast more things, e.g. structs and stuff
+    false
 }

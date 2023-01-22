@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
-use crate::construct_ast::mold_ast::{Info, VarTypes};
-use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, print_type, clean_type};
+use crate::construct_ast::mold_ast::{Info, TraitTypes, VarTypes};
+use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, print_type, clean_type, print_type_b};
 use lazy_static::lazy_static;
 use regex::Regex;
 use crate::built_in_funcs::BuiltIn;
 use crate::{some_vec, unwrap_enum, typ_with_child};
 use crate::add_types::generics::{apply_generics_to_method_call, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::check_for_boxes;
-use crate::add_types::utils::{find_function_in_struct, find_function_in_trait, get_from_stack};
+use crate::add_types::utils::{find_function_in_struct, find_function_in_trait, find_type_in_trait, get_from_stack};
 use crate::construct_ast::mold_ast::StructTypes;
 use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
 use crate::mold_tokens::OperatorType;
@@ -43,7 +43,7 @@ pub fn add_types(
                 todo!()
             }
             let for_var_pos = unwrap_u(&for_vars.children)[0];
-            ast[for_var_pos].typ = get_into_iter_return_typ(ast, info.structs, iter, pos);
+            ast[for_var_pos].typ = get_into_iter_return_typ(ast, info, iter);
             vars.last_mut().unwrap().insert(
                 unwrap_enum!(&ast[for_var_pos].value, AstNode::Identifier(n), n.clone()),
                 for_var_pos
@@ -118,6 +118,13 @@ pub fn add_types(
                 });
                 return;
             }
+            if info.enums.contains_key(name) {
+                ast[pos].typ = Some(Type {
+                    kind: TypeKind::Enum(TypName::Str(name.clone())),
+                    children: None,
+                });
+                return;
+            }
             panic!("used `{name}` before assignment")
         }
         AstNode::FirstAssignment => {
@@ -142,12 +149,6 @@ pub fn add_types(
                 vars.last_mut().unwrap().insert(name, children[0]);
             } else {
                 todo!()
-            }
-            fn soft_cast(ast: &mut Vec<Ast>, ) {
-                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             }
         }
         AstNode::FunctionCall(_) => {
@@ -292,6 +293,16 @@ pub fn add_types(
                         _ => unreachable!()
                     };
                 }
+                TypeKind::Enum(enm_name) => {
+                    let args = &ast[children[1]];
+                    if let AstNode::FunctionCall(_) = &args.value {
+                        let args = &ast[unwrap_u(&args.children)[1]];
+                        for arg in unwrap_u(&args.children).clone() {
+                            add_types(ast, arg, &mut vec![], info, &None, built_ins);
+                        }
+                    }
+                    ast[pos].typ = get_enum_property_typ(ast, info, &children, enm_name);
+                }
                 _ => panic!("{:?}", left_kind)
             }
         }
@@ -418,7 +429,7 @@ pub fn add_types(
             ast[pos].typ = ast[children[0]].typ.clone();
         }
         AstNode::ListLiteral | AstNode::SetLiteral => {
-            let inner_types: Vec<usize> = children.iter().map(|x| {
+            let inner_types: Vec<_> = children.iter().map(|x| {
                 add_types(ast, *x, vars, info, parent_struct, built_ins);
                 *x
             }).collect(); //1 collecting so that all of them get a type
@@ -438,7 +449,7 @@ pub fn add_types(
             });
         }
         AstNode::DictLiteral => {
-            let inner_types: Vec<usize> = children.iter().map(|x| {
+            let inner_types: Vec<_> = children.iter().map(|x| {
                 add_types(ast, *x, vars, info, parent_struct, built_ins);
                 *x
             }).collect(); //1 collecting so that all of them get a type
@@ -486,51 +497,124 @@ pub fn add_types(
             add_types(ast, children[2], vars, info, &parent_struct, built_ins); //1 module
             vars.pop();
         }
-        AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break
+        AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
         | AstNode::Trait { .. } | AstNode::Traits | AstNode::Type(_) | AstNode::Types => {}
     }
 }
 
-fn get_into_iter_return_typ(ast: &[Ast], structs: &StructTypes, iter: &Ast, pos: usize) -> Option<Type> {
-    fn match_kind(
-        ast: &[Ast], structs: &StructTypes, typ: &Type,
-        kind: &TypeKind, children: &Option<Vec<Type>>, pos: usize
-    ) -> Option<Type> {
-        match kind {
-            TypeKind::Struct(struct_name) => {
-                let func_pos = find_function_in_struct(
-                    ast, structs, &struct_name.to_string(), "into_iter", pos
-                ).unwrap();
-                let into_iters_return = &ast[unwrap_u(&ast[func_pos].children)[2]].typ;
-                let into_iters_return = apply_generics_to_method_call(
-                    into_iters_return,
-                    typ,
-                );
-                //1 now get the IntoIter object's `next` function's return type
-                let func_pos = find_function_in_struct(
-                    ast, structs, "IntoIter", "next", pos
-                ).unwrap();
-                let next_return = & ast[unwrap_u( & ast[func_pos].children)[2]].typ;
-                apply_generics_to_method_call(
-                    next_return,
-                    &unwrap_enum!(into_iters_return)
+pub fn get_enum_property_typ(
+    ast: &[Ast], info: &Info, children: &Vec<usize>, enm_name: &TypName
+) -> Option<Type> {
+    let generics = &info.enums[enm_name.get_str()].generics;
+    let len = if let Some(g) = generics {
+        g.len()
+    } else { 0 };
+    if len == 0 {
+        Some(Type {
+            kind: TypeKind::Enum(enm_name.clone()),
+            children: None
+        })
+    } else {
+        let mut generics_map = HashMap::new();
+        let args = &ast[children[1]];
+        if let AstNode::FunctionCall(_) = &args.value {
+            let args = &ast[unwrap_u(&args.children)[1]];
+            let generics = generics.clone().unwrap();
+            let zip = generics
+                .iter()
+                .zip(unwrap_u(&args.children).clone());
+            for (generic, arg) in zip {
+                let typ = unwrap_enum!(&ast[arg].typ);
+                map_generic_types(&Type {
+                    kind: TypeKind::Generic(GenericType::Of(generic.clone())),
+                    children: None
+                }, typ, &mut generics_map);
+            }
+        }
+
+        Some(typ_with_child! {
+            TypeKind::Enum(enm_name.clone()),
+            Type {
+                kind: TypeKind::GenericsMap,
+                children: Some(
+                    generics_map.iter().map(|(name, t)|
+                        typ_with_child! {
+                            TypeKind::Generic(GenericType::Of(name.clone())),
+                            t.clone()
+                        }
+                    ).collect()
                 )
+            }
+        })
+    }
+}
+
+//3 A very hacky solution...
+fn get_into_iter_return_typ(ast: &[Ast], info: &Info, iter: &Ast) -> Option<Type> {
+    // todo this is how the for loop actually works
+    /*
+    match IntoIterator::into_iter(iter) {
+        mut iter => loop {
+            match Iterator::next(&mut iter) {
+                None => break,
+                Some(i) => {
+                    // Body
+                }
+            }
+        },
+    }
+     */
+
+    fn match_kind(ast: &[Ast], info: &Info, typ: &Type) -> Option<Type> {
+        match &typ.kind {
+            TypeKind::Struct(struct_name) => {
+                print_type_b(&Some(typ.clone()));
+                let strct_def = &ast[info.structs[struct_name.get_str()].pos];
+                let strct_traits = &ast[unwrap_u(&strct_def.children)[3]];
+                for trt_pos in unwrap_u(&strct_traits.children) {
+                    let trt = &ast[*trt_pos];
+                    if matches!(&trt.value, AstNode::Identifier(name) if name == "IntoIterator" || name == "Iterator") {
+                        let typs = unwrap_u(&trt.children);
+                        for i in typs {
+                            if matches!(&ast[*i].value, AstNode::Type(t) if t == "Item") {
+                                return apply_generics_to_method_call(
+                                    &ast[*i].typ, typ
+                                );
+                            } else { panic!() }
+                        }
+                    }
+                }
+                panic!()
+            },
+            TypeKind::Trait(trait_name) => {
+                print_type_b(&Some(typ.clone()));
+                if trait_name != "IntoIterator" && trait_name != "Iterator" {
+                    panic!("expected `IntoIterator` or `Iterator` found `{trait_name}`")
+                }
+                let generic_map = &unwrap(&typ.children)[0];
+                for generic in unwrap(&generic_map.children) {
+                    if let TypeKind::InnerType(name) = &generic.kind {
+                        if name == "Item" {
+                            return apply_generics_to_method_call(
+                                &Some(unwrap(&generic.children)[0].clone()),
+                                typ
+                            )
+                        }
+                    }
+                }
+                panic!("couldn't find `Item` type in `{trait_name}`")
             },
             TypeKind::Pointer | TypeKind::MutPointer => {
-                let inner_typ = &unwrap(children)[0];
-                let Type { kind: k, children: c } = &inner_typ;
+                let inner_typ = &unwrap(&typ.children)[0];
                 Some(typ_with_child! {
-                    kind.clone(),
-                    match_kind(ast, structs, inner_typ, k, c, pos).unwrap()
+                    typ.kind.clone(),
+                    match_kind(ast, info, inner_typ).unwrap()
                 })
             }
-            _ => panic!()
+            _ => panic!("kind: {:?}", typ.kind)
         }
     }
-
-    if let Some(t @ Type { kind, children }) = &iter.typ {
-        match_kind(ast, structs, t, &kind, &children, pos)
-    } else { panic!() }
+    match_kind(ast, info, unwrap_enum!(&iter.typ))
 }
 
 pub fn get_property_method_typ(

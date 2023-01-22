@@ -4,7 +4,7 @@ use std::fmt::Write;
 use lazy_static::lazy_static;
 use regex::Regex;
 use crate::built_in_funcs::BuiltIn;
-use crate::{IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
+use crate::{EMPTY_STR, IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u};
 
@@ -42,7 +42,7 @@ pub fn to_python(
                 name.split("::").last().unwrap().to_string()
             } else { name.clone() };
             if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
-                return String::new();
+                return EMPTY_STR;
             }
             if indentation == 1 {
                 format!(
@@ -71,7 +71,7 @@ pub fn to_python(
                 to_python(ast, children[3], indentation + 1, built_ins, ToWrapVal::Nothing) // body
             )
         },
-        AstNode::ReturnType => { String::new() },
+        AstNode::ReturnType => { EMPTY_STR },
         AstNode::IfStatement => {
             let mut res = format!("if {}{}",
                 to_python(ast, children[0], indentation, built_ins, ToWrapVal::Nothing), //1 ():
@@ -351,7 +351,7 @@ pub fn to_python(
         },
         AstNode::ArgsDef => {
             if children.is_empty() {
-                return String::new();
+                return EMPTY_STR;
             }
             let mut res = to_python(
                 ast, children[0], indentation, built_ins, ToWrapVal::GetName
@@ -367,7 +367,7 @@ pub fn to_python(
         }
         AstNode::Args => {
             if children.is_empty() {
-                return String::new();
+                return EMPTY_STR;
             }
             let mut res = to_python(
                 ast, children[0], indentation, built_ins, ToWrapVal::GetAsValue
@@ -483,7 +483,7 @@ pub fn to_python(
         }
         AstNode::Struct(name) => {
             if unsafe { IGNORE_STRUCTS.contains(name.as_str()) } {
-                return String::new();
+                return EMPTY_STR;
             }
             format!(
                 "class {name}:\n{}",
@@ -492,7 +492,11 @@ pub fn to_python(
         }
         AstNode::Continue => String::from("continue"),
         AstNode::Break => String::from("break"),
-        AstNode::GenericsDeclaration | AstNode::Trait { .. } => String::new(),
+        AstNode::GenericsDeclaration | AstNode::Trait { .. } => EMPTY_STR,
+        AstNode::Enum(name) => {
+            todo!()
+            // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }

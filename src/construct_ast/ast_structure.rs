@@ -42,6 +42,7 @@ pub enum AstNode {
     Char(String),
     ColonParentheses,       // children[0] = inside
     DictLiteral, // children = elements
+    Enum(String),
     FirstAssignment,
     ForIter,        // children[0] = iter
     ForStatement,   // children[0] = colon_parentheses(ForVars, ForIter), children[1] = body
@@ -102,6 +103,7 @@ impl AstNode {
             | AstNode::Function { .. }
             | AstNode::StaticFunction { .. }
             | AstNode::Struct(_)
+            | AstNode::Enum(_)
             | AstNode::Trait { .. }
             | AstNode::Traits
             | AstNode::Type(_)
@@ -166,6 +168,7 @@ impl Display for AstNode {
             AstNode::ReturnType => write!(f, "RETURNS"),
             AstNode::GenericsDeclaration => write!(f, "GENERIC_DECLARATION"),
             AstNode::Struct(name) => write!(f, "STRUCT({name})"),
+            AstNode::Enum(name) => write!(f, "ENUM({name})"),
             AstNode::Trait { name, strict } => write!(f, "TRAIT({name}, strict: {strict})"),
             AstNode::Bool(b) => write!(f, "{b}"),
         }

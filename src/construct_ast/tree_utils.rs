@@ -1,7 +1,6 @@
 use pretty_print_tree::PrettyPrintTree;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
-use crate::{some_vec, unwrap_enum};
-use crate::types::unwrap_u;
+use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, some_vec, unwrap_enum};
 
 pub fn get_last(arr: &mut Option<Vec<usize>>) -> usize {
     *unwrap_enum!(arr).last().unwrap()
@@ -65,7 +64,16 @@ pub fn print_tree(tree: (Vec<Ast>, usize)){
                 if children.is_none() {
                     return Vec::new();
                 }
-                children.unwrap().iter().map(|x| (vc.clone(), *x)).collect()
+                children.unwrap().iter().map(|x| (vc.clone(), *x)).filter(
+                    |(_, x)|
+                        match &vc[*x].value {
+                            AstNode::Struct(name) =>        !unsafe { IGNORE_STRUCTS.contains(name.as_str()) },
+                            AstNode::Trait{name, .. } =>    !unsafe { IGNORE_TRAITS .contains(name.as_str()) },
+                            AstNode::Function(name) =>      !unsafe { IGNORE_FUNCS  .contains(name.as_str()) },
+                            AstNode::Enum(name) =>          !unsafe { IGNORE_ENUMS  .contains(name.as_str()) },
+                            _ => true
+                        }
+                ).collect()
             }),
         )
     };

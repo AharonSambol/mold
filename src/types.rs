@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 use pretty_print_tree::{Color, PrettyPrintTree};
 use crate::construct_ast::ast_structure::join;
+use crate::EMPTY_STR;
 
 pub const UNKNOWN_TYPE: Type = Type {
     kind: TypeKind::Unknown,
@@ -61,8 +62,10 @@ pub enum TypeKind {
     _OneOf,
     Optional,
     Tuple,
+    InnerType(String), // e.g. Iterator[Inner=i32]
     Args,
     Trait(TypName),
+    Enum(TypName),
     Unknown,
     Function(String),
     Struct(TypName), // child[0] = generics
@@ -159,40 +162,15 @@ impl Display for Type {
                 write!(f, "ARGS({})", unwrap(&self.children)[0])
             },
             TypeKind::Trait(name) => {
-                // todo repeat of same code in TypeKind::Struct?
-                let mut gens = String::new();
-                if let Some(children) = &self.children {
-                    if !children.is_empty() {
-                        if let TypeKind::GenericsMap = children[0].kind {
-                            if let Some(generics) = &children[0].children {
-                                gens = format!("::<{}>", join(generics.iter(), ","));
-                            }
-                        } else {
-                            // println!("{:?}", children[0]);
-                            if let Some(generics) = &children[0].children {
-                                gens = format!("<{}>", join(generics.iter(), ","));
-                            }
-                        }
-                    }
-                }
+                let mut gens = self.format_generics();
                 write!(f, "Box<dyn {name}{gens}>")
             },
+            TypeKind::Enum(name) => {
+                let gens = self.format_generics();
+                write!(f, "{name}{gens}")
+            },
             TypeKind::Struct(name) => {
-                let mut gens = String::new();
-                if let Some(children) = &self.children {
-                    if !children.is_empty() {
-                        if let TypeKind::GenericsMap = children[0].kind {
-                            if let Some(generics) = &children[0].children {
-                                gens = format!("::<{}>", join(generics.iter(), ","));
-                            }
-                        } else {
-                            // println!("{:?}", children[0]);
-                            if let Some(generics) = &children[0].children {
-                                gens = format!("<{}>", join(generics.iter(), ","));
-                            }
-                        }
-                    }
-                }
+                let mut gens = self.format_generics();
                 write!(f, "{name}{gens}")
             },
             TypeKind::Function(name) => write!(f, "{name}"),
@@ -201,6 +179,13 @@ impl Display for Type {
             }
             TypeKind::Pointer => write!(f, "&{}", unwrap(&self.children)[0]),
             TypeKind::MutPointer => write!(f, "&mut {}", unwrap(&self.children)[0]),
+            TypeKind::InnerType(name) => {
+                if self.children.is_none() {
+                    write!(f, "Self::{name}")
+                } else {
+                    write!(f, "{name}={}", unwrap(&self.children)[0])
+                }
+            },
         }
     }
 }
@@ -231,6 +216,21 @@ impl Type {
             }
         }
     }
+
+    fn format_generics(&self) -> String {
+        if let Some(children) = &self.children {
+            if !children.is_empty() {
+                if let TypeKind::GenericsMap = children[0].kind {
+                    if let Some(generics) = &children[0].children {
+                        return format!("::<{}>", join(generics.iter(), ","));
+                    }
+                } else if let Some(generics) = &children[0].children {
+                    return format!("<{}>", join(generics.iter(), ","));
+                }
+            }
+        }
+        EMPTY_STR
+    }
 }
 
 impl Display for TypName {
@@ -245,7 +245,6 @@ impl Display for TypName {
 
 
 static EMPTY_VEC: Vec<Type> = vec![];
-
 pub fn unwrap(children: &Option<Vec<Type>>) -> &Vec<Type> {
     if let Some(c) = &children { c } else { &EMPTY_VEC }
 }

@@ -30,7 +30,7 @@ pub fn get_generic_names(pos: &mut usize, tokens: &[SolidToken]) -> Vec<String> 
 
 pub fn get_generics(pos: &mut usize, tokens: &[SolidToken], index: usize, ast: &mut Vec<Ast>) -> Vec<String> {
     let generics_names = get_generic_names(pos, tokens);
-    let generics_vec: Vec<Type> = generics_names.iter().map(|name|
+    let generics_vec: Vec<_> = generics_names.iter().map(|name|
         Type {
             kind: TypeKind::Generic(GenericType::Declaration(name.clone())),
             children: None,

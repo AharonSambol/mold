@@ -158,7 +158,7 @@ pub fn tokenize(input_code: &str) -> Vec<SolidToken> {
     let mut open_braces = 0;
     let mut open_brackets = 0;
     let mut open_parentheses = 0;
-    let chars: Vec<char> = input_code.chars().collect();
+    let chars: Vec<_> = input_code.chars().collect();
     for (i, c) in chars.iter().enumerate() {
         if skip > 0 {
             skip -= 1;
@@ -296,7 +296,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
         if !matches!(token, Tab | NewLine) {
             is_empty_line = false;
         }
-        if is_mut_pointer(tokens, &res, i, &input_code) {
+        if is_mut_pointer(tokens, &res, i, input_code) {
             *res.last_mut().unwrap() = SolidToken::UnaryOperator(OperatorType::MutPointer);
             continue
         }

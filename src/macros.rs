@@ -41,6 +41,7 @@
                 "__init__(self)"
             ],
             _parameters: vec![],
+            types: None,
         })
     };
 }

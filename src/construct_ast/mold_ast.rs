@@ -7,7 +7,7 @@ use crate::types::{Type, TypeKind, unwrap, unwrap_u};
 use crate::built_in_funcs::BuiltIn;
 use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
 use crate::construct_ast::get_typ::{get_params};
-use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait};
+use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait, make_enum};
 use crate::construct_ast::tree_utils::{add_to_tree, get_last, insert_as_parent_of_prev, print_tree};
 
 type TraitFuncs = HashMap<String, (usize, FuncType)>;
@@ -15,20 +15,48 @@ type TraitFuncs = HashMap<String, (usize, FuncType)>;
 pub type VarTypes = Vec<HashMap<String, usize>>;
 pub type GenericTypes = Vec<HashSet<String>>;
 pub type TraitTypes = HashMap<String, TraitType>;
+pub type EnumTypes = HashMap<String, EnumType>;
 pub type StructTypes = HashMap<String, StructType>;
 pub type FuncTypes = HashMap<String, FuncType>;
 pub type TypeTypes = HashMap<String, Type>;
 
-#[derive(Clone, Debug)]
-pub struct StructType {
-    pub generics: Option<Vec<String>>,
-    pub pos: usize
+pub trait STType {
+    fn get_generics(&self) -> &Option<Vec<String>>;
+    fn get_generics_mut(&mut self) -> &mut Option<Vec<String>>;
+    fn get_pos(&self) -> usize;
 }
 #[derive(Clone, Debug)]
 pub struct TraitType {
     pub generics: Option<Vec<String>>,
     pub pos: usize
 }
+#[derive(Clone, Debug)]
+pub struct StructType {
+    pub generics: Option<Vec<String>>,
+    pub pos: usize
+}
+#[derive(Clone, Debug)]
+pub struct EnumType {
+    pub generics: Option<Vec<String>>,
+    pub pos: usize
+}
+impl STType for StructType {
+    fn get_generics(&self) -> &Option<Vec<String>> { &self.generics }
+    fn get_generics_mut(&mut self) -> &mut Option<Vec<String>> { &mut self.generics }
+    fn get_pos(&self) -> usize { self.pos }
+}
+impl STType for TraitType {
+    fn get_generics(&self) -> &Option<Vec<String>> { &self.generics }
+    fn get_generics_mut(&mut self) -> &mut Option<Vec<String>> { &mut self.generics }
+    fn get_pos(&self) -> usize { self.pos }
+}
+impl STType for EnumType {
+    fn get_generics(&self) -> &Option<Vec<String>> { &self.generics }
+    fn get_generics_mut(&mut self) -> &mut Option<Vec<String>> { &mut self.generics }
+    fn get_pos(&self) -> usize { self.pos }
+}
+
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct FuncType {
     pub input: Option<Vec<Type>>,
@@ -37,10 +65,12 @@ pub struct FuncType {
 
 
 // todo I think it allows to use any type of closing )}]
+#[derive(Debug)]
 pub struct Info<'a> {
     pub funcs: &'a mut FuncTypes,
     pub structs: &'a mut StructTypes,
     pub traits: &'a mut TraitTypes,
+    pub enums: &'a mut EnumTypes,
     pub types: &'a mut TypeTypes,
     pub generics: &'a mut GenericTypes,
     pub struct_inner_types: &'a mut HashSet<String>
@@ -51,7 +81,7 @@ pub fn construct_ast(
     tokens: &[SolidToken], pos: usize,
     built_ins: &HashMap<&str, Box<dyn BuiltIn>>
 ) -> Vec<Ast> {
-    let (mut structs, mut funcs, mut traits, mut types)
+    let (mut structs, mut funcs, mut traits, mut types, mut enums)
         = get_struct_and_func_names(tokens);
     let mut ast = vec![Ast::new(AstNode::Module)];
     let mut info = Info {
@@ -59,6 +89,7 @@ pub fn construct_ast(
         structs: &mut structs,
         traits: &mut traits,
         types: &mut types,
+        enums: &mut enums,
         generics: &mut vec![],
         struct_inner_types: &mut HashSet::new()
     };
@@ -66,7 +97,7 @@ pub fn construct_ast(
         tokens, pos, &mut ast, 0, 0,
         &mut vec![HashMap::new()], &mut info, built_ins
     );
-
+    // add_traits_to_structs(&mut ast)
     duck_type(&mut ast, info.traits, info.structs);
     print_tree((ast.clone(), 0));
     if unsafe { IS_COMPILED } {
@@ -80,17 +111,22 @@ pub fn construct_ast(
 }
 
 fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
-    let traits: Vec<(String, TraitFuncs)> = traits.iter().filter_map(
+    let all_traits: Vec<_> = traits.iter().map(
         |(trt_name, trt)| {
             let trt_def = &ast[trt.pos];
-            if let AstNode::Trait { strict: true, .. } = trt_def.value {
-                None
-            } else {
-                let trt_module = &ast[unwrap_u(&trt_def.children)[1]];
-                Some((trt_name.clone(), get_trt_strct_functions(ast, trt_module)))
-            }
+            let trt_module = &ast[unwrap_u(&trt_def.children)[1]];
+            (
+                unwrap_enum!(&trt_def.value, AstNode::Trait { strict, .. }, *strict),
+                trt_name.clone(),
+                get_trt_strct_functions(ast, trt_module)
+            )
         }
     ).collect();
+    let duck_traits: Vec<_> = all_traits.iter()
+        .filter_map(|(strict, name, funcs)|
+            if *strict { None } else { Some((name.clone(), funcs.clone())) } //3 prob expensive clone
+        ).collect();
+
     for strct in structs.values() {
         let strct_def = &ast[strct.pos];
         let strct_children = unwrap_u(&strct_def.children);
@@ -98,12 +134,14 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
         let strct_module_pos = strct_children[2];
         let strct_traits_pos = strct_children[3];
         let funcs = get_trt_strct_functions(ast, &ast[strct_module_pos]);
-        let strct_traits: HashSet<String> = HashSet::from_iter(
+        let strct_traits: HashMap<String, usize> = HashMap::from_iter(
             unwrap_u(&ast[strct_traits_pos].children).iter().map(|trt| {
-                unwrap_enum!(&ast[*trt].value, AstNode::Identifier(name), name.clone())
+                (unwrap_enum!(&ast[*trt].value, AstNode::Identifier(name), name.clone()), *trt)
             })
         );
-        fn struct_matches_trait(trt_funcs: &TraitFuncs, funcs: &TraitFuncs) -> Option<HashMap<String, Type>> {
+        fn struct_matches_trait(
+            trt_funcs: &TraitFuncs, funcs: &TraitFuncs
+        ) -> Option<HashMap<String, Type>> {
             let mut hm = HashMap::new();
             'trait_func_loop: for (trt_f_name, (_, trt_f_types)) in trt_funcs {
                 if let Some((_, func_types)) = funcs.get(trt_f_name) {
@@ -121,21 +159,19 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
                             trt_f_all_types.push(trt_f_types.output.clone().unwrap_unchecked())
                         }
                     }
-                    
+
                     for (trt_fnc, fnc) in trt_f_all_types.iter().zip(func_all_types) {
                         if *trt_fnc == fnc {
                             continue
                         }
-                        if let TypeKind::Struct(name) = &trt_fnc.kind {
-                            if let Some(typ_name) = name.get_str().strip_prefix("Self::") { // TODO find a better way
-                                if let Some(expected_typ) = hm.get(typ_name) {
-                                    if fnc == *expected_typ {
-                                        continue
-                                    }
-                                } else {
-                                    hm.insert(String::from(typ_name), fnc);
+                        if let TypeKind::InnerType(typ_name) = &trt_fnc.kind {
+                            if let Some(expected_typ) = hm.get(typ_name) {
+                                if fnc == *expected_typ {
                                     continue
                                 }
+                            } else {
+                                hm.insert(String::from(typ_name), fnc);
+                                continue
                             }
                         }
                         return None
@@ -146,12 +182,34 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
             }
             Some(hm)
         }
-        for (trt, trt_funcs) in traits.iter() {
-            if strct_traits.contains(trt) { continue }
+        //5 this part isn't duck typing:
+        for (trt_name, trt_pos) in &strct_traits {
+            let trt_funcs = all_traits.iter().find(
+                |(_, name, _)| name == trt_name
+            ).unwrap().2.clone();
+            let types_hm = HashMap::from_iter(
+                unwrap_u(&ast[*trt_pos].children).iter().map(
+                    |c|
+                        (
+                            unwrap_enum!(&ast[*c].value, AstNode::Type(n), n.clone()),
+                            ast[*c].typ.clone().unwrap(),
+                        )
+                )
+            );
+            add_trait_to_struct(
+                ast, strct_module_pos, strct_traits_pos, &funcs,
+                trt_name, &trt_funcs, types_hm, false
+            );
+        }
+
+        for (trt, trt_funcs) in duck_traits.iter() {
+            if strct_traits.contains_key(trt) { continue }
             //1 if all the functions in the trait are implemented
+            // HashMap<String, (usize, HashMap<String, FuncType>)>
             if let Some(types_hm) = struct_matches_trait(trt_funcs, &funcs) {
                 add_trait_to_struct(
-                    ast, strct_module_pos, strct_traits_pos, &funcs, trt, trt_funcs, types_hm
+                    ast, strct_module_pos, strct_traits_pos, &funcs,
+                    trt, trt_funcs, types_hm, true
                 )
             }
         }
@@ -160,12 +218,15 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
 
 fn add_trait_to_struct(
     ast: &mut Vec<Ast>, strct_module_pos: usize, strct_traits_pos: usize,
-    funcs: &TraitFuncs, trt: &String, trt_funcs: &TraitFuncs, types_hm: HashMap<String, Type>
+    funcs: &TraitFuncs, trt: &String, trt_funcs: &TraitFuncs, types_hm: HashMap<String, Type>,
+    add_identifier: bool
 ) {
-    add_to_tree(
-        strct_traits_pos, ast,
-        Ast::new(AstNode::Identifier(trt.clone()))
-    );
+    if add_identifier {
+        add_to_tree(
+            strct_traits_pos, ast,
+            Ast::new(AstNode::Identifier(trt.clone()))
+        );
+    }
     for (func_name, (_trt_func_pos, _)) in trt_funcs {
         let new_func_name = format!("{}::{}", trt, func_name);
         //1 if already contains func with that name
@@ -221,7 +282,7 @@ fn add_trait_to_struct(
 
 fn get_trt_strct_functions(ast: &[Ast], module: &Ast) -> TraitFuncs {
     unwrap_u(&module.children).iter().filter_map(|func| {
-        if let AstNode::Function(name) = &ast[*func].value {
+        if let AstNode::Function(name) | AstNode::StaticFunction(name) = &ast[*func].value {
             let func_children = unwrap_u(&ast[*func].children);
             let (args_pos, return_pos) = (func_children[1], func_children[2]);
             let args_children = unwrap_u(&ast[args_pos].children);
@@ -229,7 +290,7 @@ fn get_trt_strct_functions(ast: &[Ast], module: &Ast) -> TraitFuncs {
                 Some(
                     args_children.iter()
                         .map(|x| ast[*x].typ.clone().unwrap())
-                        .collect::<Vec<Type>>()
+                        .collect()
                 )
             };
             let return_typ = ast[return_pos].typ.clone();
@@ -379,6 +440,9 @@ pub fn make_ast_statement(
                 while !matches!(tokens[pos], SolidToken::NewLine) {
                     pos += 1;
                 }
+            }
+            SolidToken::Enum => {
+                pos = make_enum(tokens, pos + 1, ast, parent, indent, info);
             }
             _ => panic!("unexpected token `{:?}`", token)
         }

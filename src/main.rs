@@ -28,6 +28,9 @@ static mut IS_COMPILED: bool = false;
 static mut IGNORE_TRAITS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 static mut IGNORE_STRUCTS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 static mut IGNORE_FUNCS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
+static mut IGNORE_ENUMS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
+
+const EMPTY_STR: String = String::new();
 
 // 2 optimizations:
 // lto = "fat"
