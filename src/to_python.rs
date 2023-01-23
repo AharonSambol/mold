@@ -34,13 +34,14 @@ pub fn to_python(
             }
             res
         },
-        AstNode::Function(name) => {
-            let name = if name.contains("::") {
-                name.split("::").last().unwrap().to_string()
-            } else { name.clone() };
+        AstNode::Function(name)=> {
             if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
                 return EMPTY_STR;
             }
+
+            let name = if name.contains("::") {
+                name.split("::").last().unwrap().to_string()
+            } else { name.clone() };
             if indentation == 1 {
                 format!(
 "def {name}({}){}:
@@ -60,13 +61,25 @@ pub fn to_python(
             }
         },
         AstNode::StaticFunction(name) => {
-            format!(
-                "@staticmethod\n{}def {name}({}){}:{}",
-                "\t".repeat(indentation),
-                to_python(ast, children[1], indentation, ToWrapVal::Nothing), // param
-                to_python(ast, children[2], indentation, ToWrapVal::Nothing), // return
-                to_python(ast, children[3], indentation + 1, ToWrapVal::Nothing) // body
-            )
+            if indentation != 0 {
+                format!(
+                    "@staticmethod\n{}def {name}({}){}:{}",
+                    "\t".repeat(indentation),
+                    to_python(ast, children[1], indentation, ToWrapVal::Nothing), // param
+                    to_python(ast, children[2], indentation, ToWrapVal::Nothing), // return
+                    to_python(ast, children[3], indentation + 1, ToWrapVal::Nothing) // body
+                )
+            } else {
+                if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
+                    return EMPTY_STR;
+                }
+                format!(
+                    "def {name}({}){}:{}",
+                    to_python(ast, children[1], indentation, ToWrapVal::Nothing), // param
+                    to_python(ast, children[2], indentation, ToWrapVal::Nothing), // return
+                    to_python(ast, children[3], indentation + 1, ToWrapVal::Nothing) // body
+                )
+            }
         },
         AstNode::ReturnType => { EMPTY_STR },
         AstNode::IfStatement => {
@@ -143,19 +156,28 @@ pub fn to_python(
         AstNode::UnaryOp(op) => {
             match op {
                 OperatorType::MutPointer => {
-                    format!("_pointer_({})",
+                    let p = format!("_pointer_({})",
                         to_python(ast, children[0], indentation, ToWrapVal::GetName)
-                    )
+                    );
+                    match add_val_wrapper {
+                        ToWrapVal::Nothing => panic!(),
+                        ToWrapVal::GetAsValue => format!("_value_({p})"),
+                        ToWrapVal::GetName | ToWrapVal::GetInnerValue => p,
+                    }
                 }
                 OperatorType::Pointer => {
-                    format!("_pointer_({})",
+                    let p = format!("_pointer_({})",
                              to_python(ast, children[0], indentation, ToWrapVal::GetName)
-                    )
+                    );
+                    match add_val_wrapper {
+                        ToWrapVal::Nothing => panic!(),
+                        ToWrapVal::GetAsValue => format!("_value_({p})"),
+                        ToWrapVal::GetName | ToWrapVal::GetInnerValue => p,
+                    }
                 }
                 OperatorType::Dereference => {
-
                     let r = format!("{}.p",
-                         to_python(ast, children[0], indentation, ToWrapVal::GetName) //todo GetAsValue?
+                         to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue)
                     );
                     match add_val_wrapper {
                         ToWrapVal::Nothing => panic!(),
@@ -236,7 +258,18 @@ pub fn to_python(
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
                 ToWrapVal::GetAsValue => {
-                    let mut res = String::from("_value_([");
+                    let mut res = String::from("_value_(_built_in_list_([");
+                    for (i, child) in children.iter().enumerate() {
+                        if i != 0 {
+                            write!(res, ", ").unwrap();
+                        }
+                        write!(res, "{}", to_python(ast, *child, indentation + 1, ToWrapVal::GetInnerValue)).unwrap();
+                    }
+                    write!(res, "]))").unwrap();
+                    res
+                },
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => {
+                    let mut res = String::from("_built_in_list_([");
                     for (i, child) in children.iter().enumerate() {
                         if i != 0 {
                             write!(res, ", ").unwrap();
@@ -244,17 +277,6 @@ pub fn to_python(
                         write!(res, "{}", to_python(ast, *child, indentation + 1, ToWrapVal::GetInnerValue)).unwrap();
                     }
                     write!(res, "])").unwrap();
-                    res
-                },
-                ToWrapVal::GetName | ToWrapVal::GetInnerValue => {
-                    let mut res = String::from("[");
-                    for (i, child) in children.iter().enumerate() {
-                        if i != 0 {
-                            write!(res, ", ").unwrap();
-                        }
-                        write!(res, "{}", to_python(ast, *child, indentation + 1, ToWrapVal::GetInnerValue)).unwrap();
-                    }
-                    write!(res, "]").unwrap();
                     res
                 },
             }
@@ -487,7 +509,8 @@ pub fn to_python(
         AstNode::Break => String::from("break"),
         AstNode::GenericsDeclaration | AstNode::Trait { .. } => EMPTY_STR,
         AstNode::Enum(_name) => {
-            todo!()
+            EMPTY_STR
+            // todo!()
             // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)

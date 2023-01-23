@@ -1,29 +1,6 @@
 use crate::construct_ast::ast_structure::join;
-use std::fmt::{Write};
-use std::path::Display;
+use std::fmt::Write;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, make_primitive};
-/*
-macro_rules! get_types {
-    () => {
-        fn for_struct(&self) -> &Option<String> { &self.for_strct }
-        fn input(&self) -> &Option<Vec<Type>> { &self.input_types }
-        fn output(&self) -> &Option<Type> { &self.output_types }
-    };
-}
-macro_rules! to_py {
-    ($x: expr) => {
-        fn to_str_python(
-            &self, ast: &[Ast], children: &[usize],
-            built_ins: &HashMap<&str, Box<dyn BuiltIn>>
-        ) -> String {
-            format!($x,
-                close_python(ast, children, built_ins, false)
-            )
-        }
-    };
-}
-*/
-
 
 
 enum BuiltIn { Struct(BuiltInStruct), Func(BuiltInFunc), Trait(BuiltInTrait), Enum(BuiltInEnum) }
@@ -31,7 +8,6 @@ struct BuiltInStruct {
     name: &'static str,
     generics: Option<Vec<&'static str>>,
     methods: Vec<&'static str>,
-    _parameters: Vec<&'static str>,
     types: Option<Vec<&'static str>>,
     traits: Option<Vec<&'static str>>,
 }
@@ -41,7 +17,6 @@ struct BuiltInTrait {
     generics: Option<Vec<&'static str>>,
     methods: Vec<&'static str>,
     types: Option<Vec<&'static str>>,
-    _parameters: Vec<&'static str>,
     ignore: bool
 }
 struct BuiltInFunc {
@@ -93,7 +68,6 @@ pub fn put_at_start(input: &str) -> String {
                 // todo is(digit\numeric\ascii...)
                 // todo "join(lst: List[T]) -> int",
             ],
-            _parameters: vec![],
             traits: Some(vec!["Debug", "Display"]),
         }),
         //1 Iter
@@ -105,7 +79,6 @@ pub fn put_at_start(input: &str) -> String {
                 "into_iter(self) -> Iterator[Item=&T]",
                 "next(self: &mut Self) -> Option[&T]",
             ],
-            _parameters: vec![],
             types: Some(vec![
                 "IntoIterator.Item = &T",
                 "Iterator.Item = &T"
@@ -121,7 +94,6 @@ pub fn put_at_start(input: &str) -> String {
                 "into_iter(self) -> Iterator[Item=&mut T]",
                 "next(self: &mut Self) -> Option[&mut T]"
             ],
-            _parameters: vec![],
             types: Some(vec![
                 "IntoIterator.Item = &mut T",
                 "Iterator.Item = &mut T"
@@ -137,7 +109,6 @@ pub fn put_at_start(input: &str) -> String {
                 "__init__(self)",
                 "new(t: T) -> Box[T]",
             ],
-            _parameters: vec![],
             traits: Some(vec!["Debug"]),
         }),
         //1 Vec
@@ -155,7 +126,6 @@ pub fn put_at_start(input: &str) -> String {
                 "append(self, t: T)",
                 "index(self, pos: usize) -> T",
             ],
-            _parameters: vec![],
             traits: Some(vec!["Debug"]),
         }),
         //1 Set
@@ -167,7 +137,6 @@ pub fn put_at_start(input: &str) -> String {
                "__init__(self)",
                 "add(self, t: T)",
             ],
-            _parameters: vec![],
             traits: Some(vec!["Debug"]),
         }),
         //1 Dict
@@ -178,7 +147,6 @@ pub fn put_at_start(input: &str) -> String {
             methods: vec![
                 "__init__(self)",
             ], // todo
-            _parameters: vec![],
             traits: Some(vec!["Debug"]),
         }),
         //2 __len__
@@ -190,7 +158,6 @@ pub fn put_at_start(input: &str) -> String {
                 "__len__(self) -> int"
             ],
             types: None,
-            _parameters: vec![],
             ignore: false
         }),
         //2 Iterator
@@ -203,7 +170,6 @@ pub fn put_at_start(input: &str) -> String {
                 "next(self: &mut Self) -> Option[Item]"
             ],
             types: Some(vec!["Item"]),
-            _parameters: vec![],
             ignore: true
         }),
         //2 Display
@@ -213,7 +179,6 @@ pub fn put_at_start(input: &str) -> String {
             generics: None,
             methods: vec![],
             types: None,
-            _parameters: vec![],
             ignore: true,
         }),
         //2 Debug
@@ -223,7 +188,6 @@ pub fn put_at_start(input: &str) -> String {
             generics: None,
             methods: vec![],
             types: None,
-            _parameters: vec![],
             ignore: true,
         }),
         //2 IntoIterator
@@ -235,7 +199,6 @@ pub fn put_at_start(input: &str) -> String {
                 "into_iter(self) -> Iterator[Item=Item]"
             ],
             types: Some(vec!["Item"]),
-            _parameters: vec![],
             ignore: true,
         }),
         //3 Option
@@ -263,7 +226,7 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "print",
             generics: None,
-            args: vec!["a: Display"],
+            args: vec!["a: Display"], // TODO or Debug // TODO zero or more args
             return_typ: None,
         }),
         //4 reversed
@@ -281,7 +244,6 @@ pub fn put_at_start(input: &str) -> String {
                 "into_iter() -> IntoIter[T::Item]", //3 this is what's wrong
                 "iter() -> Iter[T]",
             ],
-            _parameters: vec![],
         }),
 
          */
@@ -353,7 +315,7 @@ pub fn put_at_start(input: &str) -> String {
                 } else {
                     EMPTY_STR
                 };
-                writeln!(data, "def {}{generics}({args}){rtrn}:", func.name).unwrap();
+                writeln!(data, "def {}{generics}({args}){rtrn}:\n\tpass", func.name).unwrap();
             },
             BuiltIn::Enum(enm) => {
                 if enm.ignore {
@@ -428,71 +390,7 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
             children: None,
         }
     };
-
-    /*1 print */{
-        res.insert(
-            "print",
-            Box::new(Print {
-                input_types: some_vec![Type {
-                    kind: TypeKind::Trait(TypName::Static("Display")),
-                    children: None,
-                }],
-                output_types: None,
-                for_strct: None,
-            }),
-        );
-    }
-    /*1 dprint */{
-        res.insert(
-            "dprint",
-            Box::new(DPrint {
-                input_types: some_vec![Type {
-                    kind: TypeKind::Trait(TypName::Static("Debug")),
-                    children: None,
-                }],
-                output_types: None,
-                for_strct: None,
-            }),
-        );
-    }
-    // /*1 range */{
-    //     res.insert(
-    //         "range",
-    //         Box::new(Range {
-    //             input_types: some_vec![
-    //                 int_type.clone(),
-    //                 Type {
-    //                     kind: TypeKind::Optional,
-    //                     children: some_vec![ int_type.clone(), int_type.clone() ],
-    //                 }
-    //             ],
-    //             output_types: Some(Type {
-    //                 kind: ITER_TYPE,
-    //                 children: some_vec![
-    //                     Type {
-    //                         kind: TypeKind::GenericsMap,
-    //                         children: some_vec![
-    //                             Type {
-    //                                 kind: TypeKind::Generic(GenericType::Of(String::from("T"))),
-    //                                 children: some_vec![int_type.clone()]
-    //                             }
-    //                         ]
-    //                     }],
-    //             }),
-    //             for_strct: None,
-    //         }),
-    //     );
-    // }
-    /*1 rev */{
-        // res.insert(
-        //     "rev",
-        //     Box::new(Rev {
-        //         input_types: some_vec![generic_iter.clone()]),
-        //         output_types: Some(generic_iter.clone()),
-        //         for_strct: None,
-        //     }),
-        // );
-    }
+    
     /*1 enumerate */{
         res.insert(
             "enumerate",
@@ -567,153 +465,6 @@ pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
     }
 
     res
-}
-
-pub trait BuiltIn {
-    fn for_struct(&self) -> &Option<String>;
-    fn input(&self) -> &Option<Vec<Type>>;
-    fn output(&self) -> &Option<Type>;
-    fn to_str_rust(
-        &self,
-        ast: &[Ast],
-        res: &mut String,
-        children: &[usize],
-        built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-        enums: &mut HashMap<String, String>,
-    );
-    fn to_str_python(
-        &self, ast: &[Ast], children: &[usize],
-        built_ins: &HashMap<&str, Box<dyn BuiltIn>>) -> String;
-}
-
-struct Print {
-    input_types: Option<Vec<Type>>,
-    output_types: Option<Type>,
-    for_strct: Option<String>,
-}
-impl BuiltIn for Print {
-    get_types!();
-    // TODO get inputs and then based off of types put {} or {:?}
-    fn to_str_rust(
-        &self,
-        ast: &[Ast],
-        res: &mut String,
-        children: &[usize],
-        built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-        enums: &mut HashMap<String, String>,
-    ) {
-        write!(
-            res,
-            "println!(\"{}\", ",
-            "{} "
-                .repeat(unwrap_u(&ast[children[1]].children).len())
-                .strip_suffix(' ')
-                .unwrap_or("")
-        )
-        .unwrap();
-        close_rust(ast, res, children, built_ins, enums);
-    }
-    to_py!("print({}");
-}
-struct DPrint {
-    input_types: Option<Vec<Type>>,
-    output_types: Option<Type>,
-    for_strct: Option<String>,
-}
-impl BuiltIn for DPrint {
-    get_types!();
-
-    // TODO get inputs and then based off of types put {} or {:?}
-    fn to_str_rust(
-        &self,
-        ast: &[Ast],
-        res: &mut String,
-        children: &[usize],
-        built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-        enums: &mut HashMap<String, String>,
-    ) {
-        write!(
-            res,
-            "println!(\"{}\", ",
-            "{:?} "
-                .repeat(unwrap_u(&ast[children[1]].children).len())
-                .strip_suffix(' ')
-                .unwrap()
-        )
-        .unwrap();
-        close_rust(ast, res, children, built_ins, enums);
-    }
-
-    to_py!("print({}");
-}
-
-struct Range {
-    input_types: Option<Vec<Type>>,
-    output_types: Option<Type>,
-    for_strct: Option<String>,
-}
-impl BuiltIn for Range {
-    get_types!();
-
-    fn to_str_rust(
-        &self,
-        ast: &[Ast],
-        res: &mut String,
-        children: &[usize],
-        built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-        enums: &mut HashMap<String, String>,
-    ) {
-        let args = unwrap_u(&ast[children[1]].children);
-        match args.len() {
-            1 => {
-                write!(res, "(0..").unwrap();
-                to_rust(ast, args[0], 0, res, built_ins, enums);
-                write!(res, ")").unwrap();
-            },
-            2 => {
-                write!(res, "(").unwrap();
-                to_rust(ast, args[0], 0, res, built_ins, enums);
-                write!(res, "..").unwrap();
-                to_rust(ast, args[1], 0, res, built_ins, enums);
-                write!(res, ")").unwrap();
-            },
-            3 => {
-                write!(res, "(").unwrap();
-                to_rust(ast, args[0], 0, res, built_ins, enums);
-                write!(res, "..").unwrap();
-                to_rust(ast, args[1], 0, res, built_ins, enums);
-                write!(res, ").step_by(").unwrap();
-                to_rust(ast, args[2], 0, res, built_ins, enums);
-                write!(res, ")").unwrap();
-            },
-            _ => panic!("too many args passed to range, expected 1-3 found {}", children.len())
-        }
-    }
-
-    to_py!("range({}");
-}
-
-struct Rev {
-    input_types: Option<Vec<Type>>,
-    output_types: Option<Type>,
-    for_strct: Option<String>,
-}
-impl BuiltIn for Rev {
-    get_types!();
-
-    fn to_str_rust(
-        &self,
-        ast: &[Ast],
-        res: &mut String,
-        children: &[usize],
-        built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-        enums: &mut HashMap<String, String>,
-    ) {
-        to_rust(ast, children[1], 0, res, built_ins, enums);
-        write!(res, ".rev()").unwrap();
-    }
-
-    to_py!("reversed({}");
 }
 
 struct Enumerate {
@@ -807,29 +558,4 @@ impl BuiltIn for Float {
 
     to_py!("float({}");
 }
-
-
-fn close_python(
-    ast: &[Ast], children: &[usize],
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>, add_index: bool
-) -> String {
-    if children.len() > 1 {
-        format!("{})", to_python(ast, children[1], 0, built_ins, ToWrapVal::GetAsValue))
-    } else {
-        String::from(")")
-    }
-}
-fn close_rust(
-    ast: &[Ast],
-    res: &mut String,
-    children: &[usize],
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-    enums: &mut HashMap<String, String>,
-) {
-    if children.len() > 1 {
-        to_rust(ast, children[1], 0, res, built_ins, enums);
-    }
-    write!(res, ")").unwrap();
-}
-
 */

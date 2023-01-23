@@ -21,6 +21,7 @@ use std::process::Command;
 use once_cell::sync::Lazy;
 use crate::built_in_funcs::{put_at_start};
 use crate::construct_ast::mold_ast;
+use crate::construct_ast::mold_ast::Info;
 use crate::mold_tokens::SolidToken;
 use crate::to_python::ToWrapVal;
 
@@ -39,9 +40,10 @@ const EMPTY_STR: String = String::new();
 fn main() {
     // todo remove
     unsafe {
-        IS_COMPILED = true;
+        // IS_COMPILED = true;
     }
     let mut path = String::from("tests/input_program.py");
+    // let mut path = String::from("tests/pointers.py");
     // let mut path = String::from("tests/generics.py");
     // let mut path = String::from("tests/lists.py");
     for argument in env::args() {
@@ -57,11 +59,19 @@ fn main() {
     let data = put_at_start(&data);
     let tokens = mold_tokens::tokenize(&data);
     println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidToken)>>());
-
-    let ast = mold_ast::construct_ast(&tokens, 0);
+    let mut info = Info {
+        funcs: &mut Default::default(),
+        structs: &mut Default::default(),
+        traits: &mut Default::default(),
+        enums: &mut Default::default(),
+        types: &mut Default::default(),
+        generics: &mut vec![],
+        struct_inner_types: &mut Default::default(),
+    };
+    let ast = mold_ast::construct_ast(&tokens, 0, &mut info);
 
     if unsafe { IS_COMPILED } {
-        compile(&ast)
+        compile(&ast, &info)
     } else {
         interpret(&ast);
     }
@@ -73,6 +83,17 @@ fn interpret(ast: &[Ast]) {
     let py = format!(
         r#"from typing import *
 from copy import deepcopy
+
+
+class _built_in_list_(list):
+    def iter(self):
+        return iter(_pointer_(_value_(x)) for x in self)
+
+    def iter_mut(self):
+        return iter(_pointer_(_value_(x)) for x in self)
+
+
+list = _built_in_list_
 
 
 class _value_:
@@ -106,10 +127,10 @@ if __name__ == '__main__':
     output.wait().unwrap();
 }
 
-fn compile(ast: &[Ast]) {
+fn compile(ast: &[Ast], info: &Info) {
     let mut rs = String::new();
     let mut enums = HashMap::new();
-    to_rust::to_rust(ast, 0, 0, &mut rs, &mut enums);
+    to_rust::to_rust(ast, 0, 0, &mut rs, &mut enums, info);
     let rs = rs.trim();
     println!("\n{}", join(enums.values(), "\n\n"));
     println!("\n{}", rs);

@@ -36,8 +36,8 @@ def main():
 #     a := len(lst)
 #     r := range(0, 10)
     r := [1, 2, 3]
-#     r := r.iter()
-    r := reversed(r.iter())
+    r := r.iter_mut()
+#     r := reversed(r.iter())
 #     r : IntoIterator[Item=i32] = r
     for i in r:
 #     for i in range(0, 10, 2):

@@ -40,7 +40,6 @@
                 concat!("clone() -> ", stringify!($val)),
                 "__init__(self)"
             ],
-            _parameters: vec![],
             types: None,
             traits: Some(vec![
                 "Debug", "Display"

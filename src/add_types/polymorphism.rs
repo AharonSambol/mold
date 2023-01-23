@@ -104,7 +104,6 @@ pub fn check_for_boxes(
         let expected_trait =
             if let TypeKind::Trait(name) = &expected.kind { Some(name) } else { None };
         if !supplied_box(got, vars, ast, info, pos) {
-            // TODO just boxing it doesnt correctly cast it to a trait
             if let Some(expected_trait) = expected_trait {
                 let mut got_typ = unwrap_enum!(&got.typ);
                 if let TypeKind::Generic(GenericType::Of(_)) = &got_typ.kind {

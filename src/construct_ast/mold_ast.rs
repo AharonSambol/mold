@@ -76,22 +76,29 @@ pub struct Info<'a> {
 }
 
 
-pub fn construct_ast(tokens: &[SolidToken], pos: usize) -> Vec<Ast> {
+pub fn construct_ast(tokens: &[SolidToken], pos: usize, info: &mut Info) -> Vec<Ast> {
     let (mut structs, mut funcs, mut traits, mut types, mut enums)
         = get_struct_and_func_names(tokens);
     let mut ast = vec![Ast::new(AstNode::Module)];
-    let mut info = Info {
-        funcs: &mut funcs,
-        structs: &mut structs,
-        traits: &mut traits,
-        types: &mut types,
-        enums: &mut enums,
-        generics: &mut vec![],
-        struct_inner_types: &mut HashSet::new()
-    };
+    // let mut info = Info {
+    //     funcs: &mut funcs,
+    //     structs: &mut structs,
+    //     traits: &mut traits,
+    //     types: &mut types,
+    //     enums: &mut enums,
+    //     generics: &mut vec![],
+    //     struct_inner_types: &mut HashSet::new()
+    // };
+    *info.funcs = funcs;
+    *info.structs = structs;
+    *info.traits = traits;
+    *info.types = types;
+    *info.enums = enums;
+    *info.generics = vec![];
+    *info.struct_inner_types = HashSet::new();
     make_ast_statement(
         tokens, pos, &mut ast, 0, 0,
-        &mut vec![HashMap::new()], &mut info
+        &mut vec![HashMap::new()], info
     );
     // add_traits_to_structs(&mut ast)
     duck_type(&mut ast, info.traits, info.structs);
@@ -99,7 +106,7 @@ pub fn construct_ast(tokens: &[SolidToken], pos: usize) -> Vec<Ast> {
     if unsafe { IS_COMPILED } {
         add_types(
             &mut ast, 0, &mut vec![HashMap::new()],
-            &mut info, &None
+            info, &None
         );
         print_tree((ast.clone(), 0));
     }
