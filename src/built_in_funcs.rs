@@ -1,11 +1,8 @@
-use crate::construct_ast::ast_structure::{Ast, join};
-use crate::to_python::{to_python, ToWrapVal};
-use crate::to_rust::to_rust;
-use crate::types::{unwrap_u, Type, TypeKind, INT_TYPE, GenericType, STR_TYPE, CHAR_TYPE, BOOL_TYPE, FLOAT_TYPE, MUT_STR_TYPE, TypName, ITER_TYPE};
-use std::collections::HashMap;
-use std::fmt::Write;
-use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, make_primitive, some_vec, typ_with_child};
-
+use crate::construct_ast::ast_structure::join;
+use std::fmt::{Write};
+use std::path::Display;
+use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, make_primitive};
+/*
 macro_rules! get_types {
     () => {
         fn for_struct(&self) -> &Option<String> { &self.for_strct }
@@ -25,17 +22,18 @@ macro_rules! to_py {
         }
     };
 }
+*/
 
 
 
-
-enum StructFunc { Struct(BuiltInStruct), Func(BuiltInFunc), Trait(BuiltInTrait), Enum(BuiltInEnum) }
+enum BuiltIn { Struct(BuiltInStruct), Func(BuiltInFunc), Trait(BuiltInTrait), Enum(BuiltInEnum) }
 struct BuiltInStruct {
     name: &'static str,
     generics: Option<Vec<&'static str>>,
     methods: Vec<&'static str>,
     _parameters: Vec<&'static str>,
     types: Option<Vec<&'static str>>,
+    traits: Option<Vec<&'static str>>,
 }
 struct BuiltInTrait {
     name: &'static str,
@@ -69,7 +67,7 @@ pub fn put_at_start(input: &str) -> String {
         make_primitive!(f32), make_primitive!(f64),
         make_primitive!(bool), make_primitive!(str), make_primitive!(char),
         //1 String
-        StructFunc::Struct(BuiltInStruct{
+        BuiltIn::Struct(BuiltInStruct{
             name: "String",
             generics: None,
             types: None,
@@ -96,21 +94,42 @@ pub fn put_at_start(input: &str) -> String {
                 // todo "join(lst: List[T]) -> int",
             ],
             _parameters: vec![],
+            traits: Some(vec!["Debug", "Display"]),
         }),
-        // 2 IntoIterator
-        StructFunc::Trait(BuiltInTrait{
-            name: "IntoIterator",
-            duck: false,
-            generics: None,
+        //1 Iter
+        BuiltIn::Struct(BuiltInStruct{
+            name: "Iter",
+            generics: Some(vec!["T"]),
             methods: vec![
-                "into_iter(self) -> Iterator[Item=Item]"
+                "__init__(self)",
+                "into_iter(self) -> Iterator[Item=&T]",
+                "next(self: &mut Self) -> Option[&T]",
             ],
-            types: Some(vec!["Item"]),
             _parameters: vec![],
-            ignore: true,
+            types: Some(vec![
+                "IntoIterator.Item = &T",
+                "Iterator.Item = &T"
+            ]),
+            traits: Some(vec!["Debug"]),
+        }),
+        //1 IterMut
+        BuiltIn::Struct(BuiltInStruct{
+            name: "IterMut",
+            generics: Some(vec!["T"]),
+            methods: vec![
+                "__init__(self)",
+                "into_iter(self) -> Iterator[Item=&mut T]",
+                "next(self: &mut Self) -> Option[&mut T]"
+            ],
+            _parameters: vec![],
+            types: Some(vec![
+                "IntoIterator.Item = &mut T",
+                "Iterator.Item = &mut T"
+            ]),
+            traits: Some(vec!["Debug"]),
         }),
         //1 Box
-        StructFunc::Struct(BuiltInStruct{
+        BuiltIn::Struct(BuiltInStruct{
             name: "Box",
             generics: Some(vec!["T"]),
             types: None,
@@ -119,9 +138,10 @@ pub fn put_at_start(input: &str) -> String {
                 "new(t: T) -> Box[T]",
             ],
             _parameters: vec![],
+            traits: Some(vec!["Debug"]),
         }),
         //1 Vec
-        StructFunc::Struct(BuiltInStruct{
+        BuiltIn::Struct(BuiltInStruct{
             name: "Vec",
             generics: Some(vec!["T"]),
             types: Some(vec![
@@ -130,13 +150,16 @@ pub fn put_at_start(input: &str) -> String {
             methods: vec![
                 "__init__(self)",
                 "into_iter(self) -> IntoIterator[Item=T]",
+                "iter(self) -> Iter[T]",
+                "iter_mut(self) -> IterMut[T]",
                 "append(self, t: T)",
                 "index(self, pos: usize) -> T",
             ],
             _parameters: vec![],
+            traits: Some(vec!["Debug"]),
         }),
         //1 Set
-        StructFunc::Struct(BuiltInStruct{
+        BuiltIn::Struct(BuiltInStruct{
             name: "HashSet",
             generics: Some(vec!["T"]),
             types: None,
@@ -145,9 +168,10 @@ pub fn put_at_start(input: &str) -> String {
                 "add(self, t: T)",
             ],
             _parameters: vec![],
+            traits: Some(vec!["Debug"]),
         }),
         //1 Dict
-        StructFunc::Struct(BuiltInStruct{
+        BuiltIn::Struct(BuiltInStruct{
             name: "HashMap",
             generics: Some(vec!["K", "V"]),
             types: None,
@@ -155,9 +179,10 @@ pub fn put_at_start(input: &str) -> String {
                 "__init__(self)",
             ], // todo
             _parameters: vec![],
+            traits: Some(vec!["Debug"]),
         }),
         //2 __len__
-        StructFunc::Trait(BuiltInTrait {
+        BuiltIn::Trait(BuiltInTrait {
             name: "__len__",
             duck: true,
             generics: None,
@@ -168,34 +193,8 @@ pub fn put_at_start(input: &str) -> String {
             _parameters: vec![],
             ignore: false
         }),
-        //4 len
-        StructFunc::Func(BuiltInFunc {
-            name: "len",
-            generics: None,
-            args: vec!["x: __len__"],
-            return_typ: Some("int"),
-        }),
-        //2 __next__
-        /*StructFunc::Trait(BuiltInTrait {
-            name: "__next__",
-            duck: true,
-            generics: None,
-            methods: vec![
-                "__next__(self: &mut Self) -> Inner"
-            ],
-            types: Some(vec!["Inner"]),
-            _parameters: vec![],
-            ignore: false
-        }),*/
-        //3 Option
-        StructFunc::Enum(BuiltInEnum {
-            name: "Option",
-            generics: Some(vec!["T"]),
-            args: vec!["Some(T)", "None"],
-            ignore: true,
-        }),
         //2 Iterator
-        StructFunc::Trait(BuiltInTrait {
+        BuiltIn::Trait(BuiltInTrait {
             name: "Iterator",
             duck: false,
             generics: None,
@@ -207,14 +206,72 @@ pub fn put_at_start(input: &str) -> String {
             _parameters: vec![],
             ignore: true
         }),
-
-
-        // 4 range
-        StructFunc::Func(BuiltInFunc {
+        //2 Display
+        BuiltIn::Trait(BuiltInTrait {
+            name: "Display",
+            duck: false,
+            generics: None,
+            methods: vec![],
+            types: None,
+            _parameters: vec![],
+            ignore: true,
+        }),
+        //2 Debug
+        BuiltIn::Trait(BuiltInTrait {
+            name: "Debug",
+            duck: false,
+            generics: None,
+            methods: vec![],
+            types: None,
+            _parameters: vec![],
+            ignore: true,
+        }),
+        //2 IntoIterator
+        BuiltIn::Trait(BuiltInTrait{
+            name: "IntoIterator",
+            duck: false,
+            generics: None,
+            methods: vec![
+                "into_iter(self) -> Iterator[Item=Item]"
+            ],
+            types: Some(vec!["Item"]),
+            _parameters: vec![],
+            ignore: true,
+        }),
+        //3 Option
+        BuiltIn::Enum(BuiltInEnum {
+            name: "Option",
+            generics: Some(vec!["T"]),
+            args: vec!["Some(T)", "None"],
+            ignore: true,
+        }),
+        //4 len
+        BuiltIn::Func(BuiltInFunc {
+            name: "len",
+            generics: None,
+            args: vec!["x: __len__"],
+            return_typ: Some("int"),
+        }),
+        //4 range
+        BuiltIn::Func(BuiltInFunc {
             name: "range",
             generics: None,
             args: vec!["start: int", "end: int", "step: int"],
             return_typ: Some("Iterator[Item=int]"),
+        }),
+        //4 print
+        BuiltIn::Func(BuiltInFunc {
+            name: "print",
+            generics: None,
+            args: vec!["a: Display"],
+            return_typ: None,
+        }),
+        //4 reversed
+        BuiltIn::Func(BuiltInFunc{
+            name: "reversed",
+            generics: Some(vec!["T"]),
+            args: vec!["t: Iterator[Item=T]"],
+            return_typ: Some("Iterator[Item=T]"),
         }),
         /* //1 Rev
         StructFunc::Struct(BuiltInStruct{
@@ -226,19 +283,13 @@ pub fn put_at_start(input: &str) -> String {
             ],
             _parameters: vec![],
         }),
-        //1 reversed
-        StructFunc::Func(BuiltInFunc{
-            name: "reversed",
-            generics: Some(vec!["T"]),
-            args: vec!["t: Iter[T]"],
-            return_typ: Some("Rev[Iter[T]]"),
-        }),
+
          */
     ];
     writeln!(data).unwrap();
     for add in to_add {
         match add {
-            StructFunc::Trait(trt) => {
+            BuiltIn::Trait(trt) => {
                 if trt.ignore {
                     unsafe {
                         IGNORE_TRAITS.insert(trt.name);
@@ -263,14 +314,19 @@ pub fn put_at_start(input: &str) -> String {
                 }
                 writeln!(data).unwrap();
             }
-            StructFunc::Struct(stct) => {
+            BuiltIn::Struct(stct) => {
                 unsafe {
                     IGNORE_STRUCTS.insert(stct.name);
                 }
                 if let Some(generics) = stct.generics {
-                    write!(data, "struct {}<{}>:", stct.name, join(generics.iter(), ",")).unwrap();
+                    write!(data, "struct {}<{}>", stct.name, join(generics.iter(), ",")).unwrap();
                 } else {
-                    write!(data, "struct {}:", stct.name).unwrap();
+                    write!(data, "struct {}", stct.name).unwrap();
+                }
+                if let Some(traits) = stct.traits {
+                    write!(data, "({}):", join(traits.iter(), ",")).unwrap();
+                } else {
+                    write!(data, ":").unwrap();
                 }
                 if let Some(types) = stct.types {
                     for typ in types {
@@ -282,7 +338,7 @@ pub fn put_at_start(input: &str) -> String {
                 }
                 writeln!(data).unwrap();
             },
-            StructFunc::Func(func) => {
+            BuiltIn::Func(func) => {
                 unsafe {
                     IGNORE_FUNCS.insert(func.name);
                 }
@@ -299,7 +355,7 @@ pub fn put_at_start(input: &str) -> String {
                 };
                 writeln!(data, "def {}{generics}({args}){rtrn}:", func.name).unwrap();
             },
-            StructFunc::Enum(enm) => {
+            BuiltIn::Enum(enm) => {
                 if enm.ignore {
                     unsafe { IGNORE_ENUMS.insert(enm.name); }
                 }
@@ -310,7 +366,6 @@ pub fn put_at_start(input: &str) -> String {
                     EMPTY_STR
                 };
                 writeln!(data, "enum {}{generics}:\n\t{args}", enm.name).unwrap();
-
             }
         }
     }
@@ -320,7 +375,7 @@ pub fn put_at_start(input: &str) -> String {
 }
 
 
-
+/*
 pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
     let mut res: HashMap<&'static str, Box<dyn BuiltIn>> = HashMap::new();
 
@@ -777,3 +832,4 @@ fn close_rust(
     write!(res, ")").unwrap();
 }
 
+*/

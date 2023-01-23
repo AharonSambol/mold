@@ -1,12 +1,12 @@
-trait CC:
-    type Item
-    def a(self) -> Item
-struct AA:
-    type CC.Item = i32
-    def a(self) -> i32:
-        return 1
-    def __init__(self):
-        pass
+# trait CC:
+#     type Item
+#     def a(self) -> Item
+# struct AA(Display):
+#     type CC.Item = i32
+#     def a(self) -> i32:
+#         return 1
+#     def __init__(self):
+#         pass
 
 #     def rng(a: int, b: int) -> Iterator[Item=I]:
 #         return [a].into_iter()
@@ -34,12 +34,14 @@ struct AA:
 def main():
 #     lst: IList = [1, 2, 64, 214, 43, 56, 32, 3, 23, 5, 12, 532, 634, 2, 35, 34, 6]
 #     a := len(lst)
-    r := range(0, 10)
-#     r := [1, 2, 3]
+#     r := range(0, 10)
+    r := [1, 2, 3]
+#     r := r.iter()
+    r := reversed(r.iter())
 #     r : IntoIterator[Item=i32] = r
-    for i in range(10):
+    for i in r:
 #     for i in range(0, 10, 2):
 #     for i in [1, 2, 3]:
         x := i
-        print(i)
+        print(*i)
 #     bubble_sort(lst)

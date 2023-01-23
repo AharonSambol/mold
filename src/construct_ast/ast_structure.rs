@@ -65,7 +65,7 @@ pub enum AstNode {
     SetLiteral, // children = elements
     StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
     String { val: String, mutable: bool, },
-    Struct(String), // children[0] = args, children[1] = functions, children[2] = body
+    Struct(String), // children[0] = args, children[1] = functions, children[2] = body, children[3] = traits
     StructInit,         // children[0] = struct, children[1] = Args,
     Trait { name: String, strict: bool },  // children[0] = Module (functions)
     Traits,

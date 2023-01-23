@@ -19,7 +19,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 use once_cell::sync::Lazy;
-use crate::built_in_funcs::{BuiltIn, make_built_ins, put_at_start};
+use crate::built_in_funcs::{put_at_start};
 use crate::construct_ast::mold_ast;
 use crate::mold_tokens::SolidToken;
 use crate::to_python::ToWrapVal;
@@ -58,19 +58,17 @@ fn main() {
     let tokens = mold_tokens::tokenize(&data);
     println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidToken)>>());
 
-    let built_ins = make_built_ins();
-
-    let ast = mold_ast::construct_ast(&tokens, 0, &built_ins);
+    let ast = mold_ast::construct_ast(&tokens, 0);
 
     if unsafe { IS_COMPILED } {
-        compile(&ast, &built_ins)
+        compile(&ast)
     } else {
-        interpret(&ast, &built_ins);
+        interpret(&ast);
     }
 }
 
-fn interpret(ast: &[Ast], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
-    let py = to_python::to_python(ast, 0, 0, built_ins, ToWrapVal::Nothing);
+fn interpret(ast: &[Ast]) {
+    let py = to_python::to_python(ast, 0, 0, ToWrapVal::Nothing);
     let py = py.trim();
     let py = format!(
         r#"from typing import *
@@ -108,10 +106,10 @@ if __name__ == '__main__':
     output.wait().unwrap();
 }
 
-fn compile(ast: &[Ast], built_ins: &HashMap<&str, Box<dyn BuiltIn>>) {
+fn compile(ast: &[Ast]) {
     let mut rs = String::new();
     let mut enums = HashMap::new();
-    to_rust::to_rust(ast, 0, 0, &mut rs, built_ins, &mut enums);
+    to_rust::to_rust(ast, 0, 0, &mut rs, &mut enums);
     let rs = rs.trim();
     println!("\n{}", join(enums.values(), "\n\n"));
     println!("\n{}", rs);

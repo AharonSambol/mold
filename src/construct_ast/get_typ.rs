@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::Param;
 use crate::construct_ast::mold_ast::{Info, STType};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{clean_type, MUT_STR_TYPE, Type, UNKNOWN_TYPE, TypeKind, GenericType, TypName, print_type_b, print_type};
+use crate::types::{clean_type, MUT_STR_TYPE, Type, UNKNOWN_TYPE, TypeKind, GenericType, TypName};
 use crate::{typ_with_child, unwrap_enum, some_vec};
 
 // should be passed pos = one after the opening parenthesis

@@ -2,15 +2,15 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::{typ_with_child, unwrap_enum, some_vec};
 use crate::add_types::ast_add_types::{find_index_typ, get_enum_property_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
+use crate::add_types::generics::apply_generics_to_method_call;
 use crate::add_types::utils::get_from_stack;
-use crate::built_in_funcs::BuiltIn;
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
 use crate::mold_tokens::OperatorType;
 use crate::types::{GenericType, print_type, print_type_b, Type, TypeKind, TypName, unwrap, unwrap_u};
 
 // TODO also cast: `as Box<dyn P>`
-fn add_box(ast: &mut Vec<Ast>, pos: usize) {
+fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leaves ast[pos] without anything pointing at it
     let ast_len = ast.len();
     let inner_val = ast[pos].clone();
     let parent_pos = inner_val.parent.unwrap();
@@ -25,7 +25,6 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) {
         typ: None,
         is_mut: false,
     });
-
     let property = ast.len() - 1;
     ast[property].typ = Some(typ_with_child! {
         TypeKind::Struct(TypName::Static("Box")),
@@ -46,6 +45,7 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) {
     }
     let args_pos = ast.len() - 1;
     add_to_tree(args_pos, ast, inner_val);
+    property
 }
 
 pub fn check_for_boxes(
@@ -101,8 +101,59 @@ pub fn check_for_boxes(
 
     let got = &ast[pos].clone();
     if is_box_typ(&expected) {
+        let expected_trait =
+            if let TypeKind::Trait(name) = &expected.kind { Some(name) } else { None };
         if !supplied_box(got, vars, ast, info, pos) {
-            add_box(ast, pos);
+            // TODO just boxing it doesnt correctly cast it to a trait
+            if let Some(expected_trait) = expected_trait {
+                let mut got_typ = unwrap_enum!(&got.typ);
+                if let TypeKind::Generic(GenericType::Of(_)) = &got_typ.kind {
+                    got_typ = &unwrap(&got_typ.children)[0];
+                }
+
+                if let TypeKind::Struct(struct_name) = &got_typ.kind {
+                    let struct_def = &ast[info.structs[struct_name.get_str()].pos];
+                    let traits = &ast[unwrap_u(&struct_def.children)[3]];
+                    for trt in unwrap_u(&traits.children) {
+                        if matches!(&ast[*trt].value, AstNode::Identifier(name) if expected_trait == name) {
+                            let types = unwrap_u(&ast[*trt].children)
+                                .iter()
+                                .map(|i| (
+                                    unwrap_enum!(&ast[*i].value, AstNode::Type(name), name.clone()),
+                                    apply_generics_to_method_call(&ast[*i].typ, got_typ)
+                                ));
+                            let res = typ_with_child! {
+                                TypeKind::Trait(expected_trait.clone()),
+                                Type {
+                                    kind: TypeKind::GenericsMap,
+                                    children: Some(types.map(|(name, typ)|
+                                        typ_with_child! {
+                                            TypeKind::InnerType(name),
+                                            typ.unwrap()
+                                        }
+                                    ).collect())
+
+                                }
+                            };
+                            let pos = add_box(ast, pos);
+                            ast[pos].typ = Some(res.clone());
+                            return res
+                        }
+                    }
+                    panic!("`{struct_name}` doesn't implement trait `{expected_trait}`")
+                } else {
+                    print_type(&Some(expected.clone()));
+                    print_type(&Some(got_typ.clone()));
+                    todo!()
+                }
+            }
+            // check_for_boxes(
+            //     unwrap(&expected.children)[0].clone(), ast, pos, info, vars
+            // );
+
+            let pos = add_box(ast, pos);
+            ast[pos].typ = Some(expected.clone());
+            // TODO shouldn't it keep checking?
         } else {
             let TypeKind::Trait(_) = &expected.kind else {
                 return check_for_boxes(
@@ -113,7 +164,9 @@ pub fn check_for_boxes(
         return expected;
     }
     match expected.kind.clone() {
-        TypeKind::Struct(ex_name) | TypeKind::Trait(ex_name) | TypeKind::Enum(ex_name) => {
+        TypeKind::Struct(ex_name)
+        | TypeKind::Trait(ex_name)
+        | TypeKind::Enum(ex_name) => { // todo here !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             let expected_children = unwrap(&expected.children).clone();
             let got_children = unwrap_u(&got.children).clone();
             let typ = match &got.value {
@@ -303,12 +356,6 @@ pub fn check_for_boxes(
                 _ => panic!("expected: {:?}, got.kind: {:?}", expected.kind, got.value)
             };
             if !can_soft_cast(&typ, &expected) {
-                // if let TypeKind::Struct(name) = &expected.kind {
-                //     if let Some(typ_name) = name.get_str().strip_prefix("Self::") { // find a better way
-                //
-                //     }
-                // }
-
                 print_type(&Some(expected.clone()));
                 print_type(&Some(typ.clone()));
                 panic!("expected: `{expected}` got: `{typ}`");

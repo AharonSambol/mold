@@ -5,26 +5,24 @@ use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::find_generics::{find_generics_in_typ, get_generic_names, get_generics, is_generic};
 use crate::construct_ast::get_typ::{get_arg_typ, get_params};
 use crate::construct_ast::mold_ast::{FuncType, StructType, TraitType, Info, make_ast_statement, VarTypes, EnumType};
-use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
+use crate::construct_ast::tree_utils::{add_to_tree};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{GenericType, print_type, print_type_b, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
+use crate::types::{GenericType, print_type, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
 use crate::{IS_COMPILED, some_vec, typ_with_child, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
-use crate::built_in_funcs::BuiltIn;
 
 pub fn make_func(
     tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
     vars: &mut VarTypes, info: &mut Info,
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>
 ) -> usize {
     let (p, body_pos, func_generics) = make_func_signature(
-        tokens, pos, ast, parent, vars, info, built_ins
+        tokens, pos, ast, parent, vars, info, 
     );
     pos = p;
     info.generics.push(func_generics);
     let res = make_ast_statement(
         tokens, pos, ast, body_pos, indent + 1,
-        vars, info, built_ins
+        vars, info, 
     );
     info.generics.pop();
     res
@@ -32,8 +30,7 @@ pub fn make_func(
 
 fn make_func_signature(
     tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
-    vars: &mut VarTypes, info: &mut Info,
-    _built_ins: &HashMap<&str, Box<dyn BuiltIn>>
+    vars: &mut VarTypes, info: &mut Info
 ) -> (usize, usize, HashSet<String>) {
     // let is_static = matches!(&tokens[pos], SolidToken::Static);
     pos += 1;
@@ -150,7 +147,7 @@ fn make_func_signature(
 
 pub fn make_struct(
     tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
-    info: &mut Info, built_ins: &HashMap<&str, Box<dyn BuiltIn>>
+    info: &mut Info
 ) -> usize {
     let name =
         if let SolidToken::Word(name) = &tokens[pos] { name.clone() } else { panic!("Invalid name for struct `{:?}`", tokens[pos]) };
@@ -163,7 +160,6 @@ pub fn make_struct(
     *info.structs.get_mut(&name).unwrap() = StructType { generics: Some(generics_names), pos: index };
     info.structs.insert(String::from("Self"), info.structs[&name].clone());
     //1 part1 of: traits in parentheses in struct declaration, e.g. struct A(*trait*):
-    /*
     let mut trait_names = vec![];
     if let SolidToken::Parenthesis(IsOpen::True) = tokens[pos] {
         pos += 1;
@@ -180,40 +176,36 @@ pub fn make_struct(
         pos += 2;
     }
 
-     */
-
     let args_pos = add_to_tree(index, ast, Ast::new(AstNode::ArgsDef));
     let body_pos = add_to_tree(index, ast, Ast::new(AstNode::Module));
     let traits_pos = add_to_tree(index, ast, Ast::new(AstNode::Traits));
     // let types_pos = add_to_tree(index, ast, Ast::new(AstNode::Types));
 
     //1 part2 of: traits in parentheses in struct declaration, e.g. struct A(*trait*):
-    /*
+
     for (t, generics_names) in trait_names {
         let trait_pos = add_to_tree(
             traits_pos, ast,
             Ast::new(AstNode::Identifier(t.clone()))
         );
-        add_to_tree(trait_pos, ast, Ast::new_w_typ(
-            AstNode::GenericsDeclaration,
-            Some(Type {
-                kind: TypeKind::Generics,
-                children: if generics_names.is_empty() { None } else {
-                    todo!("generic traits not yet implemented"); //1 bcs IDK how that should look
-                    // Some(generics_names.iter().map(|name|
-                    //     Type {
-                    //         kind: TypeKind::Generic(GenericType::Declaration(name.clone())),
-                    //         children: None,
-                    //     }
-                    // ).collect())
-                }
-            })
-        ));
+        // add_to_tree(trait_pos, ast, Ast::new_w_typ(
+        //     AstNode::GenericsDeclaration,
+        //     Some(Type {
+        //         kind: TypeKind::Generics,
+        //         children: if generics_names.is_empty() { None } else {
+        //             todo!("generic traits not yet implemented"); //1 bcs IDK how that should look
+        //             // Some(generics_names.iter().map(|name|
+        //             //     Type {
+        //             //         kind: TypeKind::Generic(GenericType::Declaration(name.clone())),
+        //             //         children: None,
+        //             //     }
+        //             // ).collect())
+        //         }
+        //     })
+        // ));
     }
 
-     */
-
-    unwrap_enum!(tokens[pos], SolidToken::Colon, "expected colon");
+    unwrap_enum!(tokens[pos], SolidToken::Colon, None::<bool>, "expected colon");
     pos += 2 + indent;
     if pos < tokens.len() && matches!(&tokens[pos], SolidToken::Tab) { //todo what is this?
         pos += 1;
@@ -237,10 +229,7 @@ pub fn make_struct(
                 let type_name = unwrap_enum!(&tokens[pos+3], SolidToken::Word(n), n);
                 unwrap_enum!(&tokens[pos+4], SolidToken::Operator(OperatorType::Eq));
                 pos += 5;
-                println!("{:?}", info);
                 let typ = get_arg_typ(tokens, &mut pos, info);
-                println!(">>>>>>>");
-                print_type(&Some(typ.clone()));
                 // let trait_impl_pos = unwrap_u(&ast[traits_pos].children).iter().find(
                 //     |&i| unwrap_enum!(&ast[*i].value, AstNode::Identifier(i), i) == trait_name
                 // );
@@ -275,7 +264,7 @@ pub fn make_struct(
             |func_pos| {
                 make_func_signature(
                     tokens, *func_pos, ast, body_pos, &mut vec![HashMap::new()],
-                    info, built_ins
+                    info, 
                 )
             }
         ).collect();
@@ -283,12 +272,12 @@ pub fn make_struct(
         let mut vars = vec![HashMap::new()];
         let (init_body_tok_pos, init_body_pos, init_generics) = make_func_signature(
             tokens, init_pos, ast, body_pos, &mut vars,
-            info, built_ins
+            info, 
         );
         info.generics.push(init_generics);
         make_ast_statement(
             tokens, init_body_tok_pos, ast, init_body_pos, indent + 2,
-            &mut vars, info, built_ins
+            &mut vars, info, 
         );
         info.generics.pop();
         let mut args = vec![];
@@ -314,7 +303,7 @@ pub fn make_struct(
             };
         }
 
-        add_types(ast, init_body_pos, &mut vars, info, &None, built_ins);
+        add_types(ast, init_body_pos, &mut vars, info, &None);
         //1 remove self from args
         {
             let fun_pos = ast[init_body_pos].parent.unwrap();
@@ -352,7 +341,7 @@ pub fn make_struct(
             info.generics.push(func_generics);
             make_ast_statement(
                 tokens, body_tok_pos, ast, body_pos, indent + 2,
-                &mut vars, info, built_ins
+                &mut vars, info, 
             );
             info.generics.pop();
         }
@@ -360,7 +349,7 @@ pub fn make_struct(
         for func_pos in func_posses {
             make_func(
                 tokens, func_pos, ast, body_pos, indent + 1,
-                &mut vec![HashMap::new()], info, built_ins
+                &mut vec![HashMap::new()], info, 
             );
         }
     }

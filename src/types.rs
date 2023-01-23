@@ -14,7 +14,6 @@ pub const BOOL_TYPE: TypeKind = TypeKind::Struct(TypName::Static("bool"));
 pub const INT_TYPE: TypeKind = TypeKind::Struct(TypName::Static("i32"));
 pub const FLOAT_TYPE: TypeKind = TypeKind::Struct(TypName::Static("f32"));
 pub const CHAR_TYPE: TypeKind = TypeKind::Struct(TypName::Static("char"));
-pub const ITER_TYPE: TypeKind = TypeKind::Struct(TypName::Static("Iter"));
 // pub const ITER_TYPE: Type = Type {
 //     kind: TypeKind::Struct(ITER_NAME),
 //     children: None
@@ -59,11 +58,10 @@ pub enum TypeKind {
     Generic(GenericType),
     Generics,
     GenericsMap,
-    _OneOf,
-    Optional,
-    Tuple,
+    _OneOf, _Optional,
+    _Tuple,
     InnerType(String), // e.g. Iterator[Inner=i32]
-    Args,
+    _Args,
     Trait(TypName),
     Enum(TypName),
     Unknown,
@@ -111,7 +109,7 @@ pub fn print_type(typ: &Option<Type>) {
 }
 
 #[allow(dead_code)]
-pub fn print_type_b(typ: &Option<Type>){
+pub fn print_type_b(typ: &Option<Type>, color: Color){
     let mut ppt: PrettyPrintTree<Type> = {
         PrettyPrintTree::<Type>::new(
             Box::new(|typ| {
@@ -122,7 +120,7 @@ pub fn print_type_b(typ: &Option<Type>){
             }),
         )
     };
-    ppt.color = Color::Black;
+    ppt.color = color;
     if let Some(t) = typ {
         println!("{}", ppt.to_str(t));
     } else {
@@ -139,7 +137,7 @@ impl Display for Type {
                 let children = unwrap(&self.children);
                 write!(f, "{}", join(children.iter(), "-or-"))
             },
-            TypeKind::Tuple => {
+            TypeKind::_Tuple => {
                 write!(f, "({})", join(unwrap(&self.children).iter(), ","))
             },
             TypeKind::Generic(c) => {
@@ -155,14 +153,14 @@ impl Display for Type {
             },
             TypeKind::GenericsMap => write!(f, "GENERICS_MAP({})", join(unwrap(&self.children).iter(), ",")),
             TypeKind::Generics => write!(f, "GENERICS({})", join(unwrap(&self.children).iter(), ",")),
-            TypeKind::Optional => {
+            TypeKind::_Optional => {
                 write!(f, "OPTIONAL({})", join(unwrap(&self.children).iter(), ","))
             },
-            TypeKind::Args => {
+            TypeKind::_Args => {
                 write!(f, "ARGS({})", unwrap(&self.children)[0])
             },
             TypeKind::Trait(name) => {
-                let mut gens = self.format_generics();
+                let gens = self.format_generics();
                 write!(f, "Box<dyn {name}{gens}>")
             },
             TypeKind::Enum(name) => {
@@ -170,7 +168,7 @@ impl Display for Type {
                 write!(f, "{name}{gens}")
             },
             TypeKind::Struct(name) => {
-                let mut gens = self.format_generics();
+                let gens = self.format_generics();
                 write!(f, "{name}{gens}")
             },
             TypeKind::Function(name) => write!(f, "{name}"),

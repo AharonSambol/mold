@@ -63,8 +63,6 @@ pub fn get_struct_and_func_names(
     }
     let mut resolved_types = HashMap::new();
     //3 NOT EFFICIENT
-    dbg!(&types);
-    println!("structs: {:?}", structs);
     while resolved_types.len() < types.len() {
         let prev_ln = resolved_types.len();
         for (&typ, &pos) in &types {
@@ -83,12 +81,10 @@ pub fn get_struct_and_func_names(
                     struct_inner_types: &mut HashSet::new(),
                 }, false, true
             );
-            println!("res: {res:?}");
             if let Some(res) = res {
                 resolved_types.insert((*typ).clone(), res);
             }
         }
-        dbg!(&resolved_types);
         if resolved_types.len() == prev_ln {
             panic!("circular type definition")
         }

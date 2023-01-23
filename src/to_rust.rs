@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
-use crate::built_in_funcs::BuiltIn;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType};
@@ -11,7 +10,6 @@ use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType};
 
 pub fn to_rust(
     ast: &[Ast], pos: usize, indentation: usize, res: &mut String,
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
     enums: &mut HashMap<String, String>
 ) {
     let children = unwrap_u(&ast[pos].children);
@@ -22,7 +20,7 @@ pub fn to_rust(
             write!(res, "\n{indent}").unwrap();
             for child in children {
                 write!(res, "\n{}", indent).unwrap();
-                to_rust(ast, *child, indentation, res, built_ins, enums);
+                to_rust(ast, *child, indentation, res, enums);
             }
             write!(res, "\n{indent}").unwrap();
         },
@@ -31,7 +29,7 @@ pub fn to_rust(
             write!(res, " {{").unwrap();
             for child in children {
                 write!(res, "\n{indent}").unwrap();
-                to_rust(ast, *child, indentation, res, built_ins, enums);
+                to_rust(ast, *child, indentation, res, enums);
                 write!(res, ";").unwrap();
             }
             write!(res, "\n{}}}", "\t".repeat(indentation - 1)).unwrap();
@@ -40,23 +38,23 @@ pub fn to_rust(
             if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
                 return;
             }
-            print_function_rust(name, ast, indentation, res, built_ins, enums, children);
+            print_function_rust(name, ast, indentation, res, enums, children);
         },
         AstNode::IfStatement => {
             write!(res, "if ").unwrap();
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
-            to_rust(ast, children[1], indentation + 1, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
+            to_rust(ast, children[1], indentation + 1, res, enums);
             for child in children.iter().skip(2){
                 match &ast[*child].value {
                     AstNode::IfStatement => {
                         write!(res, "\n{}else if ", "\t".repeat(indentation)).unwrap();
                         let c_children = unwrap_enum!(&ast[*child].children);
-                        to_rust(ast, c_children[0], indentation, res, built_ins, enums);
-                        to_rust(ast, c_children[1], indentation + 1, res, built_ins, enums);
+                        to_rust(ast, c_children[0], indentation, res, enums);
+                        to_rust(ast, c_children[1], indentation + 1, res, enums);
                     },
                     AstNode::Body => {
                         write!(res, "\n{}else", "\t".repeat(indentation)).unwrap();
-                        to_rust(ast, *child, indentation + 1, res, built_ins, enums);
+                        to_rust(ast, *child, indentation + 1, res, enums);
                     },
                     _ => panic!()
                 }
@@ -64,13 +62,13 @@ pub fn to_rust(
         },
         AstNode::WhileStatement => {
             write!(res, "while ").unwrap();
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
-            to_rust(ast, children[1], indentation + 1, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
+            to_rust(ast, children[1], indentation + 1, res, enums);
         },
         AstNode::Assignment => {
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
             write!(res, " = ").unwrap();
-            to_rust(ast, children[1], indentation, res, built_ins, enums);
+            to_rust(ast, children[1], indentation, res, enums);
         },
         AstNode::FirstAssignment => {
             if ast[pos].is_mut {
@@ -78,13 +76,13 @@ pub fn to_rust(
             } else {
                 write!(res, "let ").unwrap();
             }
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
             if let Some(c) = &ast[children[0]].typ {
                 // print_type(&ast[children[0]].typ);
                 write!(res, ": {c}").unwrap();
             }
             write!(res, " = ").unwrap();
-            to_rust(ast, children[1], indentation, res, built_ins, enums);
+            to_rust(ast, children[1], indentation, res, enums);
         }
         AstNode::Identifier(name) => {
             write!(res, "{name}").unwrap();
@@ -96,51 +94,51 @@ pub fn to_rust(
             } else if let OperatorType::FloorDivEq = op {
                 todo!()
             } else if let OperatorType::Pow = op {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, ".pow(").unwrap();
-                to_rust(ast, children[1], indentation, res, built_ins, enums);
+                to_rust(ast, children[1], indentation, res, enums);
                 write!(res, ")").unwrap();
             } else if is_string_addition(ast, pos, op) {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, " {} ", op).unwrap();
-                to_rust(ast, children[1], indentation, res, built_ins, enums);
+                to_rust(ast, children[1], indentation, res, enums);
                 if let Some(Type { kind: TypeKind::Struct(t_name), .. }) = &ast[children[1]].typ {
                     if *t_name == TypName::Static("String") {
                         write!(res, ".as_str()").unwrap();
                     }
                 }
             } else {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, " {} ", op).unwrap();
-                to_rust(ast, children[1], indentation, res, built_ins, enums);
+                to_rust(ast, children[1], indentation, res, enums);
             }
         },
         AstNode::UnaryOp(op) => {
             write!(res, "{op}").unwrap();
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
         },
         AstNode::Parentheses => {
             write!(res, "(").unwrap();
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
             write!(res, ")").unwrap();
         },
         AstNode::ColonParentheses => {
             for child in children {
-                to_rust(ast, *child, indentation, res, built_ins, enums);
+                to_rust(ast, *child, indentation, res, enums);
             }
         },
         AstNode::Index => {
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
             if let Some(Type{ kind: TypeKind::Struct(stct), .. }) = &ast[children[1]].typ {
                 if *stct == TypName::Static("usize") {
                     write!(res, "]").unwrap();
-                    to_rust(ast, children[1], indentation, res, built_ins, enums);
+                    to_rust(ast, children[1], indentation, res, enums);
                     write!(res, "]").unwrap();
                     return;
                 }
             }
             write!(res, "[(").unwrap();
-            to_rust(ast, children[1], indentation, res, built_ins, enums);
+            to_rust(ast, children[1], indentation, res, enums);
             write!(res, ") as usize]").unwrap();
         },
         AstNode::Number(num) => write!(res, "{num}").unwrap(),
@@ -150,7 +148,7 @@ pub fn to_rust(
                 if i != 0{
                     write!(res, ", ").unwrap();
                 }
-                to_rust(ast, *child, indentation + 1, res, built_ins, enums);
+                to_rust(ast, *child, indentation + 1, res, enums);
             }
             write!(res, "]").unwrap();
 
@@ -161,7 +159,7 @@ pub fn to_rust(
                 if i != 0{
                     write!(res, ", ").unwrap();
                 }
-                to_rust(ast, *child, indentation + 1, res, built_ins, enums);
+                to_rust(ast, *child, indentation + 1, res, enums);
             }
             write!(res, "])").unwrap();
 
@@ -173,9 +171,9 @@ pub fn to_rust(
                     write!(res, ", ").unwrap();
                 }
                 write!(res, "(").unwrap();
-                to_rust(ast, children[0], indentation + 1, res, built_ins, enums);
+                to_rust(ast, children[0], indentation + 1, res, enums);
                 write!(res, ", ").unwrap();
-                to_rust(ast, children[1], indentation + 1, res, built_ins, enums);
+                to_rust(ast, children[1], indentation + 1, res, enums);
                 write!(res, ")").unwrap();
             }
             write!(res, "])").unwrap();
@@ -186,19 +184,14 @@ pub fn to_rust(
         },
         AstNode::FunctionCall(_) => {
             if let AstNode::Identifier(name) = &ast[children[0]].value {
-                // TODO !!!!!!!!!!!1
-                if built_ins.contains_key(name.as_str()) {
-                    built_ins[name.as_str()].to_str_rust(ast, res, children, built_ins, enums);
-                    return;
-                }
-                if built_in_funcs(ast, name, indentation, res, built_ins, enums, children) {
+                if built_in_funcs(ast, name, indentation, res, enums, children) {
                     return;
                 }
             }
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
             write!(res, "(").unwrap();
             if children.len() > 1 {
-                to_rust(ast, children[1], indentation, res, built_ins, enums);
+                to_rust(ast, children[1], indentation, res, enums);
             }
             write!(res, ")").unwrap();
         },
@@ -206,16 +199,16 @@ pub fn to_rust(
             if children.is_empty() {
                 return;
             }
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
             for child in children.iter().skip(1) {
                 write!(res, ",").unwrap();
-                to_rust(ast, *child, indentation, res, built_ins, enums);
+                to_rust(ast, *child, indentation, res, enums);
             }
         },
         AstNode::Return => {
             write!(res, "return ").unwrap();
             if !children.is_empty() {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
             }
         },
         AstNode::String { val, mutable } => {
@@ -228,7 +221,7 @@ pub fn to_rust(
         AstNode::Char(chr) => write!(res, "'{chr}'").unwrap(),
         AstNode::Property => {
             if let AstNode::FunctionCall(_) = ast[children[1]].value {
-                if built_in_methods(ast, indentation, res, built_ins, enums, children) {
+                if built_in_methods(ast, indentation, res, enums, children) {
                     return;
                 }
             }
@@ -236,31 +229,31 @@ pub fn to_rust(
             if matches!(ast[children[1]].value, AstNode::FunctionCall(true))
                 || matches!(ast[children[0]].typ, Some(Type { kind: TypeKind::Enum(_), .. }))
             {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, "::").unwrap();
-                to_rust(ast, children[1], indentation, res, built_ins, enums);
+                to_rust(ast, children[1], indentation, res, enums);
             } else {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, ".").unwrap();
-                to_rust(ast, children[1], indentation, res, built_ins, enums);
+                to_rust(ast, children[1], indentation, res, enums);
             }
         },
         AstNode::ForStatement => {
             write!(res, "for ").unwrap();
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
-            to_rust(ast, children[1], indentation + 1, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
+            to_rust(ast, children[1], indentation + 1, res, enums);
         },
         AstNode::ForVars => {
             write!(res, "mut ").unwrap();
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
             for child in children.iter().skip(1) {
                 write!(res, ", mut ").unwrap();
-                to_rust(ast, *child, indentation, res, built_ins, enums);
+                to_rust(ast, *child, indentation, res, enums);
             }
         },
         AstNode::ForIter => {
             write!(res, " in ").unwrap();
-            to_rust(ast, children[0], indentation, res, built_ins, enums);
+            to_rust(ast, children[0], indentation, res, enums);
         },
         AstNode::Struct(name) => {
             if unsafe { IGNORE_STRUCTS.contains(name.as_str()) } {
@@ -285,6 +278,7 @@ pub fn to_rust(
             ).unwrap();
             let mut trait_functions = vec![];
             for func in unwrap_u(&ast[children[2]].children) {
+                #[allow(unused_parens)]
                 let func_name = unwrap_enum!(
                     &ast[*func].value, (AstNode::Function(n) | AstNode::StaticFunction(n)), n
                 );
@@ -293,7 +287,7 @@ pub fn to_rust(
                     continue
                 }
                 write!(res, "\n{}", "\t".repeat(indentation + 1)).unwrap();
-                to_rust(ast, *func, indentation + 1, res, built_ins, enums);
+                to_rust(ast, *func, indentation + 1, res, enums);
 
             }
             let indent = "\t".repeat(indentation);
@@ -327,7 +321,7 @@ pub fn to_rust(
 
                     }
                     print_function_rust(
-                        func_name, ast, indentation + 1, res, built_ins, enums,
+                        func_name, ast, indentation + 1, res, enums,
                         func_children
                     );
                 }
@@ -342,9 +336,9 @@ pub fn to_rust(
             let arg_vals = unwrap_u(&ast[children[1]].children);
             let arg_names = unwrap_u(&ast[children[2]].children);
             for (val, name) in zip(arg_vals, arg_names) {
-                to_rust(ast, *name, indentation, res, built_ins, enums);
+                to_rust(ast, *name, indentation, res, enums);
                 write!(res, ": ").unwrap();
-                to_rust(ast, *val, indentation, res, built_ins, enums);
+                to_rust(ast, *val, indentation, res, enums);
                 write!(res, ", ").unwrap();
             }
             write!(res, "}}").unwrap();
@@ -424,7 +418,6 @@ pub fn to_rust(
 fn print_function_rust(
     name: &str,
     ast: &[Ast], indentation: usize, res: &mut String,
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
     enums: &mut HashMap<String, String>,
     children: &[usize]
 ) {
@@ -449,23 +442,22 @@ fn print_function_rust(
         write!(res, "fn {name}{generic}({param})").unwrap();
     }
 
-    to_rust(ast, children[3], indentation + 1, res, built_ins, enums);
+    to_rust(ast, children[3], indentation + 1, res, enums);
 }
 
 fn built_in_methods(
     ast: &[Ast], indentation: usize, res: &mut String,
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>, enums: &mut HashMap<String, String>,
-    children: &[usize]
+    enums: &mut HashMap<String, String>, children: &[usize]
 ) -> bool {
     if let Some((struct_name, func_name)) = get_struct_and_func_name(ast, children) {
         let arg_pos = unwrap_u(&ast[children[1]].children)[1];
 
         match (struct_name.get_str(), func_name.as_str()) {
             ("String", "split") => {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 if !unwrap_u(&ast[arg_pos].children).is_empty() {
                     write!(res, ".split(").unwrap();
-                    to_rust(ast, arg_pos, indentation, res, built_ins, enums);
+                    to_rust(ast, arg_pos, indentation, res, enums);
                     write!(res, ")").unwrap();
                 } else {
                     write!(res, ".split_whitespace()").unwrap();
@@ -478,57 +470,57 @@ fn built_in_methods(
                     "rstrip" => "trim_end",
                     _ => unreachable!()
                 };
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 if !unwrap_u(&ast[arg_pos].children).is_empty() {
                     write!(res, ".{trim}_matches(").unwrap();
-                    to_rust(ast, arg_pos, indentation, res, built_ins, enums);
+                    to_rust(ast, arg_pos, indentation, res, enums);
                     write!(res, ")").unwrap();
                 } else {
                     write!(res, ".{trim}()").unwrap();
                 }
             }
             ("String", "len") => {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, ".len()").unwrap();
             }
             ("String", "startswith" | "endswith") => {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, ".{}_with(", func_name.strip_suffix("with").unwrap()).unwrap();
-                to_rust(ast, arg_pos, indentation, res, built_ins, enums);
+                to_rust(ast, arg_pos, indentation, res, enums);
                 write!(res, ")").unwrap();
             }
             ("String", "find") => {
                 write!(res, "if let Some(__res__) = ").unwrap();
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, ".find(").unwrap();
-                to_rust(ast, arg_pos, indentation, res, built_ins, enums);
+                to_rust(ast, arg_pos, indentation, res, enums);
                 write!(res, ") {{ __res__ as i32 }} else {{ -1 }}").unwrap();
             }
             ("String", "count") => {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, ".matches(").unwrap();
-                to_rust(ast, arg_pos, indentation, res, built_ins, enums);
+                to_rust(ast, arg_pos, indentation, res, enums);
                 write!(res, ").count()").unwrap();
             }
             ("String", "removeprefix" | "removesuffix") => {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, ".strip_{}(", func_name.strip_prefix("remove").unwrap()).unwrap();
-                to_rust(ast, arg_pos, indentation, res, built_ins, enums);
+                to_rust(ast, arg_pos, indentation, res, enums);
                 write!(res, ").unwrap_or(&").unwrap();
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, ")").unwrap();
             }
             ("String", "lower" | "upper") => {
                 write!(res, "{{").unwrap();
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, ".make_ascii_{}case();", func_name).unwrap();
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, "}}").unwrap();
             }
             ("Vec", "append") => {
-                to_rust(ast, children[0], indentation, res, built_ins, enums);
+                to_rust(ast, children[0], indentation, res, enums);
                 write!(res, ".push(").unwrap();
-                to_rust(ast, arg_pos, indentation, res, built_ins, enums);
+                to_rust(ast, arg_pos, indentation, res, enums);
                 write!(res, ")").unwrap();
             }
 
@@ -540,19 +532,19 @@ fn built_in_methods(
 
 fn built_in_funcs(
     ast: &[Ast], name: &str, indentation: usize, res: &mut String,
-    built_ins: &HashMap<&str, Box<dyn BuiltIn>>, enums: &mut HashMap<String, String>,
-    children: &[usize]
-) -> bool {
+    enums: &mut HashMap<String, String>, children: &[usize]
+) -> bool { // todo get rid of unnecessary boxes
     // let arg_pos = unwrap_u(&ast[children[1]].children)[1];
     match name {
         "reversed" => {
-            to_rust(ast, children[1], indentation, res, built_ins, enums);
-            write!(res, ".rev()").unwrap();
+            write!(res, "Box::new(").unwrap();
+            to_rust(ast, children[1], indentation, res, enums);
+            write!(res, ".rev())").unwrap();
         }
         "len" => {
             write!(res, "(").unwrap();
             let mut arg = String::new();
-            to_rust(ast, children[1], indentation, &mut arg, built_ins, enums);
+            to_rust(ast, children[1], indentation, &mut arg, enums);
             if arg.starts_with("Box::new(") {
                 write!(res, "{}.len() as i32)", arg
                     .strip_prefix("Box::new(").unwrap()
@@ -574,23 +566,23 @@ fn built_in_funcs(
             match args.len() {
                 1 => {
                     write!(res, "(0..").unwrap();
-                    to_rust(ast, args[0], 0, res, built_ins, enums);
+                    to_rust(ast, args[0], 0, res, enums);
                     write!(res, ")").unwrap();
                 }
                 2 => {
                     write!(res, "(").unwrap();
-                    to_rust(ast, args[0], 0, res, built_ins, enums);
+                    to_rust(ast, args[0], 0, res, enums);
                     write!(res, "..").unwrap();
-                    to_rust(ast, args[1], 0, res, built_ins, enums);
+                    to_rust(ast, args[1], 0, res, enums);
                     write!(res, ")").unwrap();
                 }
                 3 => {
                     write!(res, "(").unwrap();
-                    to_rust(ast, args[0], 0, res, built_ins, enums);
+                    to_rust(ast, args[0], 0, res, enums);
                     write!(res, "..").unwrap();
-                    to_rust(ast, args[1], 0, res, built_ins, enums);
+                    to_rust(ast, args[1], 0, res, enums);
                     write!(res, ").step_by((").unwrap();
-                    to_rust(ast, args[2], 0, res, built_ins, enums);
+                    to_rust(ast, args[2], 0, res, enums);
                     write!(res, ") as usize)").unwrap();
                 }
                 _ => panic!("too many args passed to range expected <=3 found {}", args.len())
@@ -598,6 +590,16 @@ fn built_in_funcs(
             if !is_in_for {
                 write!(res, ")").unwrap();
             }
+        },
+        "print" => {
+            let args = unwrap_u(&ast[children[1]].children);
+
+            write!(res, "println!(\"{}\"", "{}".repeat(args.len())).unwrap();
+            for arg in args {
+                write!(res, ",").unwrap();
+                to_rust(ast, *arg, 0, res, enums);
+            }
+            write!(res, ")").unwrap();
         }
         _ => { return false }
     }
@@ -651,7 +653,7 @@ fn _make_enums(){
 //         },
 //         TypeKind::TypWithSubTypes => {
 //             for child in unwrap(&typ.children).iter().skip(1) {
-//                 make_enums(child, built_ins, enums)
+//                 make_enums(child, enums)
 //             }
 //         }
 //         TypeKind::Struct(_) => {

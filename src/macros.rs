@@ -33,7 +33,7 @@
 
 #[macro_export] macro_rules! make_primitive {
     ($val:expr) => {
-        StructFunc::Struct(BuiltInStruct {
+        BuiltIn::Struct(BuiltInStruct {
             name: stringify!($val),
             generics: None,
             methods: vec![
@@ -42,6 +42,9 @@
             ],
             _parameters: vec![],
             types: None,
+            traits: Some(vec![
+                "Debug", "Display"
+            ]),
         })
     };
 }

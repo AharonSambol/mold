@@ -21,8 +21,9 @@ impl Iter_ for A {
 }
 
 
-fn func(a: i32) -> Box<dyn Iterator<Item=i32>> {
-    return Box::new(vec![a].into_iter());
+fn func<T>(a: T) -> Box<dyn Iterator<Item=i32>> {
+    // let b = *a;
+    return Box::new(vec![1].into_iter());
 }
 
 fn main() {
@@ -38,6 +39,7 @@ fn main() {
     // ch(&mut a);
     // let mut a = IntoIterator::into_iter(vec![]);
     // let b = Iterator::next(&mut a);
+    // vec![].iter_mut().rev()
     a.next();
     println!("{:?}", a.inner);
 
