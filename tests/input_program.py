@@ -31,7 +31,13 @@
 #
 # type i = int
 # type IList = List[i]
+# enum Opt:
+#     Some(int)
+#     None
+# def f(*a: int):
+#     pass
 def main():
+#     f(1, 2)
 #     lst: IList = [1, 2, 64, 214, 43, 56, 32, 3, 23, 5, 12, 532, 634, 2, 35, 34, 6]
 #     a := len(lst)
 #     r := range(0, 10)
@@ -43,5 +49,5 @@ def main():
 #     for i in range(0, 10, 2):
 #     for i in [1, 2, 3]:
         x := i
-        print(*i)
+        print(*i, 2)
 #     bubble_sort(lst)

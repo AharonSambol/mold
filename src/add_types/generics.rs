@@ -1,18 +1,19 @@
 use std::collections::HashMap;
 use crate::{typ_with_child, unwrap_enum, some_vec};
+use crate::construct_ast::ast_structure::Param;
 use crate::types::{GenericType, Type, TypeKind, unwrap};
 
 //2 only generics whose children are also T
 //  as in [Generic(Of("T"))]
 //               |
 //        [Generic(Of("T"))]
-pub fn get_function_return_type(return_type: &Option<Type>, expected_inputs: &Option<Vec<Type>>, inputs: &Option<Vec<Type>>) -> Option<Type> {
+pub fn get_function_return_type(return_type: &Option<Type>, expected_inputs: &Option<Vec<Param>>, inputs: &Option<Vec<Type>>) -> Option<Type> {
     let return_type = if let Some(x) = return_type { x } else { return None };
     if let Some(expected_inputs) = expected_inputs {
         let inputs = unwrap_enum!(inputs);
         let mut hm = HashMap::new();
         for (ex_ipt, ipt) in expected_inputs.iter().zip(inputs) {
-            map_generic_types(ex_ipt, ipt, &mut hm);
+            map_generic_types(&ex_ipt.typ, ipt, &mut hm);
         }
         let res = apply_map_to_generic_typ(return_type, &hm, true);
         return Some(res);

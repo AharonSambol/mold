@@ -1,13 +1,14 @@
-use crate::construct_ast::ast_structure::{Ast, AstNode};
+use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use lazy_static::lazy_static;
 use regex::Regex;
-use crate::{EMPTY_STR, IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
+use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u};
 
 lazy_static!{
     static ref NUM_TYP_RE: Regex = Regex::new(r"[uif]").unwrap();
+    pub static ref NONE: String = String::from("_NONE");
 }
 
 pub enum ToWrapVal {
@@ -129,9 +130,10 @@ pub fn to_python(
             )
         },
         AstNode::Identifier(name) => {
+            let name = if name == "None" { &NONE } else { name };
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
-                ToWrapVal::GetName | ToWrapVal::GetAsValue => String::from(name),
+                ToWrapVal::GetName | ToWrapVal::GetAsValue => name.clone(),
                 ToWrapVal::GetInnerValue =>
                     String::from(remove_unnecessary_val_creation(&format!("{}.v", name)))
             }
@@ -508,10 +510,41 @@ pub fn to_python(
         AstNode::Continue => String::from("continue"),
         AstNode::Break => String::from("break"),
         AstNode::GenericsDeclaration | AstNode::Trait { .. } => EMPTY_STR,
-        AstNode::Enum(_name) => {
-            EMPTY_STR
-            // todo!()
-            // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        AstNode::Enum(name) => {
+            if unsafe { IGNORE_ENUMS.contains(name.as_str()) } {
+                return EMPTY_STR;
+            }
+            let mut options = vec![];
+            let module = unwrap_u(&ast[children[1]].children);
+            for option in module {
+                let name = unwrap_enum!(&ast[*option].value, AstNode::Identifier(n), n);
+                let types = unwrap_u(&ast[*option].children);
+                options.push((name, types));
+            }
+
+            let mut res = format!(
+                "class {name}:{}\n\n",
+                options.iter()
+                    .enumerate()
+                    .map(|(i, (opt_name, _))| format!("\n\t{opt_name}={i}"))
+                    .collect::<Vec<_>>()
+                    .concat()
+            );
+            for (opt_name, opt_types) in options {
+                let args = (0..opt_types.len())
+                    .map(|i| format!("_{i}"))
+                    .collect::<Vec<_>>();
+                let args_with_self = if args.is_empty() { EMPTY_STR } else {
+                    format!("self.{}", join(args.iter(), ", self."))
+                };
+                let args = join(args.iter(), ",");
+                writeln!(res,
+"class {opt_name}({name}):
+    def __init__(self,{args}):
+        ({args_with_self}) = ({args})"
+                ).unwrap();
+            }
+            res
         }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }

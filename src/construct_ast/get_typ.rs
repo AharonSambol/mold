@@ -14,6 +14,8 @@ pub fn get_params(
 ) -> Vec<Param> {
     let mut params = Vec::new();
     let mut is_mut = true;
+    let mut is_args = false;
+    let mut is_kwargs = false;
     loop {
         match &tokens[*pos] {
             SolidToken::Word(wrd) => {
@@ -24,7 +26,9 @@ pub fn get_params(
                             *pos += 2;
                             get_arg_typ(tokens, pos, info)
                         } else { UNKNOWN_TYPE },
-                    is_mut
+                    is_mut,
+                    is_args,
+                    is_kwargs,
                 });
                 is_mut = true;
                 if let SolidToken::Parenthesis(IsOpen::False)
@@ -38,6 +42,9 @@ pub fn get_params(
                 is_mut = false;
             }
             SolidToken::Comma => {}
+            SolidToken::UnaryOperator(OperatorType::Dereference) => {
+                is_args = true
+            }
             _ => panic!("unexpected token {:?}", tokens[*pos])
         }
         *pos += 1;

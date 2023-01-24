@@ -226,7 +226,7 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "print",
             generics: None,
-            args: vec!["a: Display"], // TODO or Debug // TODO zero or more args
+            args: vec!["*a: Display"], // TODO or Debug // TODO zero or more args
             return_typ: None,
         }),
         //4 reversed

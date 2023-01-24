@@ -1,5 +1,6 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
-use crate::construct_ast::ast_structure::{Ast, AstNode};
+use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, print_type_b, print_type};
 use lazy_static::lazy_static;
@@ -91,7 +92,7 @@ pub fn add_types(
         }
         AstNode::ArgsDef => {
             for child in children {
-                let name = unwrap_enum!(&ast[child].value, AstNode::Identifier(n), n);
+                let name = unwrap_enum!(&ast[child].value, AstNode::Arg { name, .. }, name);
                 vars.last_mut().unwrap().insert(name.clone(), child);
             }
         }
@@ -163,12 +164,33 @@ pub fn add_types(
             };
 
             let args = unwrap_u(&ast[children[1]].children).clone();
+            if let Some(ipt) = input {
+                match args.len().cmp(&ipt.len()) {
+                    Ordering::Equal => {}
+                    Ordering::Less => {
+                        // TODO optional args
+                        panic!("expected `{}` arguments, but got `{}`", ipt.len(), args.len())
+                    }
+                    Ordering::Greater => {
+                        println!("!");
+                        for par in ipt.iter() {
+                            println!("{:?}", par);
+                        }
+                        if !ipt.iter().any(|par| par.is_args || par.is_kwargs) {
+                            panic!("expected `{}` arguments, but got `{}`", ipt.len(), args.len())
+                        }
+                    }
+                }
+            } else if !args.is_empty() {
+                panic!("wasn't expecting any args")
+            }
+
             let args: Option<Vec<Type>> =
                 if args.is_empty() { None }
                 else if let Some(expected_inputs) = input {
                     Some(expected_inputs.iter().zip(args.iter()).map(
                         |(exp, got)|
-                            check_for_boxes(exp.clone(), ast, *got, info, vars)
+                            check_for_boxes(exp.typ.clone(), ast, *got, info, vars)
                     ).collect())
                 } else {
                     Some(args.iter().map(
@@ -501,7 +523,8 @@ pub fn add_types(
             vars.pop();
         }
         AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
-        | AstNode::Trait { .. } | AstNode::Traits | AstNode::Type(_) | AstNode::Types => {}
+        | AstNode::Trait { .. } | AstNode::Traits | AstNode::Type(_) | AstNode::Types
+        | AstNode::Arg { .. }=> {}
     }
 }
 
@@ -645,7 +668,18 @@ pub fn get_property_method_typ(
         let arg_pos = unwrap_u(&ast[children[1]].children)[1];
 
         let input_arg_types = ast[func_children[1]].children.as_ref()
-            .map(|c| c.iter().map(|x| ast[*x].typ.clone().unwrap()).collect());
+            .map(|c| c.iter().map(|x| {
+                let (name, is_args, is_kwargs) = unwrap_enum!(
+                    &ast[*x].value,
+                    AstNode::Arg { name, is_arg, is_kwarg },
+                    (name.clone(), *is_arg, *is_kwarg)
+                );
+                Param {
+                    typ: ast[*x].typ.clone().unwrap(),
+                    is_mut: ast[*x].is_mut,
+                    name, is_args, is_kwargs,
+                }
+            }).collect());
 
 
         let expected_arg_types =

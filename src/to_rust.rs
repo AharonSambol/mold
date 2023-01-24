@@ -369,7 +369,8 @@ pub fn to_rust(
                         .iter()
                         .map(|x| {
                             let arg = &ast[*x];
-                            let name = unwrap_enum!(&arg.value, AstNode::Identifier(name), name);
+                            let name = unwrap_enum!(&arg.value, AstNode::Arg { name, is_arg, is_kwarg }, name);
+                            // TODO if is_arg \ is_kwarg
                             let typ = unwrap_enum!(&arg.typ);
                             format!("{name}: {typ}")
                         });
@@ -431,7 +432,7 @@ fn print_function_rust(
             .map(|&x|
                 format!("{}{}: {}",
                         if ast[x].is_mut { "mut " } else { "" },
-                        unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
+                        unwrap_enum!(&ast[x].value, AstNode::Arg { name, ..}, name),
                         unwrap_enum!(&ast[x].typ),
                 )
             ),
@@ -598,14 +599,14 @@ fn built_in_funcs(
             for arg in args {
                 let typ = unwrap_enum!(&ast[*arg].typ);
                 if implements_trait(typ, "Display", ast, info) {
-                    write!(formats, "{{}}").unwrap();
+                    write!(formats, "{{}} ").unwrap();
                 } else if implements_trait(typ, "Debug", ast, info) {
-                    write!(formats, "{{:?}}").unwrap();
+                    write!(formats, "{{:?}} ").unwrap();
                 } else {
                     panic!()
                 }
             }
-            write!(res, "println!(\"{}\"", formats).unwrap();
+            write!(res, "println!(\"{}\"", formats.trim_end()).unwrap();
             for arg in args {
                 write!(res, ",").unwrap();
                 to_rust(ast, *arg, 0, res, enums, info);

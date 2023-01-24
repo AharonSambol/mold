@@ -1,6 +1,9 @@
 use crate::mold_tokens::OperatorType;
 use crate::types::{Type, TypeKind};
 use std::fmt::{Display, Formatter};
+use std::ops::Deref;
+use crate::IS_COMPILED;
+use crate::to_python::NONE;
 
 #[derive(Clone, Debug)]
 pub struct Ast {
@@ -50,7 +53,8 @@ pub enum AstNode {
     Function(String), // children[0] = args, children[1] = returnType, children[2] = body
     FunctionCall(bool), // bool = is_static, children[0] = func, children[1] = Args,
     GenericsDeclaration,
-    Identifier(String), // children[0] = type
+    Identifier(String),
+    Arg{ name: String, is_arg: bool, is_kwarg: bool },
     IfStatement,
     Index,       // child[0] = item, child[1] = index
     ListLiteral, // children = elements
@@ -74,6 +78,55 @@ pub enum AstNode {
     UnaryOp(OperatorType),  // children[0] = elem
     WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
 }
+#[derive(Clone, Debug)]
+struct CleanStr {
+    str: String
+}
+// impl CleanStr {
+//     fn new(s: String) -> CleanStr {
+//         if unsafe { IS_COMPILED } {
+//             CleanStr { str: s }
+//         } else {
+//             CleanStr {
+//                 str: if s == "None" { NONE.clone() } else { s }
+//             }
+//         }
+//     }
+// }
+// impl Deref for CleanStr {
+//     type Target = String;
+//     fn deref(&self) -> &Self::Target {
+//         &self.str
+//     }
+// }
+// use std::str::FromStr;
+// impl FromStr for CleanStr {
+//     type Err = Box<dyn std::error::Error>;
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         Ok(CleanStr { str: s.to_string() })
+//     }
+// }
+// impl Display for CleanStr {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+//         self.str.fmt(f)
+//     }
+// }
+// impl PartialEq for CleanStr {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.str.eq(&other.str)
+//     }
+// }
+// impl PartialEq<String> for CleanStr {
+//     fn eq(&self, other: &String) -> bool {
+//         self.str.eq(other)
+//     }
+// }
+// impl PartialEq<&str> for CleanStr {
+//     fn eq(&self, other: &&str) -> bool {
+//         self.str.eq(other)
+//     }
+// }
+
 
 impl AstNode {
     pub fn is_expression(&self) -> bool {
@@ -94,6 +147,7 @@ impl AstNode {
             | AstNode::DictLiteral
             | AstNode::Index => true,
             AstNode::FirstAssignment
+            | AstNode::Arg { .. }
             | AstNode::Pass
             | AstNode::Continue
             | AstNode::Break
@@ -126,6 +180,8 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            AstNode::Arg { name, is_arg, is_kwarg} =>
+                write!(f, "{name}\n[{is_arg}, {is_kwarg}]"),
             AstNode::Types => write!(f, "TYPES"),
             AstNode::Type(name) => write!(f, "TYPE({name})"),
             AstNode::Traits => write!(f, "TRAITS"),
@@ -175,17 +231,20 @@ impl Display for AstNode {
     }
 }
 
+#[inline]
 pub fn join<T: Display, I: Iterator<Item=T>>(lst: I, sep: &str) -> String {
     lst.map(|x| x.to_string())
         .collect::<Vec<String>>()
         .join(sep)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     pub typ: Type,
     pub name: String,
     pub is_mut: bool,
+    pub is_args: bool,
+    pub is_kwargs: bool,
 }
 
 impl Display for Param {

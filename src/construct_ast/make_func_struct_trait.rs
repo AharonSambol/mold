@@ -101,11 +101,18 @@ fn make_func_signature(
             is_generic(&param.typ, &generics_hs)
         );
         if param.name != "self" || name != "__init__" {
-            input.push(typ.clone().unwrap());
+            input.push(Param{
+                typ: typ.clone().unwrap(),
+                ..param.clone()
+            });
         }
         let identifier_pos = add_to_tree(args_pos, ast, Ast {
             children: None, parent: Some(args_pos),
-            value: AstNode::Identifier(param.name.clone()),
+            value: AstNode::Arg {
+                name: param.name.clone(),
+                is_arg: param.is_args,
+                is_kwarg: param.is_kwargs,
+            },
             typ,
             is_mut: param.is_mut
         });
@@ -472,13 +479,13 @@ pub fn make_trait(
         let mut args: Vec<_> = params.iter().map(|x| Param {
             typ: is_generic(&x.typ, &generics_hs),
             name: x.name.clone(),
-            is_mut: x.is_mut
+            ..*x
         }).collect();
         if !args.is_empty() && args[0].name == "self" && args[0].typ == UNKNOWN_TYPE {
             args[0].typ = Type {
                 kind: TypeKind::Struct(TypName::Static("Self")),
                 children: None
-             };
+            };
         }
         // args.insert(0, Param {
         //     name: String::from("self"),
@@ -503,7 +510,11 @@ pub fn make_trait(
         );
         for arg in args {
             add_to_tree(args_pos, ast, Ast{
-                value: AstNode::Identifier(arg.name.clone()),
+                value: AstNode::Arg {
+                    name: arg.name.clone(),
+                    is_arg: arg.is_args,
+                    is_kwarg: arg.is_kwargs
+                },
                 typ: Some(arg.typ),
                 children: None,
                 parent: None,

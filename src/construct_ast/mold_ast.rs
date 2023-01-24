@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use crate::construct_ast::ast_structure::{Ast, AstNode};
-use crate::{IS_COMPILED, unwrap_enum};
+use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
+use crate::{EMPTY_STR, IS_COMPILED, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
 use crate::types::{Type, TypeKind, unwrap, unwrap_u};
@@ -58,7 +58,7 @@ impl STType for EnumType {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FuncType {
-    pub input: Option<Vec<Type>>,
+    pub input: Option<Vec<Param>>,
     pub output: Option<Type>
 }
 
@@ -154,12 +154,28 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
                     if func_types.output.is_some() != trt_f_types.output.is_some()
                         || func_types.input.is_some() != trt_f_types.input.is_some()
                     { return None }
-                    let mut func_all_types = unwrap(&func_types.input).clone();
-                    let mut trt_f_all_types = unwrap(&trt_f_types.input).clone();
+                    let mut func_all_types =
+                        if let Some(v) = &func_types.input { v.clone() }
+                        else { vec![] };
+                    let mut trt_f_all_types =
+                        if let Some(v) = &trt_f_types.input { v.clone() }
+                        else { vec![] };
                     if let Some(x) = &func_types.output {
-                        func_all_types.push(x.clone());
+                        func_all_types.push(Param {
+                            typ: x.clone(),
+                            name: EMPTY_STR,
+                            is_mut: false,
+                            is_args: false,
+                            is_kwargs: false,
+                        });
                         unsafe { //1 safe cuz already checked that they both have or both dont have a return typ
-                            trt_f_all_types.push(trt_f_types.output.clone().unwrap_unchecked())
+                            trt_f_all_types.push(Param {
+                                typ: trt_f_types.output.clone().unwrap_unchecked(),
+                                name: EMPTY_STR,
+                                is_mut: false,
+                                is_args: false,
+                                is_kwargs: false,
+                            })
                         }
                     }
 
@@ -167,13 +183,13 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
                         if *trt_fnc == fnc {
                             continue
                         }
-                        if let TypeKind::InnerType(typ_name) = &trt_fnc.kind {
+                        if let TypeKind::InnerType(typ_name) = &trt_fnc.typ.kind {
                             if let Some(expected_typ) = hm.get(typ_name) {
-                                if fnc == *expected_typ {
+                                if fnc.typ == *expected_typ {
                                     continue
                                 }
                             } else {
-                                hm.insert(String::from(typ_name), fnc);
+                                hm.insert(typ_name.clone(), fnc.typ);
                                 continue
                             }
                         }
@@ -287,11 +303,23 @@ fn get_trt_strct_functions(ast: &[Ast], module: &Ast) -> TraitFuncs {
         if let AstNode::Function(name) | AstNode::StaticFunction(name) = &ast[*func].value {
             let func_children = unwrap_u(&ast[*func].children);
             let (args_pos, return_pos) = (func_children[1], func_children[2]);
+            print_tree((ast.to_vec(), *func));
             let args_children = unwrap_u(&ast[args_pos].children);
             let args = if args_children.is_empty() { None } else {
                 Some(
                     args_children.iter()
-                        .map(|x| ast[*x].typ.clone().unwrap())
+                        .map(|x| {
+                            let (name, is_args, is_kwargs) = unwrap_enum!(
+                                &ast[*x].value,
+                                AstNode::Arg { name, is_arg, is_kwarg },
+                                (name.clone(), *is_arg, *is_kwarg)
+                            );
+                            Param {
+                                typ: ast[*x].typ.clone().unwrap(),
+                                is_mut: ast[*x].is_mut,
+                                name, is_args, is_kwargs,
+                            }
+                        })
                         .collect()
                 )
             };
