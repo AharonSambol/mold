@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
-use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
+use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, typ_with_child, some_vec, unwrap_enum};
 use crate::construct_ast::mold_ast::Info;
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap};
@@ -430,11 +430,11 @@ fn print_function_rust(
     let param = join(
         unwrap_u(&param.children).iter()
             .map(|&x|
-                format!("{}{}: {}",
-                        if ast[x].is_mut { "mut " } else { "" },
-                        unwrap_enum!(&ast[x].value, AstNode::Arg { name, ..}, name),
-                        unwrap_enum!(&ast[x].typ),
-                )
+                {
+                    let name = unwrap_enum!(&ast[x].value, AstNode::Arg { name, .. }, name);
+                    let typ = unwrap_enum!(&ast[x].typ).clone();
+                    format!("{}{name}: {typ}", if ast[x].is_mut { "mut " } else { "" })
+                }
             ),
         ", "
     );
@@ -594,7 +594,9 @@ fn built_in_funcs(
             }
         },
         "print" => {
+            //1 the first arg will be a vec cuz its *args
             let args = unwrap_u(&ast[children[1]].children);
+            let args = unwrap_u(&ast[args[0]].children);
             let mut formats = String::new();
             for arg in args {
                 let typ = unwrap_enum!(&ast[*arg].typ);

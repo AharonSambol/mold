@@ -102,13 +102,13 @@ pub fn construct_ast(tokens: &[SolidToken], pos: usize, info: &mut Info) -> Vec<
     );
     // add_traits_to_structs(&mut ast)
     duck_type(&mut ast, info.traits, info.structs);
-    print_tree((ast.clone(), 0));
+    print_tree(&ast, 0);
     if unsafe { IS_COMPILED } {
         add_types(
             &mut ast, 0, &mut vec![HashMap::new()],
             info, &None
         );
-        print_tree((ast.clone(), 0));
+        print_tree(&ast, 0);
     }
     ast
 }
@@ -303,7 +303,6 @@ fn get_trt_strct_functions(ast: &[Ast], module: &Ast) -> TraitFuncs {
         if let AstNode::Function(name) | AstNode::StaticFunction(name) = &ast[*func].value {
             let func_children = unwrap_u(&ast[*func].children);
             let (args_pos, return_pos) = (func_children[1], func_children[2]);
-            print_tree((ast.to_vec(), *func));
             let args_children = unwrap_u(&ast[args_pos].children);
             let args = if args_children.is_empty() { None } else {
                 Some(

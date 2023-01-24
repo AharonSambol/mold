@@ -185,6 +185,7 @@ pub fn check_for_boxes(
                         children: Some(c)
                     } = &expected_children[0] {
                         if c.len() != 1 { panic!() }
+                        dbg!(&c[0]);
                         if let Type{
                             kind: TypeKind::Generic(GenericType::Of(_)),
                             children: Some(c)

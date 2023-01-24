@@ -10,7 +10,7 @@ use crate::{some_vec, unwrap_enum, typ_with_child};
 use crate::add_types::generics::{apply_generics_to_method_call, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::check_for_boxes;
 use crate::add_types::utils::{find_function_in_struct, find_function_in_trait, get_from_stack};
-use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
+use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of_prev, print_tree};
 use crate::mold_tokens::OperatorType;
 use crate::types::TypeKind::GenericsMap;
 
@@ -137,7 +137,7 @@ pub fn add_types(
             } else {
                 let typ = ast[children[1]].typ.clone();
                 if typ.is_none() {
-                    print_tree((ast.clone(), 0));
+                    print_tree(&ast, 0);
                     panic!("`{}` needs a type annotation", ast[children[0]].value)
                 }
                 ast[children[0]].typ = typ;
@@ -163,8 +163,9 @@ pub fn add_types(
                 panic!("unrecognized function `{name}`")
             };
 
-            let args = unwrap_u(&ast[children[1]].children).clone();
+            let mut args = unwrap_u(&ast[children[1]].children).clone();
             if let Some(ipt) = input {
+                put_args_in_vec(ast, &children, &mut args, ipt);
                 match args.len().cmp(&ipt.len()) {
                     Ordering::Equal => {}
                     Ordering::Less => {
@@ -172,19 +173,12 @@ pub fn add_types(
                         panic!("expected `{}` arguments, but got `{}`", ipt.len(), args.len())
                     }
                     Ordering::Greater => {
-                        println!("!");
-                        for par in ipt.iter() {
-                            println!("{:?}", par);
-                        }
-                        if !ipt.iter().any(|par| par.is_args || par.is_kwargs) {
-                            panic!("expected `{}` arguments, but got `{}`", ipt.len(), args.len())
-                        }
+                        panic!("expected `{}` arguments, but got `{}`", ipt.len(), args.len())
                     }
                 }
             } else if !args.is_empty() {
                 panic!("wasn't expecting any args")
             }
-
             let args: Option<Vec<Type>> =
                 if args.is_empty() { None }
                 else if let Some(expected_inputs) = input {
@@ -525,6 +519,39 @@ pub fn add_types(
         AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
         | AstNode::Trait { .. } | AstNode::Traits | AstNode::Type(_) | AstNode::Types
         | AstNode::Arg { .. }=> {}
+    }
+}
+
+fn put_args_in_vec(ast: &mut Vec<Ast>, children: &[usize], args: &mut Vec<usize>, ipt: &[Param]) {
+    let args_kwargs_pos = ipt.iter().enumerate()
+        .find(|(_, par)| par.is_args || par.is_kwargs);
+    if let Some((pos_in_args, _)) = args_kwargs_pos {
+        // todo not including the key word arguments
+
+        let vec_pos = add_to_tree(
+            children[1],
+            ast,
+            Ast {
+                value: AstNode::ListLiteral,
+                children: Some(
+                    unwrap_u(&ast[children[1]].children)
+                        .iter().skip(pos_in_args).cloned().collect()
+                ),
+                parent: None,
+                typ: Some(ipt[pos_in_args].typ.clone()),
+                is_mut: false,
+            }
+        );
+        let args_children =
+            if let Some(c) = &mut ast[children[1]].children { c } else { unreachable!() };
+
+        args.truncate(pos_in_args);
+        args.push(vec_pos);
+        let removed: Vec<_> = args_children.drain(pos_in_args..).collect();
+        args_children.push(vec_pos);
+        for i in removed {
+            ast[i].parent = Some(vec_pos);
+        }
     }
 }
 

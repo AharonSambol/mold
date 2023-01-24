@@ -34,10 +34,11 @@
 # enum Opt:
 #     Some(int)
 #     None
-# def f(*a: int):
-#     pass
+def f(*a: int):
+    pass
+
 def main():
-#     f(1, 2)
+    f(1, 2, 3, 4)
 #     lst: IList = [1, 2, 64, 214, 43, 56, 32, 3, 23, 5, 12, 532, 634, 2, 35, 34, 6]
 #     a := len(lst)
 #     r := range(0, 10)

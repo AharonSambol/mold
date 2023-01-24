@@ -19,13 +19,24 @@ pub fn get_params(
     loop {
         match &tokens[*pos] {
             SolidToken::Word(wrd) => {
+                let typ = if let SolidToken::Colon = &tokens[*pos + 1] {
+                    *pos += 2;
+                    get_arg_typ(tokens, pos, info)
+                } else { UNKNOWN_TYPE };
                 params.push(Param {
                     name: wrd.clone(),
-                    typ:
-                        if let SolidToken::Colon = &tokens[*pos + 1] {
-                            *pos += 2;
-                            get_arg_typ(tokens, pos, info)
-                        } else { UNKNOWN_TYPE },
+                    typ: if is_args {
+                        typ_with_child! {
+                            TypeKind::Struct(TypName::Static("Vec")),
+                            typ_with_child!{
+                                TypeKind::GenericsMap,
+                                typ_with_child!{
+                                    TypeKind::Generic(GenericType::Of(String::from("T"))),
+                                    typ
+                                }
+                            }
+                        }
+                    } else { typ },
                     is_mut,
                     is_args,
                     is_kwargs,

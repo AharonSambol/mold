@@ -546,6 +546,11 @@ pub fn to_python(
             }
             res
         }
+        AstNode::Arg { name, is_arg, is_kwarg } => {
+            if *is_arg          { format!("*{name}")    }
+            else if *is_kwarg   { format!("**{name}")   }
+            else                { name.clone()          }
+        }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }

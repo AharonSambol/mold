@@ -2,6 +2,7 @@ use pretty_print_tree::PrettyPrintTree;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, some_vec, unwrap_enum};
 
+#[inline]
 pub fn get_last(arr: &mut Option<Vec<usize>>) -> usize {
     *unwrap_enum!(arr).last().unwrap()
 }
@@ -49,9 +50,9 @@ pub fn add_to_tree(parent: usize, ast: &mut Vec<Ast>, mut new_node: Ast) -> usiz
 }
 
 
-pub fn print_tree(tree: (Vec<Ast>, usize)){
+pub fn print_tree(ast: &Vec<Ast>, pos: usize){
     let ppt = {
-        PrettyPrintTree::<(Vec<Ast>, usize)>::new(
+        PrettyPrintTree::<(&Vec<Ast>, usize)>::new(
             Box::new(|(vc, pos)| {
                 if let Some(t) = &vc[*pos].typ {
                     format!("{pos}. {}\n:{t}\n({:?})", vc[*pos].value, vc[*pos].parent)
@@ -77,6 +78,6 @@ pub fn print_tree(tree: (Vec<Ast>, usize)){
             }),
         )
     };
-    println!("{}\n", ppt.to_str(&tree));
+    println!("{}\n", ppt.to_str(&(ast, pos)));
 }
 
