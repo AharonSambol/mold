@@ -547,9 +547,15 @@ pub fn to_python(
             res
         }
         AstNode::Arg { name, is_arg, is_kwarg } => {
-            if *is_arg          { format!("*{name}")    }
+            let mut res = if *is_arg          { format!("*{name}")    }
             else if *is_kwarg   { format!("**{name}")   }
-            else                { name.clone()          }
+            else                { name.clone()          };
+            if let Some(default_val) = &ast[pos].children {
+                write!(res, "={}", to_python(
+                    ast, default_val[0], indentation, ToWrapVal::GetInnerValue
+                )).unwrap();
+            }
+            res
         }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }

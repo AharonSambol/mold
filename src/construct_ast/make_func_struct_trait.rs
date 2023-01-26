@@ -88,7 +88,7 @@ fn make_func_signature(
     let body_pos = add_to_tree(index, ast, Ast::new(AstNode::Body));
 
     let mut input = vec![];
-    for param in &mut params {
+    for (param, default_val) in &mut params {
         if param.name == "self" && param.typ == UNKNOWN_TYPE {
             param.typ = Type {
                 kind: TypeKind::Struct(TypName::Static("Self")),
@@ -116,9 +116,23 @@ fn make_func_signature(
             typ,
             is_mut: param.is_mut
         });
+        if let Some(default_val) = default_val {
+            let ast_len = ast.len();
+            ast[identifier_pos].children = Some(vec![ast_len]);
+            param.pos = ast_len;
+            input.last_mut().unwrap().pos = ast_len;
+            for node in default_val.iter().skip(1) {
+                let mut node_clone = node.clone();
+                node_clone.parent = Some(node_clone.parent.unwrap() + ast_len);
+                node_clone.children = node_clone.children.map(|children|
+                    children.iter().map(|i| i + ast_len).collect::<Vec<_>>()
+                );
+                ast.push(node_clone);
+            }
+        }
         vars.last_mut().unwrap().insert(param.name.clone(), identifier_pos);
     }
-    if !params.is_empty() && params[0].name == "self" {
+    if !params.is_empty() && params[0].0.name == "self" {
         ast[index].value = AstNode::Function(name.clone());
     }
 
@@ -476,7 +490,7 @@ pub fn make_trait(
         get_generics(&mut pos, tokens, func_pos, ast);
         pos += 1;
         let params = get_params(tokens, &mut pos, info);
-        let mut args: Vec<_> = params.iter().map(|x| Param {
+        let mut args: Vec<_> = params.iter().map(|(x, _)| Param {
             typ: is_generic(&x.typ, &generics_hs),
             name: x.name.clone(),
             ..*x

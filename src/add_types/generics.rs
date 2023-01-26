@@ -40,11 +40,13 @@ pub fn map_generic_types(generic: &Type, t: &Type, res: &mut HashMap<String, Typ
     }
 }
 
-pub fn apply_generics_to_method_call(return_typ: &Option<Type>, base: &Type) -> Option<Type> {
+pub fn apply_generics_to_method_call(return_typ: &Option<Type>, mut base: &Type) -> Option<Type> {
     if let Some(rt) = return_typ {
+        while let Type { kind: TypeKind::Pointer | TypeKind::MutPointer, children: Some(children) } = base {
+            base = &children[0];
+        }
         if let Some(struct_def) = &base.children {
             if let Type { kind: TypeKind::GenericsMap, children: Some(generic_map) } = &struct_def[0] {
-                // generic_map.iter().for_each(|x| println!("@{:?}", x.kind));
                 let hm = HashMap::from_iter(
                     generic_map.iter().filter_map(|x|
                         if let TypeKind::Generic(GenericType::Of(name)) = &x.kind {

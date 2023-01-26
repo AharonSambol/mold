@@ -25,8 +25,9 @@ fn func<T>(a: T) -> Box<dyn Iterator<Item=i32>> {
     // let b = *a;
     return Box::new(vec![1].into_iter());
 }
-fn ff(a: Vec<i32>) {
-
+fn ln(a: &Box<dyn Debug>) {}
+fn ff(a: &Vec<i32>) {
+    // ln(&(Box::new(a) as Box<dyn Debug>));
 }
 fn main() {
     func(2);

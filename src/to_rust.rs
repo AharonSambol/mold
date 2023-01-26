@@ -5,6 +5,7 @@ use std::fmt::Write;
 use std::iter::zip;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, typ_with_child, some_vec, unwrap_enum};
 use crate::construct_ast::mold_ast::Info;
+use crate::construct_ast::tree_utils::print_tree;
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap};
 
@@ -413,6 +414,9 @@ pub fn to_rust(
             }
             writeln!(res, "}}").unwrap();
         }
+        AstNode::NamedArg(_) => {
+            to_rust(ast, unwrap_u(&ast[pos].children)[0], indentation, res, enums, info);
+        }
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
 }
@@ -481,10 +485,6 @@ fn built_in_methods(
                     write!(res, ".{trim}()").unwrap();
                 }
             }
-            ("String", "len") => {
-                to_rust(ast, children[0], indentation, res, enums, info);
-                write!(res, ".len()").unwrap();
-            }
             ("String", "startswith" | "endswith") => {
                 to_rust(ast, children[0], indentation, res, enums, info);
                 write!(res, ".{}_with(", func_name.strip_suffix("with").unwrap()).unwrap();
@@ -525,7 +525,11 @@ fn built_in_methods(
                 to_rust(ast, arg_pos, indentation, res, enums, info);
                 write!(res, ")").unwrap();
             }
-
+            (_, "len") => {
+                write!(res, "(").unwrap();
+                to_rust(ast, children[0], indentation, res, enums, info);
+                write!(res, ".len() as i32)").unwrap();
+            }
             _ => { return false }
         }
         true
@@ -543,19 +547,19 @@ fn built_in_funcs(
             to_rust(ast, children[1], indentation, res, enums, info);
             write!(res, ".rev())").unwrap();
         }
-        "len" => {
-            write!(res, "(").unwrap();
-            let mut arg = String::new();
-            to_rust(ast, children[1], indentation, &mut arg, enums, info);
-            if arg.starts_with("Box::new(") {
-                write!(res, "{}.len() as i32)", arg
-                    .strip_prefix("Box::new(").unwrap()
-                    .strip_suffix(')').unwrap()
-                ).unwrap();
-            } else {
-                write!(res, "{arg}.len() as i32)").unwrap();
-            }
-        },
+        // "len" => {
+        //     write!(res, "(").unwrap();
+        //     let mut arg = String::new();
+        //     to_rust(ast, children[1], indentation, &mut arg, enums, info);
+        //     if arg.starts_with("Box::new(") {
+        //         write!(res, "{}.len() as i32)", arg
+        //             .strip_prefix("Box::new(").unwrap()
+        //             .strip_suffix(')').unwrap()
+        //         ).unwrap();
+        //     } else {
+        //         write!(res, "{arg}.len() as i32)").unwrap();
+        //     }
+        // },
         "range" => {
             let pos = ast[children[0]].parent.unwrap();
             let parent = ast[pos].parent.unwrap();
@@ -632,7 +636,11 @@ fn is_string_addition(ast: &[Ast], pos: usize, op: &OperatorType) -> bool{
 }
 
 pub fn get_struct_and_func_name<'a>(ast: &'a [Ast], children: &[usize]) -> Option<(&'a TypName, &'a String)> {
-    if let Some(Type{ kind: TypeKind::Struct(struct_name), .. }) = &ast[children[0]].typ {
+    let mut typ = if let Some(t) = &ast[children[0]].typ { t } else { return  None };
+    while let Type{ kind: TypeKind::MutPointer | TypeKind::Pointer, children: ch} = typ {
+        typ = &unwrap(ch)[0];
+    }
+    if let Type{ kind: TypeKind::Struct(struct_name), .. } = typ {
         if let AstNode::Identifier(func_name) = &ast[unwrap_u(&ast[children[1]].children)[0]].value {
             return Some((struct_name, func_name))
         }

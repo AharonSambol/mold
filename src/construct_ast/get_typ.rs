@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use crate::construct_ast::ast_structure::Param;
-use crate::construct_ast::mold_ast::{Info, STType};
+use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
+use crate::construct_ast::mold_ast::{Info, make_ast_expression, STType};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
 use crate::types::{clean_type, MUT_STR_TYPE, Type, UNKNOWN_TYPE, TypeKind, GenericType, TypName};
 use crate::{typ_with_child, unwrap_enum, some_vec};
@@ -11,7 +11,7 @@ use crate::{typ_with_child, unwrap_enum, some_vec};
 //                           ^
 pub fn get_params(
     tokens: &[SolidToken], pos: &mut usize, info: &mut Info
-) -> Vec<Param> {
+) -> Vec<(Param, Option<Vec<Ast>>)> {
     let mut params = Vec::new();
     let mut is_mut = true;
     let mut is_args = false;
@@ -23,7 +23,7 @@ pub fn get_params(
                     *pos += 2;
                     get_arg_typ(tokens, pos, info)
                 } else { UNKNOWN_TYPE };
-                params.push(Param {
+                params.push((Param {
                     name: wrd.clone(),
                     typ: if is_args {
                         typ_with_child! {
@@ -37,13 +37,29 @@ pub fn get_params(
                             }
                         }
                     } else { typ },
+                    // default_val: false,
                     is_mut,
                     is_args,
                     is_kwargs,
-                });
+                    pos: 10000000
+                }, None));
                 is_mut = true;
-                if let SolidToken::Parenthesis(IsOpen::False)
-                | SolidToken::Operator(OperatorType::Eq) = tokens[*pos] {
+                is_args = false;
+                if let SolidToken::Operator(OperatorType::Eq) = tokens[*pos] {
+                    let mut res = vec![Ast::new(AstNode::Module)];
+                    *pos = make_ast_expression(
+                        tokens, *pos + 1, &mut res,
+                        0, &mut vec![], info
+                    ); //1 this ignores the result just skips the default_val
+                    params.last_mut().unwrap().1 = Some(res);
+                    // params.last_mut().unwrap().default_val = true;
+                    // *pos += 1;
+                    // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                }
+                if let SolidToken::Parenthesis(IsOpen::False) = tokens[*pos] {
                     return params
                 }
             },

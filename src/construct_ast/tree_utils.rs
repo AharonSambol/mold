@@ -49,6 +49,9 @@ pub fn add_to_tree(parent: usize, ast: &mut Vec<Ast>, mut new_node: Ast) -> usiz
     pos
 }
 
+// pub fn remove_leaf(ast: &mut Vec<Ast>, pos: usize) {
+//     
+// }
 
 pub fn print_tree(ast: &Vec<Ast>, pos: usize){
     let ppt = {
@@ -65,7 +68,7 @@ pub fn print_tree(ast: &Vec<Ast>, pos: usize){
                 if children.is_none() {
                     return Vec::new();
                 }
-                children.unwrap().iter().map(|x| (vc.clone(), *x)).filter(
+                children.unwrap().iter().map(|x| (*vc, *x)).filter(
                     |(_, x)|
                         match &vc[*x].value {
                             AstNode::Struct(name) =>        !unsafe { IGNORE_STRUCTS.contains(name.as_str()) },

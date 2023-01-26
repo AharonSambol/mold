@@ -100,6 +100,9 @@ pub fn check_for_boxes(
     }
 
     let got = &ast[pos].clone();
+    if let AstNode::NamedArg(_) = got.value {
+        return check_for_boxes(expected, ast, unwrap_u(&got.children)[0], info, vars);
+    }
     if is_box_typ(&expected) {
         let expected_trait =
             if let TypeKind::Trait(name) = &expected.kind { Some(name) } else { None };
@@ -185,7 +188,6 @@ pub fn check_for_boxes(
                         children: Some(c)
                     } = &expected_children[0] {
                         if c.len() != 1 { panic!() }
-                        dbg!(&c[0]);
                         if let Type{
                             kind: TypeKind::Generic(GenericType::Of(_)),
                             children: Some(c)
@@ -290,7 +292,7 @@ pub fn check_for_boxes(
                 }
                 AstNode::Number(num) => {
                     if !SPECIFIED_NUM_TYPE_RE.is_match(ex_name.get_str()) {
-                        panic!("expected: `{}` but found a number", ex_name.get_str())
+                         panic!("expected: `{}` but found a number", ex_name.get_str())
                     }
                     if let Some(t) = SPECIFIED_NUM_TYPE_RE.find(num) {
                         if t.as_str() != ex_name.get_str() {

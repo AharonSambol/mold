@@ -119,6 +119,8 @@ pub fn put_at_start(input: &str) -> String {
                 "IntoIterator.Item = T"
             ]),
             methods: vec![
+                "__len__(self: &Self) -> int",
+                "len(self: &Self) -> int",
                 "__init__(self)",
                 "into_iter(self) -> IntoIterator[Item=T]",
                 "iter(self) -> Iter[T]",
@@ -155,11 +157,11 @@ pub fn put_at_start(input: &str) -> String {
             duck: true,
             generics: None,
             methods: vec![
-                "__len__(self) -> int"
+                "__len__(self: &Self) -> int"
             ],
             types: None,
             ignore: false
-        }),
+        }), // todo Sized?
         //2 Iterator
         BuiltIn::Trait(BuiltInTrait {
             name: "Iterator",
@@ -212,7 +214,7 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "len",
             generics: None,
-            args: vec!["x: __len__"],
+            args: vec!["x: &__len__"],
             return_typ: Some("int"),
         }),
         //4 range

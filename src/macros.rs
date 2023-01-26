@@ -1,12 +1,12 @@
 #[macro_export] macro_rules! unwrap_enum {
     ($var:expr) => {
-        if let Some(x) = $var { x } else { panic!() }
+        if let Some(x) = $var { x } else { unreachable!() }
     };
     ($var:expr, $pattern:pat) => {
-        let $pattern = $var else { panic!() };
+        let $pattern = $var else { unreachable!() };
     };
     ($var:expr, $pattern:pat, $result:expr) => {
-        if let $pattern = $var { $result } else { panic!() }
+        if let $pattern = $var { $result } else { unreachable!() }
     };
     ($var:expr, $pattern:pat, $result:expr, $msg:expr) => {
         if let $pattern = $var { $result } else { panic!($msg) }

@@ -60,7 +60,7 @@ pub fn add_types(
         }
         AstNode::Assignment | AstNode::Module | AstNode::Body | AstNode::ReturnType
         | AstNode::GenericsDeclaration | AstNode::ColonParentheses
-        | AstNode::Args => {
+        | AstNode::Args | AstNode::NamedArg(_) => {
             for child in children {
                 add_types(ast, child, vars, info, parent_struct);
             }
@@ -71,10 +71,12 @@ pub fn add_types(
             while !matches!(ast[func_pos].value, AstNode::Function(_) | AstNode::StaticFunction(_)) {
                 func_pos = ast[func_pos].parent.unwrap();
             }
-            let func_name =
-                if let AstNode::Function(n) | AstNode::StaticFunction(n) = &ast[func_pos].value { //1 always true
-                    n
-                } else { unreachable!() };
+            #[allow(unused_parens)]
+            let func_name = unwrap_enum!(
+                &ast[func_pos].value,
+                (AstNode::Function(n) | AstNode::StaticFunction(n)),
+                n
+            );
             let return_type = if let Some(p) = ast[ast[func_pos].parent.unwrap()].parent {
                 if let AstNode::Trait { .. } | AstNode::Struct(_) = &ast[p].value {
                     ast[unwrap_u(&ast[func_pos].children)[2]].typ.clone()
@@ -137,7 +139,7 @@ pub fn add_types(
             } else {
                 let typ = ast[children[1]].typ.clone();
                 if typ.is_none() {
-                    print_tree(&ast, 0);
+                    print_tree(ast, 0);
                     panic!("`{}` needs a type annotation", ast[children[0]].value)
                 }
                 ast[children[0]].typ = typ;
@@ -151,29 +153,31 @@ pub fn add_types(
             }
         }
         AstNode::FunctionCall(_) => {
+            // let func_name = unwrap_enum!(&ast[children[0]].value, AstNode::Identifier(n), n.clone());
             //1 children[1] is the args
             add_types(ast, children[1], vars, info, parent_struct);
 
             let name = unwrap_enum!(
-                &ast[children[0]].value, AstNode::Identifier(x), x, "function without identifier?"
+                &ast[children[0]].value, AstNode::Identifier(x), x.clone(), "function without identifier?"
             );
-            let (input, output) = if info.funcs.contains_key(name) {
-                (&info.funcs[name].input, &info.funcs[name].output)
+            let (input, output) = if info.funcs.contains_key(&name) {
+                (&info.funcs[&name].input, &info.funcs[&name].output)
             } else {
                 panic!("unrecognized function `{name}`")
             };
 
             let mut args = unwrap_u(&ast[children[1]].children).clone();
-            if let Some(ipt) = input {
-                put_args_in_vec(ast, &children, &mut args, ipt);
-                match args.len().cmp(&ipt.len()) {
+            if let Some(expected_args) = input {
+                put_args_in_vec(ast, &children, &mut args, expected_args);
+                add_optional_args(ast, &children, &mut args, expected_args);
+                match args.len().cmp(&expected_args.len()) {
                     Ordering::Equal => {}
                     Ordering::Less => {
                         // TODO optional args
-                        panic!("expected `{}` arguments, but got `{}`", ipt.len(), args.len())
+                        panic!("`{name}` expected `{}` arguments, but got `{}`", expected_args.len(), args.len())
                     }
                     Ordering::Greater => {
-                        panic!("expected `{}` arguments, but got `{}`", ipt.len(), args.len())
+                        panic!("`{name}` expected `{}` arguments, but got `{}`", expected_args.len(), args.len())
                     }
                 }
             } else if !args.is_empty() {
@@ -365,7 +369,6 @@ pub fn add_types(
         AstNode::Operator(_) => {
             add_types(ast, children[0], vars, info, parent_struct);
             add_types(ast, children[1], vars, info, parent_struct);
-
             let mut t1 = unwrap_enum!(&ast[children[0]].typ);
             let mut t2 = unwrap_enum!(&ast[children[1]].typ);
             let t1 = {
@@ -497,6 +500,9 @@ pub fn add_types(
             add_types(ast, children[0], vars, info, parent_struct);
             add_types(ast, children[1], vars, info, parent_struct);
             ast[pos].typ = find_index_typ(ast, info, &children, pos);
+            if ast[pos].typ.is_none() {
+                panic!();
+            }
         }
         AstNode::Struct(name) => {
             let name = name.clone();
@@ -522,12 +528,48 @@ pub fn add_types(
     }
 }
 
-fn put_args_in_vec(ast: &mut Vec<Ast>, children: &[usize], args: &mut Vec<usize>, ipt: &[Param]) {
-    let args_kwargs_pos = ipt.iter().enumerate()
+fn add_optional_args(//3 not optimized // todo can't use name for positional args
+    ast: &mut Vec<Ast>, children: &[usize], args: &mut Vec<usize>, expected_args: &[Param]
+) {
+    let amount_of_pos_args = args.iter().take_while(|i|
+        !matches!(&ast[**i].value, AstNode::NamedArg(_))
+    ).count();
+    let mut supplied_kws = HashMap::new();
+    for i in args.iter().skip(amount_of_pos_args) {
+        let name = unwrap_enum!(&ast[*i].value, AstNode::NamedArg(name), name);
+        supplied_kws.insert(name.clone(), *i);
+    }
+    unwrap_enum!(&mut ast[children[1]].children).truncate(amount_of_pos_args);
+
+    let ast_len = ast.len();
+    let mut to_add= vec![];
+    let mut amount_of_pushed = 0;
+    for ex_arg in expected_args.iter().skip(amount_of_pos_args) {
+        if let Some(pos) = supplied_kws.get(&ex_arg.name) {
+            to_add.push(*pos);
+        } else {
+            add_to_tree(
+                children[1], ast,
+                ast[ex_arg.pos].clone()
+            );
+            unwrap_enum!(&mut ast[children[1]].children).pop();
+            amount_of_pushed += 1;
+            to_add.push(ast_len - 1 + amount_of_pushed);
+        }
+    }
+    let args_children = unwrap_enum!(&mut ast[children[1]].children);
+    for pos in to_add {
+        args_children.push(pos);
+    }
+    *args = unwrap_enum!(&ast[children[1]].children).clone();
+}
+
+fn put_args_in_vec(
+    ast: &mut Vec<Ast>, children: &[usize], args: &mut Vec<usize>, expected_args: &[Param]
+) {
+    let args_kwargs_pos = expected_args.iter().enumerate()
         .find(|(_, par)| par.is_args || par.is_kwargs);
     if let Some((pos_in_args, _)) = args_kwargs_pos {
-        // todo not including the key word arguments
-
         let vec_pos = add_to_tree(
             children[1],
             ast,
@@ -535,20 +577,24 @@ fn put_args_in_vec(ast: &mut Vec<Ast>, children: &[usize], args: &mut Vec<usize>
                 value: AstNode::ListLiteral,
                 children: Some(
                     unwrap_u(&ast[children[1]].children)
-                        .iter().skip(pos_in_args).cloned().collect()
+                        .iter()
+                        .skip(pos_in_args)
+                        .take_while(|x| !matches!(ast[**x].value, AstNode::NamedArg(_))) //1 while isn't named
+                        .cloned().collect()
                 ),
                 parent: None,
-                typ: Some(ipt[pos_in_args].typ.clone()),
+                typ: Some(expected_args[pos_in_args].typ.clone()),
                 is_mut: false,
             }
         );
-        let args_children =
-            if let Some(c) = &mut ast[children[1]].children { c } else { unreachable!() };
-
-        args.truncate(pos_in_args);
-        args.push(vec_pos);
-        let removed: Vec<_> = args_children.drain(pos_in_args..).collect();
-        args_children.push(vec_pos);
+        let amount_of_arg_in_args = unwrap_u(&ast[vec_pos].children).len();
+        let args_children = unwrap_enum!(&mut ast[children[1]].children);
+        let removed: Vec<_> = args_children.drain(
+            pos_in_args..pos_in_args + amount_of_arg_in_args
+        ).collect();
+        let vec_child = args_children.pop().unwrap();
+        args_children.insert(pos_in_args, vec_child);
+        *args = args_children.clone();
         for i in removed {
             ast[i].parent = Some(vec_pos);
         }
@@ -705,6 +751,7 @@ pub fn get_property_method_typ(
                     typ: ast[*x].typ.clone().unwrap(),
                     is_mut: ast[*x].is_mut,
                     name, is_args, is_kwargs,
+                    pos: *x
                 }
             }).collect());
 
@@ -740,24 +787,24 @@ pub fn get_property_idf_typ(
 }
 
 pub fn find_index_typ(ast: &[Ast], info: &Info, children: &[usize], pos: usize) -> Option<Type> {
-    let index_func = if let Some(
-        Type {
-            kind: TypeKind::Struct(struct_name), ..
+    fn find_index_func(typ: &Option<Type>, ast: &[Ast], info: &Info, pos: usize) -> usize {
+        match typ {
+            Some(Type { kind: TypeKind::Struct(struct_name), .. }) =>
+                find_function_in_struct(
+                    ast, info.structs, struct_name.get_str(), "index", pos
+                ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", struct_name)),
+            Some(Type { kind: TypeKind::Trait(trait_name), .. }) =>
+                find_function_in_trait(
+                    ast, info.traits, trait_name.get_str(), "index"
+                ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", trait_name)),
+            Some(Type { kind: TypeKind::Pointer | TypeKind::MutPointer, children: chs, .. }) =>
+                return find_index_func(&Some(unwrap(chs)[0].clone()), ast, info, pos), // todo pos here might not be correct in the case of &Self
+            _ => panic!()
         }
-    ) = &ast[children[0]].typ {
-        find_function_in_struct(
-            ast, info.structs, struct_name.get_str(), "index", pos
-        ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", struct_name))
-    } else if let Some(
-        Type { kind: TypeKind::Trait(trait_name), .. }
-    ) = &ast[children[0]].typ {
-        find_function_in_trait(
-            ast, info.traits, trait_name.get_str(), "index"
-        ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", trait_name))
-    } else {
-        panic!()
-    };
+    }
+    let index_func = find_index_func(&ast[children[0]].typ, ast, info, pos);
     let typ = &ast[unwrap_u(&ast[index_func].children)[2]].typ;
+
     apply_generics_to_method_call(
         typ,
         unwrap_enum!(&ast[children[0]].typ)

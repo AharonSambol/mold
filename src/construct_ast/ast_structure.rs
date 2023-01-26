@@ -77,6 +77,7 @@ pub enum AstNode {
     Types,
     UnaryOp(OperatorType),  // children[0] = elem
     WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
+    NamedArg(String), // children[0] = value
 }
 #[derive(Clone, Debug)]
 struct CleanStr {
@@ -147,6 +148,7 @@ impl AstNode {
             | AstNode::DictLiteral
             | AstNode::Index => true,
             AstNode::FirstAssignment
+            | AstNode::NamedArg(_)
             | AstNode::Arg { .. }
             | AstNode::Pass
             | AstNode::Continue
@@ -180,7 +182,8 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            AstNode::Arg { name, is_arg, is_kwarg} =>
+            AstNode::NamedArg(name) => write!(f, "{name}="),
+            AstNode::Arg { name, is_arg, is_kwarg } =>
                 write!(f, "{name}\n[{is_arg}, {is_kwarg}]"),
             AstNode::Types => write!(f, "TYPES"),
             AstNode::Type(name) => write!(f, "TYPE({name})"),
@@ -245,6 +248,7 @@ pub struct Param {
     pub is_mut: bool,
     pub is_args: bool,
     pub is_kwargs: bool,
+    pub pos: usize,
 }
 
 impl Display for Param {

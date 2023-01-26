@@ -167,6 +167,7 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
                             is_mut: false,
                             is_args: false,
                             is_kwargs: false,
+                            pos: 99999
                         });
                         unsafe { //1 safe cuz already checked that they both have or both dont have a return typ
                             trt_f_all_types.push(Param {
@@ -175,6 +176,7 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
                                 is_mut: false,
                                 is_args: false,
                                 is_kwargs: false,
+                                pos: usize::MAX
                             })
                         }
                     }
@@ -317,6 +319,7 @@ fn get_trt_strct_functions(ast: &[Ast], module: &Ast) -> TraitFuncs {
                                 typ: ast[*x].typ.clone().unwrap(),
                                 is_mut: ast[*x].is_mut,
                                 name, is_args, is_kwargs,
+                                pos: *x
                             }
                         })
                         .collect()
@@ -479,7 +482,7 @@ pub fn make_ast_statement(
     pos
 }
 
-fn make_ast_expression(
+pub fn make_ast_expression(
     tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
     vars: &mut VarTypes, info: &mut Info
 ) -> usize {
@@ -652,7 +655,7 @@ fn word_tok(
                 } else {
                     pos -= 1;
                     let param = get_params(tokens, &mut pos, info).remove(0); // 5 for now only taking the first
-                    ast[index].typ = Some(param.typ);
+                    ast[index].typ = Some(param.0.typ);
                 }
                 return make_ast_expression(
                     tokens, pos + 1, ast, index, vars, info
@@ -661,9 +664,11 @@ fn word_tok(
             SolidToken::Brace(IsOpen::True)
             | SolidToken::Parenthesis(IsOpen::True) => {
                 let word = unwrap_enum!(&tokens[pos - 1], SolidToken::Word(w), w);
-
+                if unsafe { IS_COMPILED } && word == "len" {
+                    turn_len_func_to_method(tokens, &mut pos, ast, parent, vars, info, word);
+                    continue
+                }
                 let index = if info.structs.contains_key(word) && word != "str" { // TODO !!!!!!!!!!!!!!1
-
                     let prop_pos = insert_as_parent_of_prev(
                         ast, parent, AstNode::Property
                     );
@@ -682,6 +687,18 @@ fn word_tok(
                     tokens, pos + 1, ast, last, vars, info
                 );
                 while let SolidToken::Comma = tokens[pos] {
+                    if let SolidToken::Word(name) = &tokens[pos + 1] { //1 if is named arg
+                        if let SolidToken::Operator(OperatorType::Eq) = &tokens[pos + 2] {
+                            let named_arg_pos = add_to_tree(
+                                last, ast,
+                                Ast::new(AstNode::NamedArg(name.clone()))
+                            );
+                            pos = make_ast_expression(
+                                tokens, pos + 3, ast, named_arg_pos, vars, info
+                            );
+                            continue
+                        }
+                    }
                     pos = make_ast_expression(
                         tokens, pos + 1, ast, last, vars, info
                     );
@@ -702,6 +719,36 @@ fn word_tok(
             _ => panic!("Unexpected token {:?}", tokens[pos]),
         }
     }
+}
+
+fn turn_len_func_to_method(
+    tokens: &[SolidToken], pos: &mut usize, ast: &mut Vec<Ast>, parent: usize,
+    vars: &mut VarTypes, info: &mut Info, word: &str
+) {
+    let is_property = matches!(&ast[parent].value, AstNode::Property);
+    ast.pop();
+    let parent_children = unwrap_enum!(&mut ast[parent].children);
+    parent_children.pop();
+    let prop = if is_property { parent } else {
+        add_to_tree(parent, ast, Ast::new(AstNode::Property))
+    };
+    if !is_property {
+        *pos = make_ast_expression(
+            tokens, *pos + 1, ast, prop, vars, info
+        );
+    } else {
+        *pos += 1;
+    }
+    let func_call_pos = add_to_tree(
+        prop, ast, Ast::new(AstNode::FunctionCall(false))
+    );
+    add_to_tree(
+        func_call_pos, ast,
+        Ast::new(AstNode::Identifier(String::from(word)))
+    );
+    add_to_tree(
+        func_call_pos, ast, Ast::new(AstNode::Args)
+    );
 }
 
 fn add_property(
