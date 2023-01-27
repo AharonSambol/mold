@@ -77,7 +77,7 @@
 # def func(a: int, *rgs: float, b: int = 0, c: bool = False, d: int = 99):
 #     x := a + b + d
 #     print(x)
-def func(a: int | bool, b: List[int| str]):
+def func(a: int | bool, b: List[int | str]):
     pass
 
 def main():

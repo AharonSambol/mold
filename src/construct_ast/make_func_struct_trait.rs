@@ -10,6 +10,7 @@ use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
 use crate::types::{GenericType, print_type, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
 use crate::{IS_COMPILED, some_vec, typ_with_child, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
+use crate::add_types::utils::add_to_stack;
 
 pub fn make_func(
     tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
@@ -130,7 +131,7 @@ fn make_func_signature(
                 ast.push(node_clone);
             }
         }
-        vars.last_mut().unwrap().insert(param.name.clone(), identifier_pos);
+        add_to_stack(vars, param.name.clone(), identifier_pos);
     }
     if !params.is_empty() && params[0].0.name == "self" {
         ast[index].value = AstNode::Function(name.clone());

@@ -113,7 +113,7 @@ pub fn to_python(
             )
         },
         AstNode::FirstAssignment => {
-            format!("{}={}",
+            format!("{}={}#!",
                 to_python(ast, children[0], indentation, ToWrapVal::GetName),
                 to_python(ast, children[1], indentation, ToWrapVal::GetAsValue)
             )

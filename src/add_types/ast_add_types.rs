@@ -9,7 +9,7 @@ use regex::Regex;
 use crate::{some_vec, unwrap_enum, typ_with_child};
 use crate::add_types::generics::{apply_generics_to_method_call, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::check_for_boxes;
-use crate::add_types::utils::{find_function_in_struct, find_function_in_trait, get_from_stack};
+use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack};
 use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of_prev, print_tree};
 use crate::mold_tokens::OperatorType;
 use crate::types::TypeKind::GenericsMap;
@@ -43,7 +43,8 @@ pub fn add_types(
             }
             let for_var_pos = unwrap_u(&for_vars.children)[0];
             ast[for_var_pos].typ = get_into_iter_return_typ(ast, info, iter);
-            vars.last_mut().unwrap().insert(
+            add_to_stack(
+                vars,
                 unwrap_enum!(&ast[for_var_pos].value, AstNode::Identifier(n), n.clone()),
                 for_var_pos
             );
@@ -95,12 +96,12 @@ pub fn add_types(
         AstNode::ArgsDef => {
             for child in children {
                 let name = unwrap_enum!(&ast[child].value, AstNode::Arg { name, .. }, name);
-                vars.last_mut().unwrap().insert(name.clone(), child);
+                add_to_stack(vars, name.clone(), child);
             }
         }
         AstNode::Identifier(name) => {
-            let from_stack = get_from_stack(vars, name);
-            if let Some(x) = from_stack {
+
+            if let Some(x) = get_from_stack(vars, name) {
                 //1 optimize: things like this could probably be references instead of clone
                 ast[pos].typ = ast[x].typ.clone();
                 return;
@@ -126,7 +127,7 @@ pub fn add_types(
                 });
                 return;
             }
-            panic!("used `{name}` before assignment")
+            panic!("used `{name}` before assignment") //todo // 5 unreachable!
         }
         AstNode::FirstAssignment => {
             add_types(ast, children[1], vars, info, parent_struct);
@@ -147,7 +148,7 @@ pub fn add_types(
 
             if let AstNode::Identifier(name) = &ast[children[0]].value {
                 let name = name.clone();
-                vars.last_mut().unwrap().insert(name, children[0]);
+                add_to_stack(vars, name, children[0]);
             } else {
                 todo!()
             }

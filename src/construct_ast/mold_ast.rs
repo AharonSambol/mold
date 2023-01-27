@@ -2,12 +2,14 @@ use std::collections::{HashMap, HashSet};
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::{EMPTY_STR, IS_COMPILED, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
+use crate::add_types::utils::{add_to_stack, get_from_stack};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
 use crate::types::{Type, TypeKind, unwrap, unwrap_u};
 use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
 use crate::construct_ast::get_typ::{get_params};
 use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait, make_enum};
 use crate::construct_ast::tree_utils::{add_to_tree, get_last, insert_as_parent_of_prev, print_tree};
+
 
 type TraitFuncs = HashMap<String, (usize, FuncType)>;
 
@@ -78,18 +80,9 @@ pub struct Info<'a> {
 
 
 pub fn construct_ast(tokens: &[SolidToken], pos: usize, info: &mut Info) -> Vec<Ast> {
-    let (mut structs, mut funcs, mut traits, mut types, mut enums)
+    let (structs, funcs, traits, types, enums)
         = get_struct_and_func_names(tokens);
     let mut ast = vec![Ast::new(AstNode::Module)];
-    // let mut info = Info {
-    //     funcs: &mut funcs,
-    //     structs: &mut structs,
-    //     traits: &mut traits,
-    //     types: &mut types,
-    //     enums: &mut enums,
-    //     generics: &mut vec![],
-    //     struct_inner_types: &mut HashSet::new()
-    // };
     *info.funcs = funcs;
     *info.structs = structs;
     *info.traits = traits;
@@ -101,7 +94,6 @@ pub fn construct_ast(tokens: &[SolidToken], pos: usize, info: &mut Info) -> Vec<
         tokens, pos, &mut ast, 0, 0,
         &mut vec![HashMap::new()], info
     );
-    // add_traits_to_structs(&mut ast)
     duck_type(&mut ast, info.traits, info.structs);
     print_tree(&ast, 0);
     if unsafe { IS_COMPILED } {
@@ -378,15 +370,13 @@ pub fn make_ast_statement(
                 );
             },
             SolidToken::Elif => {
-                let last = get_last(&mut ast[parent].children);
+                let last = get_last(&ast[parent].children);
                 if let AstNode::IfStatement = ast[last].value {
                     pos = if_while_statement(
                         true, tokens, pos + 1, ast, last, indent,
                         vars, info
                     );
-                } else {
-                    panic!("elif to unknown if")
-                }
+                } else { panic!("elif to unknown if") }
             },
             SolidToken::Else => {
                 if let SolidToken::Colon = tokens[pos + 1] {
@@ -394,7 +384,7 @@ pub fn make_ast_statement(
                 } else {
                     panic!("expected colon")
                 }
-                let last = get_last(&mut ast[parent].children);
+                let last = get_last(&ast[parent].children);
                 if let AstNode::IfStatement = ast[last].value {
                     let body_pos = add_to_tree(last, ast, Ast::new(AstNode::Body));
                     vars.push(HashMap::new());
@@ -403,9 +393,7 @@ pub fn make_ast_statement(
                         vars, info
                     ) - 1;
                     vars.pop();
-                } else {
-                    panic!("else to unknown if")
-                }
+                } else { panic!("else to unknown if") }
             },
             SolidToken::Pass => {
                 add_to_tree(parent, ast, Ast::new(AstNode::Pass));
@@ -617,11 +605,11 @@ pub fn make_ast_expression(
 
 fn word_tok(
     tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
-    vars: &mut VarTypes, info: &mut Info, st: &str, is_expression: bool
+    vars: &mut VarTypes, info: &mut Info, st: &String, is_expression: bool
 ) -> usize {
     let mut identifier_pos = add_to_tree(
         parent, ast,
-        Ast::new(AstNode::Identifier(String::from(st)))
+        Ast::new(AstNode::Identifier(st.clone()))
     );
     loop {
         pos += 1;
@@ -634,8 +622,13 @@ fn word_tok(
                 while ast[parent].value.is_expression() {
                     parent = ast[parent].parent.unwrap();
                 }
-
                 let index = insert_as_parent_of_prev(ast, parent, AstNode::Assignment);
+                if !unsafe { IS_COMPILED } && get_from_stack(vars, st).is_none() {
+                    ast[index].value = AstNode::FirstAssignment;
+                    add_to_stack(vars, st.clone(), usize::MAX)
+                }
+                println!("ST: {st}, VARS: {vars:?}");
+
                 return make_ast_expression(
                     tokens, pos + 1, ast, index, vars, info
                 ) - 1;
@@ -650,7 +643,7 @@ fn word_tok(
 
                 let index = insert_as_parent_of_prev(ast, parent, AstNode::FirstAssignment);
                 identifier_pos += 1;
-                vars.last_mut().unwrap().insert(String::from(st), identifier_pos);
+                add_to_stack(vars, st.clone(), identifier_pos);
                 if let SolidToken::Operator(OperatorType::Eq) = tokens[pos + 1] {
                     pos += 1;
                 } else {
@@ -806,7 +799,7 @@ fn for_statement(
             vars_pos, ast,
             Ast::new(AstNode::Identifier(name.clone()))
         );
-        vars.last_mut().unwrap().insert(name.clone(), i);
+        add_to_stack(vars, name.clone(), i);
         pos += 2;
         match &tokens[pos - 1] {
             SolidToken::Comma => continue,

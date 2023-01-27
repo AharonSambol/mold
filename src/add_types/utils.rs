@@ -63,3 +63,8 @@ pub fn get_from_stack(vars: &VarTypes, var: &String) -> Option<usize> {
     }
     None
 }
+
+#[inline]
+pub fn add_to_stack(vars: &mut VarTypes, var: String, pos: usize) {
+    vars.last_mut().unwrap().insert(var, pos);
+}
