@@ -551,6 +551,7 @@ fn add_optional_args( //3 not optimized // todo can't use name for positional ar
         if let Some(pos) = supplied_kws.get(&ex_arg.name) {
             to_add.push(*pos);
         } else {
+            dbg!(ast[ex_arg.pos].clone());
             add_to_tree(
                 children[1], ast,
                 ast[ex_arg.pos].clone()

@@ -72,14 +72,13 @@ fn add_one_of_enum(
         value: AstNode::Property,
         children: None,
         parent: Some(parent_pos),
-        typ: None,
+        typ: Some(typ_with_child! {
+            TypeKind::Enum(TypName::Str(String::from(enum_name))),
+            Type { kind: TypeKind::GenericsMap, children: None }
+        }),
         is_mut: false,
     });
     let property = ast.len() - 1;
-    ast[property].typ = Some(typ_with_child! {
-        TypeKind::Enum(TypName::Str(String::from(enum_name))),
-        Type { kind: TypeKind::GenericsMap, children: None }
-    });
     for x in [AstNode::Identifier(String::from(enum_name)), AstNode::FunctionCall(true)] {
         add_to_tree(property, ast, Ast::new(x));
     }
@@ -148,7 +147,10 @@ pub fn check_for_boxes(
         return check_for_boxes(expected, ast, unwrap_u(&got.children)[0], info, vars);
     }
     if let TypeKind::OneOf = expected.kind {
+        print_tree(ast, 0);
+        println!("------");
         for typ in unwrap(&expected.children){
+            println!("{typ}// {:?}", got.typ);
             if matches!(&got.typ, Some(t) if t == typ) {
                 make_enums(&expected, info.one_of_enums);
                 add_one_of_enum(

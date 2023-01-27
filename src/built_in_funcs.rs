@@ -221,8 +221,8 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "range",
             generics: None,
-            // args: vec!["start: int", "end: int=0", "step: int=1"],
-            args: vec!["*args: int"], //1 so that the rust version can count how many args were supplied
+            args: vec!["start: int", "end: int | bool = False", "step: int | bool = False"],
+            // args: vec!["*args: int"], //1 so that the rust version can count how many args were supplied
             return_typ: Some("Iterator[Item=int]"),
         }),
         //4 print

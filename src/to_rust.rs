@@ -203,7 +203,7 @@ pub fn to_rust(
             }
             to_rust(ast, children[0], indentation, res, enums, info);
             for child in children.iter().skip(1) {
-                write!(res, ",").unwrap();
+                write!(res, ", ").unwrap();
                 to_rust(ast, *child, indentation, res, enums, info);
             }
         },
@@ -540,60 +540,62 @@ fn built_in_funcs(
     ast: &[Ast], name: &str, indentation: usize, res: &mut String,
     enums: &mut HashMap<String, String>, children: &[usize], info: &Info
 ) -> bool { // todo get rid of unnecessary boxes
-    // let arg_pos = unwrap_u(&ast[children[1]].children)[1];
     match name {
         "reversed" => {
             write!(res, "Box::new(").unwrap();
             to_rust(ast, children[1], indentation, res, enums, info);
             write!(res, ".rev())").unwrap();
         }
-        // "len" => {
-        //     write!(res, "(").unwrap();
-        //     let mut arg = String::new();
-        //     to_rust(ast, children[1], indentation, &mut arg, enums, info);
-        //     if arg.starts_with("Box::new(") {
-        //         write!(res, "{}.len() as i32)", arg
-        //             .strip_prefix("Box::new(").unwrap()
-        //             .strip_suffix(')').unwrap()
-        //         ).unwrap();
-        //     } else {
-        //         write!(res, "{arg}.len() as i32)").unwrap();
-        //     }
-        // },
-        "range" => {
+        "range" => { // 3 ugly code
             let pos = ast[children[0]].parent.unwrap();
             let parent = ast[pos].parent.unwrap();
             let is_in_for = matches!(&ast[parent].value, AstNode::ForIter);
 
-            let vec_args = unwrap_u(&ast[children[1]].children)[0];
-            let args = unwrap_u(&ast[vec_args].children);
+            let args = unwrap_u(&ast[children[1]].children);
             if !is_in_for {
                 write!(res, "Box::new(").unwrap();
             }
-            match args.len() {
-                // TODO make range defaults be something other than int
-                1 => {
+            if args.is_empty() {
+                panic!("not enough args passed to `range` expected at least 1")
+            }
+            let mut optional_args = vec![];
+            for i in args.iter().skip(1) {
+                if let Some(Type { kind: TypeKind::Enum(name), .. }) = &ast[*i].typ {
+                    if name == "i32__or__bool" {
+                        let func_call = ast[*i].children.as_ref().unwrap()[1];
+                        let func_children = ast[func_call].children.as_ref().unwrap();
+                        let opt_name = &ast[func_children[0]];
+                        if matches!(&opt_name.value, AstNode::Identifier(n) if n == "_i32") {
+                            let args_pos = &ast[func_children[1]];
+                            optional_args.push(args_pos.children.as_ref().unwrap()[0]);
+                            continue
+                        }
+                    }
+                }
+                break
+            }
+            match optional_args.len() {
+                0 => {
                     write!(res, "(0..").unwrap();
                     to_rust(ast, args[0], 0, res, enums, info);
+                    write!(res, ")").unwrap();
+                }
+                1 => {
+                    write!(res, "(").unwrap();
+                    to_rust(ast, args[0], 0, res, enums, info);
+                    write!(res, "..").unwrap();
+                    to_rust(ast, optional_args[0], 0, res, enums, info);
                     write!(res, ")").unwrap();
                 }
                 2 => {
                     write!(res, "(").unwrap();
                     to_rust(ast, args[0], 0, res, enums, info);
                     write!(res, "..").unwrap();
-                    to_rust(ast, args[1], 0, res, enums, info);
-                    write!(res, ")").unwrap();
-                }
-                3 => {
-                    write!(res, "(").unwrap();
-                    to_rust(ast, args[0], 0, res, enums, info);
-                    write!(res, "..").unwrap();
-                    to_rust(ast, args[1], 0, res, enums, info);
+                    to_rust(ast, optional_args[0], 0, res, enums, info);
                     write!(res, ").step_by((").unwrap();
-                    to_rust(ast, args[2], 0, res, enums, info);
+                    to_rust(ast, optional_args[1], 0, res, enums, info);
                     write!(res, ") as usize)").unwrap();
                 }
-                0 => panic!("not enough args passed to `range` expected at least 1"),
                 _ => panic!("too many args passed to `range` expected <=3 found {}", args.len())
             }
             if !is_in_for {
@@ -651,67 +653,6 @@ pub fn get_struct_and_func_name<'a>(ast: &'a [Ast], children: &[usize]) -> Optio
     None
 }
 
-
-// pub fn make_enums(typ: &Type, enums: &mut HashMap<String, String>){
-//     let types = unwrap(&typ.children);
-//     let enm_name = typ.to_string();
-//     enums.entry(enm_name.clone()).or_insert_with(|| {
-//         let elems = types
-//             .iter()
-//             .map(|x| format!("_{x}: {x}"));
-//         let res = format!("enum {enm_name} {{ {} }}", join(elems , ","));
-//         res
-//     });
-    // if !enums.contains_key(&enm) {
-    //     let elems = types
-    //         .iter()
-    //         .map(|x| format!("_{x}: {x}"))
-    //         .collect::<Vec<String>>();
-    //     enums.insert(
-    //         enm.clone(),
-    //         format!("enum {enm} {{ {} }}", join(&elems , ","))
-    //     );
-    // }
-// fn make_enums(typ: &Type, enums, info: &mut HashMap<String, String>){
-//     match &typ.kind {
-//         TypeKind::Trait(_trt) => ,
-//         TypeKind::Args => ,
-//         TypeKind::Implements => ,
-//         TypeKind::Tuple => ,
-//         TypeKind::Generic(_gen) => ,
-//         TypeKind::Optional => ,
-//         TypeKind::Unknown | TypeKind::Typ(_) => (),
-//         TypeKind::OneOf => {
-//             let types = unwrap(&typ.children);
-//             let enm = join(types, "-or-");
-//             if !enums.contains_key(&enm) {
-//                 let elems = types
-//                     .iter()
-//                     .map(|x| format!("_{x}: {x}"))
-//                     .collect::<Vec<String>>();
-//                 enums.insert(
-//                     enm.clone(),
-//                     format!("enum {enm} {{ {} }}", join(&elems , ","))
-//                 );
-//             }
-//         },
-//         TypeKind::TypWithSubTypes => {
-//             for child in unwrap(&typ.children).iter().skip(1) {
-//                 make_enums(child, enums, info)
-//             }
-//         }
-//         TypeKind::Struct(_) => {
-//             // for typ in arg-types and func-types
-//         },
-//         TypeKind::Function(_) => {
-//             // for typ in arg-types and func-types
-//         },
-//         TypeKind::Class(_) => ,
-//         TypeKind::Pointer => (),
-//     }
-// }
-// }
-
 fn format_generics(generics_ast: &Ast) -> String {
     if let Some(Type{ children: Some(generics), .. }) = &generics_ast.typ {
         format!("<{}>", join(generics.iter().map(|x|
@@ -721,7 +662,6 @@ fn format_generics(generics_ast: &Ast) -> String {
         EMPTY_STR
     }
 }
-
 
 pub fn implements_trait(mut typ: &Type, expected_trait: &str, ast: &[Ast], info: &Info) -> bool {
     if let TypeKind::Generic(GenericType::Of(_)) = &typ.kind {

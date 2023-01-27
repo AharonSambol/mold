@@ -3,7 +3,8 @@ use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, make_ast_expression, STType};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
 use crate::types::{clean_type, MUT_STR_TYPE, Type, UNKNOWN_TYPE, TypeKind, GenericType, TypName};
-use crate::{typ_with_child, unwrap_enum, some_vec};
+use crate::{typ_with_child, unwrap_enum, some_vec, IS_COMPILED};
+use crate::add_types::ast_add_types::add_types;
 
 // should be passed pos = one after the opening parenthesis
 // returns where pos = the index of the closing brace
@@ -50,6 +51,9 @@ pub fn get_params(
                         tokens, *pos + 1, &mut res,
                         0, &mut vec![], info
                     ); //1 this ignores the result just skips the default_val
+                    if unsafe { IS_COMPILED } {
+                        add_types(&mut res, 0, &mut vec![], info, &None);
+                    }
                     params.last_mut().unwrap().1 = Some(res);
                 }
                 if let SolidToken::Parenthesis(IsOpen::False) = tokens[*pos] {
