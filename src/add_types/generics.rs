@@ -10,7 +10,7 @@ use crate::types::{GenericType, Type, TypeKind, unwrap};
 pub fn get_function_return_type(return_type: &Option<Type>, expected_inputs: &Option<Vec<Param>>, inputs: &Option<Vec<Type>>) -> Option<Type> {
     let return_type = if let Some(x) = return_type { x } else { return None };
     if let Some(expected_inputs) = expected_inputs {
-        let inputs = unwrap_enum!(inputs);
+        let inputs = inputs.as_ref().unwrap();
         let mut hm = HashMap::new();
         for (ex_ipt, ipt) in expected_inputs.iter().zip(inputs) {
             map_generic_types(&ex_ipt.typ, ipt, &mut hm);
@@ -50,7 +50,7 @@ pub fn apply_generics_to_method_call(return_typ: &Option<Type>, mut base: &Type)
                 let hm = HashMap::from_iter(
                     generic_map.iter().filter_map(|x|
                         if let TypeKind::Generic(GenericType::Of(name)) = &x.kind {
-                            Some((name.clone(), unwrap_enum!(&x.children)[0].clone()))
+                            Some((name.clone(), x.children.as_ref().unwrap()[0].clone()))
                         } else { None }
                     )
                 );

@@ -50,7 +50,7 @@ pub fn to_rust(
                 match &ast[*child].value {
                     AstNode::IfStatement => {
                         write!(res, "\n{}else if ", "\t".repeat(indentation)).unwrap();
-                        let c_children = unwrap_enum!(&ast[*child].children);
+                        let c_children = ast[*child].children.as_ref().unwrap();
                         to_rust(ast, c_children[0], indentation, res, enums, info);
                         to_rust(ast, c_children[1], indentation + 1, res, enums, info);
                     },
@@ -269,7 +269,7 @@ pub fn to_rust(
                     .map(|&x|
                         format!("{}: {}",
                             unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
-                            unwrap_enum!(&ast[x].typ)
+                            ast[x].typ.as_ref().unwrap()
                         )
                     ),
                 ", "
@@ -317,7 +317,7 @@ pub fn to_rust(
                         for i in types_pos {
                             type_defs.insert(
                                 unwrap_enum!(&ast[*i].value, AstNode::Type(n), n),
-                                unwrap_enum!(&ast[*i].typ)
+                                ast[*i].typ.as_ref().unwrap()
                             );
                         }
 
@@ -372,7 +372,7 @@ pub fn to_rust(
                             let arg = &ast[*x];
                             let name = unwrap_enum!(&arg.value, AstNode::Arg { name, is_arg, is_kwarg }, name);
                             // TODO if is_arg \ is_kwarg
-                            let typ = unwrap_enum!(&arg.typ);
+                            let typ = arg.typ.as_ref().unwrap();
                             format!("{name}: {typ}")
                         });
                     let args = join(args, ", ");
@@ -406,7 +406,7 @@ pub fn to_rust(
                         if i != 0 {
                             write!(res, ", ").unwrap();
                         }
-                        write!(res, "{}", unwrap_enum!(&ast[*typ].typ)).unwrap();
+                        write!(res, "{}", ast[*typ].typ.as_ref().unwrap()).unwrap();
                     }
                     write!(res, ")").unwrap();
                 }
@@ -436,7 +436,7 @@ fn print_function_rust(
             .map(|&x|
                 {
                     let name = unwrap_enum!(&ast[x].value, AstNode::Arg { name, .. }, name);
-                    let typ = unwrap_enum!(&ast[x].typ).clone();
+                    let typ = ast[x].typ.as_ref().unwrap();
                     format!("{}{name}: {typ}", if ast[x].is_mut { "mut " } else { "" })
                 }
             ),
@@ -565,11 +565,13 @@ fn built_in_funcs(
             let parent = ast[pos].parent.unwrap();
             let is_in_for = matches!(&ast[parent].value, AstNode::ForIter);
 
-            let args = unwrap_u(&ast[children[1]].children);
+            let vec_args = unwrap_u(&ast[children[1]].children)[0];
+            let args = unwrap_u(&ast[vec_args].children);
             if !is_in_for {
                 write!(res, "Box::new(").unwrap();
             }
             match args.len() {
+                // TODO make range defaults be something other than int
                 1 => {
                     write!(res, "(0..").unwrap();
                     to_rust(ast, args[0], 0, res, enums, info);
@@ -591,7 +593,8 @@ fn built_in_funcs(
                     to_rust(ast, args[2], 0, res, enums, info);
                     write!(res, ") as usize)").unwrap();
                 }
-                _ => panic!("too many args passed to range expected <=3 found {}", args.len())
+                0 => panic!("not enough args passed to `range` expected at least 1"),
+                _ => panic!("too many args passed to `range` expected <=3 found {}", args.len())
             }
             if !is_in_for {
                 write!(res, ")").unwrap();
@@ -603,7 +606,7 @@ fn built_in_funcs(
             let args = unwrap_u(&ast[args[0]].children);
             let mut formats = String::new();
             for arg in args {
-                let typ = unwrap_enum!(&ast[*arg].typ);
+                let typ = ast[*arg].typ.as_ref().unwrap();
                 if implements_trait(typ, "Display", ast, info) {
                     write!(formats, "{{}} ").unwrap();
                 } else if implements_trait(typ, "Debug", ast, info) {
@@ -649,7 +652,26 @@ pub fn get_struct_and_func_name<'a>(ast: &'a [Ast], children: &[usize]) -> Optio
 }
 
 
-fn _make_enums(){
+// pub fn make_enums(typ: &Type, enums: &mut HashMap<String, String>){
+//     let types = unwrap(&typ.children);
+//     let enm_name = typ.to_string();
+//     enums.entry(enm_name.clone()).or_insert_with(|| {
+//         let elems = types
+//             .iter()
+//             .map(|x| format!("_{x}: {x}"));
+//         let res = format!("enum {enm_name} {{ {} }}", join(elems , ","));
+//         res
+//     });
+    // if !enums.contains_key(&enm) {
+    //     let elems = types
+    //         .iter()
+    //         .map(|x| format!("_{x}: {x}"))
+    //         .collect::<Vec<String>>();
+    //     enums.insert(
+    //         enm.clone(),
+    //         format!("enum {enm} {{ {} }}", join(&elems , ","))
+    //     );
+    // }
 // fn make_enums(typ: &Type, enums, info: &mut HashMap<String, String>){
 //     match &typ.kind {
 //         TypeKind::Trait(_trt) => ,
@@ -688,7 +710,7 @@ fn _make_enums(){
 //         TypeKind::Pointer => (),
 //     }
 // }
-}
+// }
 
 fn format_generics(generics_ast: &Ast) -> String {
     if let Some(Type{ children: Some(generics), .. }) = &generics_ast.typ {

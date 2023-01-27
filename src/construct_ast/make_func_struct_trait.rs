@@ -66,7 +66,7 @@ fn make_func_signature(
     if let Some(struct_parent) = ast[parent].parent {
         if let AstNode::Struct(_) = ast[struct_parent].value {
             let struct_generics = &ast[unwrap_u(&ast[struct_parent].children)[0]];
-            let stct_g_typ = unwrap_enum!(&struct_generics.typ);
+            let stct_g_typ = struct_generics.typ.as_ref().unwrap();
             for child in unwrap(&stct_g_typ.children) {
                 unwrap_enum!(
                     child,
@@ -335,7 +335,7 @@ pub fn make_struct(
                 let args_children = &mut ast[args_pos].children;
                 if let AstNode::Identifier(name) = first_arg_val {
                     if name == "self" {
-                        let args_children = unwrap_enum!(args_children);
+                        let args_children = args_children.as_mut().unwrap();
                         args_children.remove(0);
                     }
                 }

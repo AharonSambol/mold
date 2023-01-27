@@ -64,6 +64,7 @@ fn main() {
         structs: &mut Default::default(),
         traits: &mut Default::default(),
         enums: &mut Default::default(),
+        one_of_enums: &mut Default::default(),
         types: &mut Default::default(),
         generics: &mut vec![],
         struct_inner_types: &mut Default::default(),
@@ -95,17 +96,50 @@ class _built_in_list_(list):
 
 list = _built_in_list_
 
-
 class _value_:
-    def __init__(self, v): self.v = v
-    def __str__(self): return f'{{self.v}}'
+    def __init__(self, v):
+        self.v = v
+
+    def __str__(self):
+        return f'{{self.v}}'
+
+    def getattr(self, attr):
+        if hasattr(self, attr):
+            return self.__getattribute__(attr)
+        if isinstance(self.v, (_value_, _pointer_)):
+            return self.v.getattr(attr)
+        return self.v.__getattribute__(attr)
+
+    def setattr(self, name, val):
+        if hasattr(self, name):
+            return self.__setattr__(name, val)
+        if isinstance(self.v, (_value_, _pointer_)):
+            return self.v.setattr(name, val)
+        return self.v.__setattr__(name, val)
+
+    def __getitem__(self, pos): return self.v.__getitem__(pos)
+    def __setitem__(self, pos, val): return self.v.__setitem__(pos, val)
 
 
 class _pointer_:
     def __init__(self, p):
-        self.__dict__ = {{x: y for x, y in p.__dict__.items()}}
         self.p = p
-    def __str__(self): return f'&{{self.p}}'
+
+    def __str__(self):
+        return f'&{{self.p}}'
+
+    def getattr(self, attr):
+        if hasattr(self, attr):
+            return self.__getattribute__(attr)
+        return self.p.getattr(attr)
+
+    def setattr(self, name, val):   # todo only if is &mut
+        if hasattr(self, name):
+            return self.__setattr__(name, val)
+        return self.p.setattr(name, val)
+
+    def __getitem__(self, pos): return self.p.__getitem__(pos)
+    def __setitem__(self, pos, val): return self.p.__setitem__(pos, val)  # todo only if is &mut
 
 
 
@@ -131,9 +165,10 @@ fn compile(ast: &[Ast], info: &Info) {
     let mut rs = String::new();
     let mut enums = HashMap::new();
     to_rust::to_rust(ast, 0, 0, &mut rs, &mut enums, info);
+    // let enums = to_rust::make_enums(&enums);
     let rs = rs.trim();
-    println!("\n{}", join(enums.values(), "\n\n"));
-    println!("\n{}", rs);
+    let one_of_enums = join(info.one_of_enums.values(), "\n\n");
+    println!("\n{one_of_enums}\n{rs}");
     // println!("\n{}", rs.split_once(CODE_END_FLAG).unwrap().0.trim_end());
 
     if !Path::new("/out").exists() {
@@ -168,6 +203,8 @@ use std::slice::{{Iter, IterMut}};
 use std::iter::Rev;
 use std::collections::{{HashMap, HashSet}};
 
+
+{one_of_enums}
 
 {}
 {rs}",

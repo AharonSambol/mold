@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use pretty_print_tree::{Color, PrettyPrintTree};
 use crate::construct_ast::ast_structure::join;
-use crate::EMPTY_STR;
+use crate::{EMPTY_STR, unwrap_enum};
 
 pub const UNKNOWN_TYPE: Type = Type {
     kind: TypeKind::Unknown,
@@ -58,7 +58,7 @@ pub enum TypeKind {
     Generic(GenericType),
     Generics,
     GenericsMap,
-    _OneOf, _Optional,
+    OneOf,
     _Tuple,
     InnerType(String), // e.g. Iterator[Inner=i32]
     _Args,
@@ -133,9 +133,9 @@ impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             TypeKind::Unknown => write!(f, ""),
-            TypeKind::_OneOf => {
+            TypeKind::OneOf => {
                 let children = unwrap(&self.children);
-                write!(f, "{}", join(children.iter(), "-or-"))
+                write!(f, "{}", join(children.iter(), "__or__"))
             },
             TypeKind::_Tuple => {
                 write!(f, "({})", join(unwrap(&self.children).iter(), ","))
@@ -151,11 +151,12 @@ impl Display for Type {
                     write!(f, "GENERIC({c:?})")
                 }
             },
-            TypeKind::GenericsMap => write!(f, "GENERICS_MAP({})", join(unwrap(&self.children).iter(), ",")),
-            TypeKind::Generics => write!(f, "GENERICS({})", join(unwrap(&self.children).iter(), ",")),
-            TypeKind::_Optional => {
-                write!(f, "OPTIONAL({})", join(unwrap(&self.children).iter(), ","))
-            },
+            TypeKind::GenericsMap => write!(
+                f, "GENERICS_MAP({})", join(unwrap(&self.children).iter(), ",")
+            ),
+            TypeKind::Generics => write!(
+                f, "GENERICS({})", join(unwrap(&self.children).iter(), ",")
+            ),
             TypeKind::_Args => {
                 write!(f, "ARGS({})", unwrap(&self.children)[0])
             },
@@ -196,20 +197,23 @@ impl Type {
         }
     }
 
-    pub fn add_option(mut self, typ: Type) -> Type {
-        if let TypeKind::_OneOf = self.kind {
-            if let Some(vc) = &mut self.children {
+    pub fn add_option(mut self, mut typ: Type) -> Type {
+        if let TypeKind::OneOf = self.kind {
+            if let TypeKind::OneOf = typ.kind {
+                if let Some(vc) = &mut self.children {
+                    vc.append(typ.children.as_mut().unwrap());
+                } else {
+                    panic!("adding two empty 'OneOf' types together??")
+                }
+            } else if let Some(vc) = &mut self.children {
                 vc.push(typ);
-            } else {
-                // pretty sure this will never happen
-                self.children = Some(vec![typ])
-            }
+            } else { panic!("an empty 'OneOf' type?"); }
             self
-        } else if let TypeKind::_OneOf = typ.kind {
+        } else if let TypeKind::OneOf = typ.kind {
             typ.add_option(self)
         } else {
             Type {
-                kind: TypeKind::_OneOf,
+                kind: TypeKind::OneOf,
                 children: Some(vec![self, typ])
             }
         }

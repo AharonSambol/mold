@@ -1,7 +1,4 @@
 #[macro_export] macro_rules! unwrap_enum {
-    ($var:expr) => {
-        if let Some(x) = $var { x } else { unreachable!() }
-    };
     ($var:expr, $pattern:pat) => {
         let $pattern = $var else { unreachable!() };
     };

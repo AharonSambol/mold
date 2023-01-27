@@ -76,6 +76,7 @@ pub fn get_struct_and_func_names(
                     structs: &mut structs,
                     traits: &mut traits,
                     enums: &mut enums,
+                    one_of_enums: &mut Default::default(),
                     types: &mut resolved_types,
                     generics: &mut vec![],
                     struct_inner_types: &mut HashSet::new(),

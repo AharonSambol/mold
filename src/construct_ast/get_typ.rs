@@ -37,11 +37,10 @@ pub fn get_params(
                             }
                         }
                     } else { typ },
-                    // default_val: false,
                     is_mut,
                     is_args,
                     is_kwargs,
-                    pos: 10000000
+                    pos: usize::MAX
                 }, None));
                 is_mut = true;
                 is_args = false;
@@ -52,12 +51,6 @@ pub fn get_params(
                         0, &mut vec![], info
                     ); //1 this ignores the result just skips the default_val
                     params.last_mut().unwrap().1 = Some(res);
-                    // params.last_mut().unwrap().default_val = true;
-                    // *pos += 1;
-                    // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 }
                 if let SolidToken::Parenthesis(IsOpen::False) = tokens[*pos] {
                     return params
@@ -65,13 +58,9 @@ pub fn get_params(
             },
             SolidToken::Parenthesis(IsOpen::False)
             | SolidToken::Operator(OperatorType::Eq) => return params,
-            SolidToken::IMut => {
-                is_mut = false;
-            }
+            SolidToken::IMut => is_mut = false,
+            SolidToken::UnaryOperator(OperatorType::Dereference) => is_args = true,
             SolidToken::Comma => {}
-            SolidToken::UnaryOperator(OperatorType::Dereference) => {
-                is_args = true
-            }
             _ => panic!("unexpected token {:?}", tokens[*pos])
         }
         *pos += 1;
@@ -124,14 +113,13 @@ pub fn try_get_arg_typ(
             | SolidToken::Operator(OperatorType::Eq)
             => break,
             SolidToken::Operator(OperatorType::BinOr) => {
-                todo!();
-                // let typ = unwrap_enum!(res, Some(x), x, "need a value before |");
-                // *pos += 1;
-                // let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call?);
-                // if let Some(t) = t {
-                //     res = Some(typ.add_option(t));
-                // } else if panic { panic!() } else { return None };
-                // break
+                let typ = unwrap_enum!(res, Some(x), x, "need a value before |");
+                *pos += 1;
+                let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call);
+                *pos -= 1;
+                if let Some(t) = t {
+                    res = Some(typ.add_option(t));
+                } else if panic { panic!() } else { return None };
             }
             SolidToken::Word(wrd) => {
                 if res.is_some() {
@@ -243,7 +231,7 @@ fn get_inside_bracket_types<T: STType>(
         if let TypeKind::InnerType(_) = &t.kind {
             return t
         }
-        let generics = unwrap_enum!(&structs_or_traits[struct_name].get_generics());
+        let generics = structs_or_traits[struct_name].get_generics().as_ref().unwrap();
         if *i >= generics.len() {
             panic!("too many generics passed, expected only `{}`", generics.len())
         }

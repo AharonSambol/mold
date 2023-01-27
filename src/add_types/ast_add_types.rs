@@ -186,7 +186,7 @@ pub fn add_types(
             let args: Option<Vec<Type>> =
                 if args.is_empty() { None }
                 else if let Some(expected_inputs) = input {
-                    Some(expected_inputs.iter().zip(args.iter()).map(
+                    Some(expected_inputs.clone().iter().zip(args.iter()).map(
                         |(exp, got)|
                             check_for_boxes(exp.typ.clone(), ast, *got, info, vars)
                     ).collect())
@@ -196,7 +196,9 @@ pub fn add_types(
                     ).collect())
                 };
             ast[pos].typ = get_function_return_type(
-                output, input, &args
+                &info.funcs[&name].output,
+                &info.funcs[&name].input,
+                &args
             );
         }
         AstNode::StructInit => {
@@ -214,8 +216,8 @@ pub fn add_types(
                     let supplied_vec = ast[children[1]].children.clone().unwrap();
                     for (supplied, arg) in supplied_vec.iter().zip(args) {
                         map_generic_types(
-                            unwrap_enum!(&ast[arg].typ),
-                            unwrap_enum!(&ast[*supplied].typ),
+                            ast[arg].typ.as_ref().unwrap(),
+                            ast[*supplied].typ.as_ref().unwrap(),
                             &mut generics_map
                         );
                         add_to_tree(
@@ -229,7 +231,7 @@ pub fn add_types(
                         kind: TypeKind::GenericsMap,
                         children:  if generics_map.is_empty() { None } else {
                             Some(
-                                unwrap_enum!(&info.structs[name].generics).iter().map(
+                                info.structs[name].generics.as_ref().unwrap().iter().map(
                                     |name| typ_with_child! {
                                         TypeKind::Generic(GenericType::Of(name.clone())),
                                         generics_map.remove(name).unwrap()
@@ -369,8 +371,8 @@ pub fn add_types(
         AstNode::Operator(_) => {
             add_types(ast, children[0], vars, info, parent_struct);
             add_types(ast, children[1], vars, info, parent_struct);
-            let mut t1 = unwrap_enum!(&ast[children[0]].typ);
-            let mut t2 = unwrap_enum!(&ast[children[1]].typ);
+            let mut t1 = ast[children[0]].typ.as_ref().unwrap();
+            let mut t2 = ast[children[1]].typ.as_ref().unwrap();
             let t1 = {
                 while let TypeKind::Pointer | TypeKind::MutPointer = t1.kind {
                     t1 = &unwrap(&t1.children)[0];
@@ -441,7 +443,7 @@ pub fn add_types(
                             _ => panic!("type `{}` cannot be dereferenced", typ),
                         }
                     }
-                    dref(unwrap_enum!(&ast[children[0]].typ))
+                    dref(ast[children[0]].typ.as_ref().unwrap())
                 }
                 _ => ast[children[0]].typ.clone()
             }
@@ -528,7 +530,7 @@ pub fn add_types(
     }
 }
 
-fn add_optional_args(//3 not optimized // todo can't use name for positional args
+fn add_optional_args( //3 not optimized // todo can't use name for positional args
     ast: &mut Vec<Ast>, children: &[usize], args: &mut Vec<usize>, expected_args: &[Param]
 ) {
     let amount_of_pos_args = args.iter().take_while(|i|
@@ -539,7 +541,7 @@ fn add_optional_args(//3 not optimized // todo can't use name for positional arg
         let name = unwrap_enum!(&ast[*i].value, AstNode::NamedArg(name), name);
         supplied_kws.insert(name.clone(), *i);
     }
-    unwrap_enum!(&mut ast[children[1]].children).truncate(amount_of_pos_args);
+    ast[children[1]].children.as_mut().unwrap().truncate(amount_of_pos_args);
 
     let ast_len = ast.len();
     let mut to_add= vec![];
@@ -552,16 +554,16 @@ fn add_optional_args(//3 not optimized // todo can't use name for positional arg
                 children[1], ast,
                 ast[ex_arg.pos].clone()
             );
-            unwrap_enum!(&mut ast[children[1]].children).pop();
+            ast[children[1]].children.as_mut().unwrap().pop();
             amount_of_pushed += 1;
             to_add.push(ast_len - 1 + amount_of_pushed);
         }
     }
-    let args_children = unwrap_enum!(&mut ast[children[1]].children);
+    let args_children = ast[children[1]].children.as_mut().unwrap();
     for pos in to_add {
         args_children.push(pos);
     }
-    *args = unwrap_enum!(&ast[children[1]].children).clone();
+    *args = ast[children[1]].children.clone().unwrap();
 }
 
 fn put_args_in_vec(
@@ -588,7 +590,7 @@ fn put_args_in_vec(
             }
         );
         let amount_of_arg_in_args = unwrap_u(&ast[vec_pos].children).len();
-        let args_children = unwrap_enum!(&mut ast[children[1]].children);
+        let args_children = ast[children[1]].children.as_mut().unwrap();
         let removed: Vec<_> = args_children.drain(
             pos_in_args..pos_in_args + amount_of_arg_in_args
         ).collect();
@@ -623,7 +625,7 @@ pub fn get_enum_property_typ(
                 .iter()
                 .zip(unwrap_u(&args.children).clone());
             for (generic, arg) in zip {
-                let typ = unwrap_enum!(&ast[arg].typ);
+                let typ = ast[arg].typ.as_ref().unwrap();
                 map_generic_types(&Type {
                     kind: TypeKind::Generic(GenericType::Of(generic.clone())),
                     children: None
@@ -711,7 +713,7 @@ fn get_into_iter_return_typ(ast: &[Ast], info: &Info, iter: &Ast) -> Option<Type
             _ => panic!("kind: {:?}", typ.kind)
         }
     }
-    match_kind(ast, info, unwrap_enum!(&iter.typ))
+    match_kind(ast, info, iter.typ.as_ref().unwrap())
 }
 
 pub fn get_property_method_typ(
@@ -805,8 +807,5 @@ pub fn find_index_typ(ast: &[Ast], info: &Info, children: &[usize], pos: usize) 
     let index_func = find_index_func(&ast[children[0]].typ, ast, info, pos);
     let typ = &ast[unwrap_u(&ast[index_func].children)[2]].typ;
 
-    apply_generics_to_method_call(
-        typ,
-        unwrap_enum!(&ast[children[0]].typ)
-    )
+    apply_generics_to_method_call(typ, ast[children[0]].typ.as_ref().unwrap())
 }

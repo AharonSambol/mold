@@ -66,19 +66,25 @@
 #
 #
 # def bubble_sort(lst: &mut List[int]):
-#     for j in range(0, len(lst), 1):
-#         for i in range(1, len(lst) - j, 1):
+#     for j in range(len(lst)):
+#         for i in range(1, len(lst) - j):
 #             if lst[i-1] > lst[i]:
 #                 temp := lst[i]
 #                 lst[i] = lst[i-1]
 #                 lst[i-1] = temp
 
-def func(a: int, *rgs: float, b: int = 0, c: bool = False, d: int = 99):
-    print(a)
 
+# def func(a: int, *rgs: float, b: int = 0, c: bool = False, d: int = 99):
+#     x := a + b + d
+#     print(x)
+def func(a: int | bool, b: List[int| str]):
+    pass
 
 def main():
-    func(3, d=888888, b=11111111)
+    func(1, [1,2,3])
+    func(False, ["1", "4"])
+#     a := 12
+#     func(3, d=888888, b=a)
 #     lst := [1, 2, 64, 214, 43, 56, 32, 3, 23, 5, 12, 532, 634, 2, 35, 34, 6]
 #     bubble_sort(&mut lst)
 #     for i in lst:

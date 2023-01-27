@@ -70,6 +70,7 @@ pub struct Info<'a> {
     pub structs: &'a mut StructTypes,
     pub traits: &'a mut TraitTypes,
     pub enums: &'a mut EnumTypes,
+    pub one_of_enums: &'a mut HashMap<String, String>,
     pub types: &'a mut TypeTypes,
     pub generics: &'a mut GenericTypes,
     pub struct_inner_types: &'a mut HashSet<String>
@@ -727,7 +728,7 @@ fn turn_len_func_to_method(
 ) {
     let is_property = matches!(&ast[parent].value, AstNode::Property);
     ast.pop();
-    let parent_children = unwrap_enum!(&mut ast[parent].children);
+    let parent_children = ast[parent].children.as_mut().unwrap();
     parent_children.pop();
     let prop = if is_property { parent } else {
         add_to_tree(parent, ast, Ast::new(AstNode::Property))

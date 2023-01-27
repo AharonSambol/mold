@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::construct_ast::ast_structure::{Ast, AstNode};
+use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use crate::{typ_with_child, unwrap_enum, some_vec};
 use crate::add_types::ast_add_types::{find_index_typ, get_enum_property_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::apply_generics_to_method_call;
@@ -14,9 +14,8 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leave
     let ast_len = ast.len();
     let inner_val = ast[pos].clone();
     let parent_pos = inner_val.parent.unwrap();
-    let parent = unwrap_enum!(&mut ast[parent_pos].children);
-    let pos_in_parent = parent.iter().enumerate().find(|(_, &x)| x == pos).unwrap().0;
-    parent[pos_in_parent] = ast_len; //1 ast_len is the position the Property will be pushed into
+    let parent_children = ast[parent_pos].children.as_mut().unwrap();
+    *parent_children.iter_mut().find(|x| **x == pos).unwrap() = ast_len; //1 ast_len is the position the Property will be pushed into
 
     ast.push(Ast {
         value: AstNode::Property,
@@ -48,9 +47,54 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leave
     property
 }
 
+pub fn make_enums(typ: &Type, enums: &mut HashMap<String, String>) {
+    let types = unwrap(&typ.children);
+    let enm_name = typ.to_string();
+    enums.entry(enm_name.clone()).or_insert_with(|| {
+        let elems = types
+            .iter()
+            .map(|x| format!("_{x}({x})"));
+        let res = format!("enum {enm_name} {{ {} }}", join(elems, ","));
+        res
+    });
+}
+
+fn add_one_of_enum(
+    ast: &mut Vec<Ast>, pos: usize, enum_name: &str, enum_option: &str, info: &Info
+) -> usize { // todo i think this leaves ast[pos] without anything pointing at it
+    let ast_len = ast.len();
+    let inner_val = ast[pos].clone();
+    let parent_pos = inner_val.parent.unwrap();
+    let parent_children = ast[parent_pos].children.as_mut().unwrap();
+    *parent_children.iter_mut().find(|x| **x == pos).unwrap() = ast_len; //1 ast_len is the position the Property will be pushed into
+
+    ast.push(Ast {
+        value: AstNode::Property,
+        children: None,
+        parent: Some(parent_pos),
+        typ: None,
+        is_mut: false,
+    });
+    let property = ast.len() - 1;
+    ast[property].typ = Some(typ_with_child! {
+        TypeKind::Enum(TypName::Str(String::from(enum_name))),
+        Type { kind: TypeKind::GenericsMap, children: None }
+    });
+    for x in [AstNode::Identifier(String::from(enum_name)), AstNode::FunctionCall(true)] {
+        add_to_tree(property, ast, Ast::new(x));
+    }
+    let func_call = ast.len() - 1;
+    for x in [AstNode::Identifier(String::from(enum_option)), AstNode::Args] {
+        add_to_tree(func_call, ast, Ast::new(x));
+    }
+    let args_pos = ast.len() - 1;
+    add_to_tree(args_pos, ast, inner_val);
+    property
+}
+
+// 5 *** polymorphism doesn't work for `OneOf` types ***
 pub fn check_for_boxes(
-    expected: Type, ast: &mut Vec<Ast>, pos: usize,
-    info: &Info, vars: &VarTypes
+    expected: Type, ast: &mut Vec<Ast>, pos: usize, info: &mut Info, vars: &VarTypes
 ) -> Type {
     fn is_box_typ(typ: &Type) -> bool {
         match &typ.kind {
@@ -88,7 +132,7 @@ pub fn check_for_boxes(
                     &ast[unwrap_u(&got.children)[0]].value,
                     AstNode::Identifier(n), n
                 );
-                let return_type = unwrap_enum!(&info.funcs[func_name].output);
+                let return_type = info.funcs[func_name].output.as_ref().unwrap();
                 is_box_typ(return_type)
             }
             AstNode::Property => {
@@ -103,12 +147,28 @@ pub fn check_for_boxes(
     if let AstNode::NamedArg(_) = got.value {
         return check_for_boxes(expected, ast, unwrap_u(&got.children)[0], info, vars);
     }
+    if let TypeKind::OneOf = expected.kind {
+        for typ in unwrap(&expected.children){
+            if matches!(&got.typ, Some(t) if t == typ) {
+                make_enums(&expected, info.one_of_enums);
+                add_one_of_enum(
+                    ast, pos, &expected.to_string(), &format!("_{typ}"), info
+                );
+                return got.typ.clone().unwrap()
+            }
+        }
+        panic!(
+            "expected: `{}` but found `{}`",
+            join(unwrap(&expected.children).iter().map(|x| x.to_string()), "` or `"),
+            got.typ.clone().unwrap()
+        );
+    }
     if is_box_typ(&expected) {
         let expected_trait =
             if let TypeKind::Trait(name) = &expected.kind { Some(name) } else { None };
         if !supplied_box(got, vars, ast, info, pos) {
             if let Some(expected_trait) = expected_trait {
-                let mut got_typ = unwrap_enum!(&got.typ);
+                let mut got_typ = got.typ.as_ref().unwrap();
                 if let TypeKind::Generic(GenericType::Of(_)) = &got_typ.kind {
                     got_typ = &unwrap(&got_typ.children)[0];
                 }
@@ -343,7 +403,7 @@ pub fn check_for_boxes(
                         &ast[unwrap_u(&got.children)[0]].value,
                         AstNode::Identifier(n), n
                     );
-                    unwrap_enum!(info.funcs[func_name].output.clone())
+                    info.funcs[func_name].output.clone().unwrap()
 
                 }
                 AstNode::Parentheses => {
@@ -392,7 +452,7 @@ pub fn check_for_boxes(
                         &ast[unwrap_u(&got.children)[0]].value,
                         AstNode::Identifier(n), n
                     );
-                    unwrap_enum!(info.funcs[func_name].output.clone())
+                    info.funcs[func_name].output.clone().unwrap()
                 }
                 AstNode::Parentheses => {
                     check_for_boxes(

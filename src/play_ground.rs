@@ -53,3 +53,23 @@ fn main() {
     // println!("{}", Box::new(a));
 }
 
+enum i32__or__bool { _i32(i32),_bool(bool), }
+
+trait __len__ {
+    fn __len__(self: &Self) -> i32;
+}
+
+
+
+
+
+
+
+
+
+fn ffunc(mut a: i32__or__bool) {
+    ();
+}
+fn mainn() {
+    ffunc(i32__or__bool::_i32(1));
+}

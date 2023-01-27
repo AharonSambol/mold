@@ -3,8 +3,8 @@ use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, some_vec, unwrap_enum};
 
 #[inline]
-pub fn get_last(arr: &mut Option<Vec<usize>>) -> usize {
-    *unwrap_enum!(arr).last().unwrap()
+pub fn get_last(arr: &Option<Vec<usize>>) -> usize {
+    *arr.as_ref().unwrap().last().unwrap()
 }
 
 pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNode) -> usize {
