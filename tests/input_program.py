@@ -60,32 +60,32 @@
 #     bubble_sort(&mut lst)
 #     for i in lst:
 #         print(i)
-#
-#
-#
-#
-#
-# def bubble_sort(lst: &mut List[int]):
-#     for j in range(len(lst)):
-#         for i in range(1, len(lst) - j):
-#             if lst[i-1] > lst[i]:
-#                 temp := lst[i]
-#                 lst[i] = lst[i-1]
-#                 lst[i-1] = temp
 
+struct A:
+    def __init__(self):
+        pass
+    def __str__(self: &Self) -> str:
+        return "!"
+    def __len__(self: &Self) -> i32:
+        return 1
 
-# def func(a: int, *rgs: float, b: int = 0, c: bool = False, d: int = 99):
-#     x := a + b + d
-#     print(x)
-def func(a: int | bool, b: List[int | str]):
-    pass
+def bubble_sort(lst: &mut List[int]):
+    for j in range(len(lst)):
+        for i in range(1, len(lst) - j):
+            if lst[i-1] > lst[i]:
+                temp := lst[i]
+                lst[i] = lst[i-1]
+                lst[i-1] = temp
 
 def main():
-    func(1, [1,2,3])
-    func(False, ["1", "4"])
-#     a := 12
-#     func(3, d=888888, b=a)
-#     lst := [1, 2, 64, 214, 43, 56, 32, 3, 23, 5, 12, 532, 634, 2, 35, 34, 6]
-#     bubble_sort(&mut lst)
-#     for i in lst:
+    lst := [1, 2, 64, 214, 43, 56, 32, 3, 23, 5, 12, 532, 634, 2, 35, 34, 6, 391, 34, 436, 457, 37, 35, 34743, 457, 3475, 643, 7835, 43]
+    new_lst: List[int] = []
+    for x in range(300):
+        for i in lst.iter():
+            new_lst.append(*i)
+#     print("START")
+    bubble_sort(&mut new_lst)
+#     print("END")
+#     print(new_lst)
+#     for i in new_lst:
 #         print(i)

@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
+use pretty_print_tree::Color;
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::{EMPTY_STR, IS_COMPILED, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::{add_to_stack, get_from_stack};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{Type, TypeKind, unwrap, unwrap_u};
+use crate::types::{print_type_b, Type, TypeKind, unwrap, unwrap_u};
 use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
-use crate::construct_ast::get_typ::{get_params};
+use crate::construct_ast::get_typ::{get_arg_typ, get_params};
 use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait, make_enum};
 use crate::construct_ast::tree_utils::{add_to_tree, get_last, insert_as_parent_of_prev, print_tree};
 
@@ -175,7 +176,7 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
                     }
 
                     for (trt_fnc, fnc) in trt_f_all_types.iter().zip(func_all_types) {
-                        if *trt_fnc == fnc {
+                        if trt_fnc.name == fnc.name && trt_fnc.typ == fnc.typ {
                             continue
                         }
                         if let TypeKind::InnerType(typ_name) = &trt_fnc.typ.kind {
@@ -216,7 +217,7 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
         }
 
         for (trt, trt_funcs) in duck_traits.iter() {
-            if strct_traits.contains_key(trt) { continue }
+            if strct_traits.contains_key(trt) { println!("PASSING {trt}"); continue }
             //1 if all the functions in the trait are implemented
             // HashMap<String, (usize, HashMap<String, FuncType>)>
             if let Some(types_hm) = struct_matches_trait(trt_funcs, &funcs) {
@@ -234,6 +235,7 @@ fn add_trait_to_struct(
     funcs: &TraitFuncs, trt: &String, trt_funcs: &TraitFuncs, types_hm: HashMap<String, Type>,
     add_identifier: bool
 ) {
+    println!("ADDING {trt} TO {:?}", &ast[ast[strct_module_pos].parent.unwrap()].value);
     if add_identifier {
         add_to_tree(
             strct_traits_pos, ast,
@@ -644,12 +646,9 @@ fn word_tok(
                 let index = insert_as_parent_of_prev(ast, parent, AstNode::FirstAssignment);
                 identifier_pos += 1;
                 add_to_stack(vars, st.clone(), identifier_pos);
-                if let SolidToken::Operator(OperatorType::Eq) = tokens[pos + 1] {
-                    pos += 1;
-                } else {
-                    pos -= 1;
-                    let param = get_params(tokens, &mut pos, info).remove(0); // 5 for now only taking the first
-                    ast[index].typ = Some(param.0.typ);
+                pos += 1;
+                if !matches!(tokens[pos], SolidToken::Operator(OperatorType::Eq)) {
+                    ast[index].typ = Some(get_arg_typ(tokens, &mut pos, info));
                 }
                 return make_ast_expression(
                     tokens, pos + 1, ast, index, vars, info

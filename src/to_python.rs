@@ -126,7 +126,7 @@ pub fn to_python(
                 ),
                 AstNode::Property | AstNode::Index => format!(
                     "{} = {}",
-                    to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue),
+                    to_python(ast, children[0], indentation, ToWrapVal::GetName),
                     to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
                 ),
                 _ => todo!()
@@ -412,6 +412,7 @@ pub fn to_python(
             if let Some(res) = built_in_methods(ast, indentation, children, false) {
                 return res;
             }
+            // TODO does this work with getattr?
             if let AstNode::FunctionCall(true) = ast[children[1]].value {
                 let func_name_pos = unwrap_u(&ast[children[1]].children)[0];
                 let func_name = unwrap_enum!(&ast[func_name_pos].value, AstNode::Identifier(n), n);
@@ -439,15 +440,32 @@ pub fn to_python(
                 }
             }
             let base = to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue);
+            if let Ast { value: AstNode::FunctionCall(_), children: Some(ch), .. } = &ast[children[1]] {
+                return match add_val_wrapper {
+                    ToWrapVal::Nothing => panic!(),
+                    ToWrapVal::GetAsValue => format!(
+                        "_value_({}.getattr('{}')({}))",
+                        base,
+                        to_python(ast, ch[0], indentation, ToWrapVal::GetName),
+                        to_python(ast, ch[1], indentation, ToWrapVal::GetName)
+                    ),
+                    ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!(
+                        "{}.getattr('{}')({})",
+                        base,
+                        to_python(ast, ch[0], indentation, ToWrapVal::GetName),
+                        to_python(ast, ch[1], indentation, ToWrapVal::GetName)
+                    ),
+                }
+            }
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
                 ToWrapVal::GetAsValue => format!(
-                    "_value_({}.getattr({}))",
+                    "_value_({}.getattr('{}'))",
                     base,
                     to_python(ast, children[1], indentation, ToWrapVal::GetName)
                 ),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!(
-                    "{}.getattr({})",
+                    "{}.getattr('{}')",
                     base,
                     to_python(ast, children[1], indentation, ToWrapVal::GetName)
                 ),
@@ -616,11 +634,6 @@ fn built_in_methods(
     if let AstNode::Identifier(func_name) = &ast[unwrap_u(&ast[children[1]].children)[0]].value {
         // let arg_pos = unwrap_u(&ast[children[1]].children)[1];
         match func_name.as_str() {
-            "iter" => {
-                //1 ignores it
-                Some(to_python(ast, children[0], indentation, todo!()))
-            }
-
             _ => { None }
         }
     } else { None }

@@ -100,7 +100,6 @@ pub fn add_types(
             }
         }
         AstNode::Identifier(name) => {
-
             if let Some(x) = get_from_stack(vars, name) {
                 //1 optimize: things like this could probably be references instead of clone
                 ast[pos].typ = ast[x].typ.clone();
@@ -551,7 +550,6 @@ fn add_optional_args( //3 not optimized // todo can't use name for positional ar
         if let Some(pos) = supplied_kws.get(&ex_arg.name) {
             to_add.push(*pos);
         } else {
-            dbg!(ast[ex_arg.pos].clone());
             add_to_tree(
                 children[1], ast,
                 ast[ex_arg.pos].clone()

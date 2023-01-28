@@ -87,11 +87,11 @@ from copy import deepcopy
 
 
 class _built_in_list_(list):
-    def iter(self):
-        return iter(_pointer_(_value_(x)) for x in self)
-
-    def iter_mut(self):
-        return iter(_pointer_(_value_(x)) for x in self)
+    def iter(self): return iter(_pointer_(_value_(x)) for x in self)
+    def iter_mut(self): return iter(_pointer_(_value_(x)) for x in self)
+    def append(self, val): return super().append(val.v)
+    def getattr(self, attr): return self.__getattribute__(attr)
+    def setattr(self, name, val): return self.__setattr__(name, val)
 
 
 list = _built_in_list_

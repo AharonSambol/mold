@@ -147,10 +147,7 @@ pub fn check_for_boxes(
         return check_for_boxes(expected, ast, unwrap_u(&got.children)[0], info, vars);
     }
     if let TypeKind::OneOf = expected.kind {
-        print_tree(ast, 0);
-        println!("------");
         for typ in unwrap(&expected.children){
-            println!("{typ}// {:?}", got.typ);
             if matches!(&got.typ, Some(t) if t == typ) {
                 make_enums(&expected, info.one_of_enums);
                 add_one_of_enum(

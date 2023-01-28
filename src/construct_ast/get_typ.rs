@@ -16,12 +16,13 @@ pub fn get_params(
     let mut params = Vec::new();
     let mut is_mut = true;
     let mut is_args = false;
-    let mut is_kwargs = false;
+    let is_kwargs = false;
     loop {
         match &tokens[*pos] {
             SolidToken::Word(wrd) => {
                 let typ = if let SolidToken::Colon = &tokens[*pos + 1] {
                     *pos += 2;
+                    println!("!");
                     get_arg_typ(tokens, pos, info)
                 } else { UNKNOWN_TYPE };
                 params.push((Param {
