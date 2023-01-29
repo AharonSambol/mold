@@ -235,7 +235,6 @@ fn add_trait_to_struct(
     funcs: &TraitFuncs, trt: &String, trt_funcs: &TraitFuncs, types_hm: HashMap<String, Type>,
     add_identifier: bool
 ) {
-    println!("ADDING {trt} TO {:?}", &ast[ast[strct_module_pos].parent.unwrap()].value);
     if add_identifier {
         add_to_tree(
             strct_traits_pos, ast,
@@ -625,12 +624,10 @@ fn word_tok(
                     parent = ast[parent].parent.unwrap();
                 }
                 let index = insert_as_parent_of_prev(ast, parent, AstNode::Assignment);
-                if !unsafe { IS_COMPILED } && get_from_stack(vars, st).is_none() {
+                if get_from_stack(vars, st).is_none() {
                     ast[index].value = AstNode::FirstAssignment;
                     add_to_stack(vars, st.clone(), usize::MAX)
                 }
-                println!("ST: {st}, VARS: {vars:?}");
-
                 return make_ast_expression(
                     tokens, pos + 1, ast, index, vars, info
                 ) - 1;

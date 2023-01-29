@@ -1,9 +1,7 @@
 use crate::mold_tokens::OperatorType;
 use crate::types::{Type, TypeKind};
 use std::fmt::{Display, Formatter};
-use std::ops::Deref;
-use crate::IS_COMPILED;
-use crate::to_python::NONE;
+
 
 #[derive(Clone, Debug)]
 pub struct Ast {

@@ -22,7 +22,6 @@ pub fn get_params(
             SolidToken::Word(wrd) => {
                 let typ = if let SolidToken::Colon = &tokens[*pos + 1] {
                     *pos += 2;
-                    println!("!");
                     get_arg_typ(tokens, pos, info)
                 } else { UNKNOWN_TYPE };
                 params.push((Param {

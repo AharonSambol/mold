@@ -45,7 +45,7 @@ fn main() {
     // vec![].iter_mut().rev()
     a.next();
     println!("{:?}", a.inner);
-
+    let a = (5_f64 / 2_f64).floor();
     // let mut x: i32 = 325;
     // let mut a: i32 = 5;
     // let mut b: &mut i32 =  &mut a;

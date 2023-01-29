@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, print_type_b, print_type};
@@ -16,6 +16,11 @@ use crate::types::TypeKind::GenericsMap;
 
 lazy_static! {
     pub static ref SPECIFIED_NUM_TYPE_RE: Regex = Regex::new(r"(?:[iu](?:8|16|32|64|128|size)|f32|f64)$").unwrap();
+    pub static ref NUM_TYPES: HashSet<&'static str> = HashSet::from([
+        "i8", "i16", "i32", "i64", "i128", "isize",
+        "u8", "u16", "u32", "u64", "u128", "usize",
+        "f32", "f64"
+    ]);
 }
 
 // todo first save all uses of each var (in mold_ast) then check if any of them are used in a
@@ -42,7 +47,12 @@ pub fn add_types(
                 todo!()
             }
             let for_var_pos = unwrap_u(&for_vars.children)[0];
-            ast[for_var_pos].typ = get_into_iter_return_typ(ast, info, iter);
+            let mut typ = get_into_iter_return_typ(ast, info, iter);
+            if let Some(Type{ kind: TypeKind::Generic(GenericType::Of(_)), children }) = &typ {
+                println!("THIS ISNT USELESS");
+                typ = Some(children.as_ref().unwrap()[0].clone());
+            }
+            ast[for_var_pos].typ = typ;
             add_to_stack(
                 vars,
                 unwrap_enum!(&ast[for_var_pos].value, AstNode::Identifier(n), n.clone()),
@@ -59,7 +69,7 @@ pub fn add_types(
             }
             vars.pop();
         }
-        AstNode::Assignment | AstNode::Module | AstNode::Body | AstNode::ReturnType
+        AstNode::Module | AstNode::Body | AstNode::ReturnType
         | AstNode::GenericsDeclaration | AstNode::ColonParentheses
         | AstNode::Args | AstNode::NamedArg(_) => {
             for child in children {
@@ -128,6 +138,21 @@ pub fn add_types(
             }
             panic!("used `{name}` before assignment") //todo // 5 unreachable!
         }
+        AstNode::Assignment => {
+            add_types(ast, children[1], vars, info, parent_struct);
+            if let AstNode::Identifier(name) = &ast[children[0]].value {
+                let name = name.clone();
+                if get_from_stack(vars, &name).is_none() {
+                    add_to_stack(vars, name, children[0]);
+                    ast[pos].value = AstNode::FirstAssignment;
+                    let typ = check_for_boxes(
+                        ast[pos].typ.clone().unwrap(), ast, children[1],
+                        info, vars
+                    );
+                    ast[children[0]].typ = Some(typ)
+                }
+            }
+        }
         AstNode::FirstAssignment => {
             add_types(ast, children[1], vars, info, parent_struct);
             if ast[pos].typ.is_some() {
@@ -160,32 +185,27 @@ pub fn add_types(
             let name = unwrap_enum!(
                 &ast[children[0]].value, AstNode::Identifier(x), x.clone(), "function without identifier?"
             );
-            let (input, output) = if info.funcs.contains_key(&name) {
-                (&info.funcs[&name].input, &info.funcs[&name].output)
-            } else {
-                panic!("unrecognized function `{name}`")
-            };
+            let input = if let Some(fnc) = info.funcs.get(&name) {
+                &fnc.input
+            } else { panic!("unrecognized function `{name}`") };
 
             let mut args = unwrap_u(&ast[children[1]].children).clone();
             if let Some(expected_args) = input {
                 put_args_in_vec(ast, &children, &mut args, expected_args);
                 add_optional_args(ast, &children, &mut args, expected_args);
-                match args.len().cmp(&expected_args.len()) {
-                    Ordering::Equal => {}
-                    Ordering::Less => {
-                        // TODO optional args
-                        panic!("`{name}` expected `{}` arguments, but got `{}`", expected_args.len(), args.len())
-                    }
-                    Ordering::Greater => {
-                        panic!("`{name}` expected `{}` arguments, but got `{}`", expected_args.len(), args.len())
-                    }
+                if args.len() != expected_args.len() {
+                    panic!(
+                        "`{name}` expected `{}` arguments, but got `{}`",
+                        expected_args.len(), args.len()
+                    )
                 }
             } else if !args.is_empty() {
                 panic!("wasn't expecting any args")
             }
             let args: Option<Vec<Type>> =
                 if args.is_empty() { None }
-                else if let Some(expected_inputs) = input {
+                else if input.is_some() && name != "print" { //3 this might be problematic (print)
+                    let expected_inputs = input.as_ref().unwrap();
                     Some(expected_inputs.clone().iter().zip(args.iter()).map(
                         |(exp, got)|
                             check_for_boxes(exp.typ.clone(), ast, *got, info, vars)
@@ -412,6 +432,30 @@ pub fn add_types(
                         children: None
                     }
                 }),
+                OperatorType::Div | OperatorType::DivEq => Some(typ_with_child!{
+                    TypeKind::Struct(TypName::Static(
+                        if matches!(&t1.kind, TypeKind::Struct(name) if name == "f64") { "f64" }
+                        else { "f32" }
+                    )),
+                    Type {
+                        kind: GenericsMap,
+                        children: None
+                    }
+                }),
+                OperatorType::FloorDiv | OperatorType::FloorDivEq => Some(typ_with_child!{
+                    TypeKind::Struct(
+                        if matches!(
+                            &t1.kind,
+                            TypeKind::Struct(name) if NUM_TYPES.contains(&name.get_str())
+                        ) { unwrap_enum!(&t1.kind, TypeKind::Struct(name), name.clone()) }
+                        else { panic!() }
+                    ),
+                    Type {
+                        kind: GenericsMap,
+                        children: None
+                    }
+                }),
+
                 _ => Some(t1.clone())
             };
 
@@ -431,8 +475,15 @@ pub fn add_types(
                 OperatorType::Dereference => {
                     fn dref(typ: &Type) -> Option<Type> {
                         match &typ.kind {
-                            TypeKind::Pointer | TypeKind::MutPointer =>
-                                Some(unwrap(&typ.children)[0].clone()),
+                            TypeKind::Pointer | TypeKind::MutPointer => {
+                                if let Type {
+                                    kind: TypeKind::Generic(GenericType::Of(_)), children
+                                } = &unwrap(&typ.children)[0] {
+                                    Some(children.as_ref().unwrap()[0].clone())
+                                } else {
+                                    Some(typ.children.as_ref().unwrap()[0].clone())
+                                }
+                            },
                             TypeKind::Generic(GenericType::Of(of)) => {
                                 let children = unwrap_enum!(
                                     &typ.children, Some(c), c,
@@ -443,7 +494,9 @@ pub fn add_types(
                             _ => panic!("type `{}` cannot be dereferenced", typ),
                         }
                     }
-                    dref(ast[children[0]].typ.as_ref().unwrap())
+                    let res = dref(ast[children[0]].typ.as_ref().unwrap());
+                    print_type_b(&res, Color::Black);
+                    res
                 }
                 _ => ast[children[0]].typ.clone()
             }

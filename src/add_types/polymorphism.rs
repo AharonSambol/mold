@@ -350,9 +350,9 @@ pub fn check_for_boxes(
                     ast[typ].typ.clone().unwrap()
                 }
                 AstNode::Number(num) => {
-                    if !SPECIFIED_NUM_TYPE_RE.is_match(ex_name.get_str()) {
-                         panic!("expected: `{}` but found a number", ex_name.get_str())
-                    }
+                    // if !SPECIFIED_NUM_TYPE_RE.is_match(ex_name.get_str()) {
+                    //      panic!("expected: `{}` but found an ambiguous number", ex_name.get_str())
+                    // }
                     if let Some(t) = SPECIFIED_NUM_TYPE_RE.find(num) {
                         if t.as_str() != ex_name.get_str() {
                             panic!("expected: `{}` but found: `{}`", ex_name.get_str(), t.as_str())
@@ -408,9 +408,24 @@ pub fn check_for_boxes(
                 AstNode::Parentheses => {
                     check_for_boxes(expected.clone(), ast, got_children[0], info, vars)
                 }
-                AstNode::Operator(_) | AstNode::UnaryOp(_) => {
-                    for child in got_children {
-                        check_for_boxes(expected.clone(), ast, child, info, vars);
+                AstNode::Operator(op) | AstNode::UnaryOp(op) => {
+                    if let AstNode::UnaryOp(OperatorType::Dereference) = &got.value {
+                        let new_expected = typ_with_child! {
+                            ast[got_children[0]].typ.as_ref().unwrap().kind.clone(), //1 either pointer or mut pointer
+                            typ_with_child! {
+                                TypeKind::Generic(GenericType::Of(String::from("T"))),
+                                expected.clone()
+                            }
+                        };
+                        check_for_boxes(new_expected, ast, got_children[0], info, vars);
+                    } else {
+                        let new_expected = match op {
+                            OperatorType::DivEq | OperatorType::Div => todo!(),
+                            _ => expected.clone()
+                        };
+                        for child in got_children {
+                            check_for_boxes(new_expected.clone(), ast, child, info, vars);
+                        }
                     }
                     expected.clone()  //1 got what expected, no need to panic
                 },
@@ -419,6 +434,7 @@ pub fn check_for_boxes(
             if !can_soft_cast(&typ, &expected) {
                 print_type(&Some(expected.clone()));
                 print_type(&Some(typ.clone()));
+                print_tree(ast, 0);
                 panic!("expected: `{expected}` got: `{typ}`");
             }
         },

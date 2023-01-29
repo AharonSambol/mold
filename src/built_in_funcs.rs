@@ -64,7 +64,6 @@ pub fn put_at_start(input: &str) -> String {
                 "lower(self, s: str) -> str",
                 "upper(self, s: str) -> str",
                 "__init__(self)",
-                "__str__(self: &Self) -> str",
                 // todo chars()
                 // todo is(digit\numeric\ascii...)
                 // todo "join(lst: List[T]) -> int",
@@ -204,15 +203,6 @@ pub fn put_at_start(input: &str) -> String {
             types: Some(vec!["Item"]),
             ignore: true,
         }),
-        //2 __str__
-        BuiltIn::Trait(BuiltInTrait{
-            name: "__str__",
-            duck: true,
-            generics: None,
-            methods: vec!["__str__(self: &Self) -> str"],
-            types: None,
-            ignore: false,
-        }),
         //3 Option
         BuiltIn::Enum(BuiltInEnum {
             name: "Option",
@@ -239,7 +229,7 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "print",
             generics: None,
-            args: vec!["*a: __str__"], // TODO or Debug
+            args: vec!["*a: Display"], //1 the type (Display) is ignored, anything is accepted
             return_typ: None,
         }),
         //4 reversed

@@ -32,19 +32,24 @@ pub enum TypName {
 }
 
 impl PartialEq for TypName {
+    #[inline]
     fn eq(&self, other: &Self) -> bool { self.get_str() == other.get_str() }
 }
 impl PartialEq<&'static str> for TypName {
+    #[inline]
     fn eq(&self, other: &&'static str) -> bool { self.get_str() == *other }
 }
 impl PartialEq<str> for TypName {
+    #[inline]
     fn eq(&self, other: &str) -> bool { self.get_str() == other }
 }
 impl PartialEq<String> for TypName {
+    #[inline]
     fn eq(&self, other: &String) -> bool { self.get_str() == *other }
 }
 
 impl TypName {
+    #[inline]
     pub fn get_str(&self) -> &str {
         match self {
             TypName::Str(s) => s.as_str(),
@@ -79,11 +84,9 @@ pub struct Type {
 }
 
 impl PartialEq for Type {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        if self.kind != other.kind {
-            return false
-        }
-        self.children == other.children
+        self.kind == other.kind && self.children == other.children
     }
 }
 
@@ -236,21 +239,23 @@ impl Type {
 }
 
 impl Display for TypName {
+    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let st = match self {
+        write!(f, "{}", match self {
             TypName::Str(s) => s.as_str(),
             TypName::Static(s) => s
-        };
-        write!(f, "{st}")
+        })
     }
 }
 
 
 static EMPTY_VEC: Vec<Type> = vec![];
+#[inline]
 pub fn unwrap(children: &Option<Vec<Type>>) -> &Vec<Type> {
     if let Some(c) = &children { c } else { &EMPTY_VEC }
 }
 static EMPTY_VEC_US: Vec<usize> = vec![];
+#[inline]
 pub fn unwrap_u(children: &Option<Vec<usize>>) -> &Vec<usize> {
     if let Some(c) = &children { c } else { &EMPTY_VEC_US }
 }

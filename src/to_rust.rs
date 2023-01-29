@@ -4,6 +4,7 @@ use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, typ_with_child, some_vec, unwrap_enum};
+use crate::add_types::ast_add_types::{NUM_TYPES, SPECIFIED_NUM_TYPE_RE};
 use crate::construct_ast::mold_ast::Info;
 use crate::construct_ast::tree_utils::print_tree;
 use crate::mold_tokens::OperatorType;
@@ -91,28 +92,71 @@ pub fn to_rust(
         },
         // todo floor div
         AstNode::Operator(op) => {
-            if let OperatorType::FloorDiv = op {
-                todo!()
-            } else if let OperatorType::FloorDivEq = op {
-                todo!()
-            } else if let OperatorType::Pow = op {
-                to_rust(ast, children[0], indentation, res, enums, info);
-                write!(res, ".pow(").unwrap();
-                to_rust(ast, children[1], indentation, res, enums, info);
-                write!(res, ")").unwrap();
-            } else if is_string_addition(ast, pos, op) {
-                to_rust(ast, children[0], indentation, res, enums, info);
-                write!(res, " {} ", op).unwrap();
-                to_rust(ast, children[1], indentation, res, enums, info);
-                if let Some(Type { kind: TypeKind::Struct(t_name), .. }) = &ast[children[1]].typ {
-                    if *t_name == TypName::Static("String") {
-                        write!(res, ".as_str()").unwrap();
+            match op {
+                OperatorType::FloorDiv => {
+                    #[inline] fn div(
+                        ast: &[Ast], children: &Vec<usize>, indentation: usize,
+                        res: &mut String, enums: &mut HashMap<String, String>, info: &Info
+                    ) {
+                        to_rust(ast, children[0], indentation, res, enums, info);
+                        write!(res, " / ").unwrap();
+                        to_rust(ast, children[1], indentation, res, enums, info);
+                    }
+                    if matches!(
+                        &ast[children[0]].typ.as_ref().unwrap().kind,
+                        TypeKind::Struct(name) if name == "f32" || name == "f64"
+                    ) {
+                        write!(res, "(").unwrap();
+                        div(ast, children, indentation, res, enums, info);
+                        write!(res, ").floor()").unwrap();
+                    } else {
+                        div(ast, children, indentation, res, enums, info);
                     }
                 }
-            } else {
-                to_rust(ast, children[0], indentation, res, enums, info);
-                write!(res, " {} ", op).unwrap();
-                to_rust(ast, children[1], indentation, res, enums, info);
+                OperatorType::FloorDivEq => {
+                    todo!()
+                }
+                OperatorType::Div => {
+                    for (i, child) in children.iter().enumerate() {
+                        if matches!(
+                            &ast[*child].typ.as_ref().unwrap().kind,
+                            TypeKind::Struct(name) if name == "f32" || name == "f64"
+                        ) {
+                            to_rust(ast, *child, indentation, res, enums, info);
+                        } else {
+                            write!(res, "(").unwrap();
+                            to_rust(ast, *child, indentation, res, enums, info);
+                            write!(res, " as f32)").unwrap();
+                        }
+                        if i == 0 {
+                            write!(res, "/").unwrap();
+                        }
+                    }
+                }
+                OperatorType::DivEq => {
+                    todo!()
+                }
+                OperatorType::Pow => {
+                    to_rust(ast, children[0], indentation, res, enums, info);
+                    write!(res, ".pow(").unwrap();
+                    to_rust(ast, children[1], indentation, res, enums, info);
+                    write!(res, ")").unwrap();
+                }
+                _ if is_string_addition(ast, pos, op) => {
+                    to_rust(ast, children[0], indentation, res, enums, info);
+                    write!(res, " {} ", op).unwrap();
+                    to_rust(ast, children[1], indentation, res, enums, info);
+                    if let Some(Type { kind: TypeKind::Struct(t_name), .. }) = &ast[children[1]].typ {
+                        if *t_name == TypName::Static("String") {
+                            write!(res, ".as_str()").unwrap();
+                        }
+                    }
+                }
+                _ => {
+                    to_rust(ast, children[0], indentation, res, enums, info);
+                    write!(res, " {} ", op).unwrap();
+                    to_rust(ast, children[1], indentation, res, enums, info);
+                }
             }
         },
         AstNode::UnaryOp(op) => {
@@ -143,7 +187,17 @@ pub fn to_rust(
             to_rust(ast, children[1], indentation, res, enums, info);
             write!(res, ") as usize]").unwrap();
         },
-        AstNode::Number(num) => write!(res, "{num}").unwrap(),
+        AstNode::Number(num) => {
+            if !SPECIFIED_NUM_TYPE_RE.is_match(num) {
+                if num.contains('.') {
+                    write!(res, "{num}f32").unwrap()
+                } else {
+                    write!(res, "{num}i32").unwrap()
+                }
+            } else {
+                write!(res, "{num}").unwrap()
+            }
+        },
         AstNode::ListLiteral => {
             write!(res, "vec![").unwrap();
             for (i, child) in children.iter().enumerate() {
@@ -614,7 +668,7 @@ fn built_in_funcs(
                 } else if implements_trait(typ, "Debug", ast, info) {
                     write!(formats, "{{:?}} ").unwrap();
                 } else {
-                    panic!()
+                    todo!()
                 }
             }
             write!(res, "println!(\"{}\"", formats.trim_end()).unwrap();
@@ -667,6 +721,7 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &str, ast: &[Ast], info:
     if let TypeKind::Generic(GenericType::Of(_)) = &typ.kind {
         typ = &unwrap(&typ.children)[0];
     }
+    println!("TYP: {typ}");
     match &typ.kind {
         TypeKind::Trait(name) => name == expected_trait,
         TypeKind::Struct(struct_name) => {

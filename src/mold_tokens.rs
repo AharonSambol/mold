@@ -90,7 +90,7 @@ impl Display for OperatorType {
             OperatorType::Pow => if unsafe { IS_COMPILED } { todo!() } else { "**" },
             OperatorType::Div => "/",
             OperatorType::Mod => "%",
-            OperatorType::FloorDiv => if unsafe { IS_COMPILED } { todo!() } else { "//" },
+            OperatorType::FloorDiv => if unsafe { IS_COMPILED } { "/" } else { "//" },
             OperatorType::PlusEq => "+=",
             OperatorType::MinusEq => "-=",
             OperatorType::MulEq => "*=",
