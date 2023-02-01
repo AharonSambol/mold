@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use crate::{typ_with_child, unwrap_enum, some_vec};
 use crate::add_types::ast_add_types::{find_index_typ, get_enum_property_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
-use crate::add_types::generics::apply_generics_to_method_call;
+use crate::add_types::generics::{apply_generics_to_method_call, get_function_return_type};
 use crate::add_types::utils::get_from_stack;
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
@@ -402,8 +402,15 @@ pub fn check_for_boxes(
                         &ast[unwrap_u(&got.children)[0]].value,
                         AstNode::Identifier(n), n
                     );
-                    info.funcs[func_name].output.clone().unwrap()
-
+                    let args = &ast[unwrap_u(&got.children)[1]].children.as_ref().unwrap();
+                    let args: Vec<_> = args.iter().map(|x| ast[*x].typ.clone().unwrap()).collect();
+                    get_function_return_type(
+                        &info.funcs[func_name].output,
+                        &info.funcs[func_name].input,
+                        &if args.is_empty() { None } else { Some(args) }
+                    ).unwrap()
+                    // println!("&&& {}", info.funcs[func_name].output.clone().unwrap());
+                    // info.funcs[func_name].output.clone().unwrap()
                 }
                 AstNode::Parentheses => {
                     check_for_boxes(expected.clone(), ast, got_children[0], info, vars)
@@ -440,12 +447,13 @@ pub fn check_for_boxes(
         },
         TypeKind::Generic(_) => {}
         TypeKind::Pointer | TypeKind::MutPointer => {
-            let got_children = unwrap_u(&got.children).clone();
+            print_tree(ast, got.parent.unwrap());
+            // let got_children = unwrap_u(&got.children).clone();
             let typ = match &got.value {
                 AstNode::UnaryOp(OperatorType::Pointer | OperatorType::MutPointer) => {
                     let expected_children = unwrap(&expected.children).clone();
                     check_for_boxes(
-                        expected_children[0].clone(), ast, got_children[0],
+                        expected_children[0].clone(), ast, unwrap_u(&got.children)[0],
                         info, vars
                     );
                     expected.clone()  //1 got what expected, no need to panic
@@ -467,17 +475,23 @@ pub fn check_for_boxes(
                         &ast[unwrap_u(&got.children)[0]].value,
                         AstNode::Identifier(n), n
                     );
-                    info.funcs[func_name].output.clone().unwrap()
+                    let args = &ast[unwrap_u(&got.children)[1]].children.as_ref().unwrap();
+                    let args: Vec<_> = args.iter().map(|x| ast[*x].typ.clone().unwrap()).collect();
+                    get_function_return_type(
+                        &info.funcs[func_name].output,
+                        &info.funcs[func_name].input,
+                        &if args.is_empty() { None } else { Some(args) }
+                    ).unwrap()
                 }
                 AstNode::Parentheses => {
                     check_for_boxes(
-                        expected.clone(), ast, got_children[0],
+                        expected.clone(), ast, unwrap_u(&got.children)[0],
                         info, vars
                     )
                 }
                 AstNode::Operator(_) | AstNode::UnaryOp(_) => {
-                    for child in got_children {
-                        check_for_boxes(expected.clone(), ast, child, info, vars);
+                    for child in unwrap_u(&got.children) {
+                        check_for_boxes(expected.clone(), ast, *child, info, vars);
                     }
                     expected.clone()  //1 got what expected, no need to panic
                 },
@@ -547,6 +561,9 @@ fn get_property_typ(
 }
 
 fn can_soft_cast(typ: &Type, expected: &Type) -> bool {
+    // let typ = if let TypeKind::Generic(GenericType::Of(_)) = &typ.kind {
+    //     &unwrap(&typ.children)[0]
+    // } else { typ };
     if typ == expected { return true }
     if let TypeKind::Enum(enum_name1) = &typ.kind {
         if matches!(&expected.kind, TypeKind::Enum(enum_name2) if enum_name1 == enum_name2) {

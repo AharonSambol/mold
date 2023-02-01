@@ -69,9 +69,32 @@ pub fn to_rust(
             to_rust(ast, children[1], indentation + 1, res, enums, info);
         },
         AstNode::Assignment => {
-            to_rust(ast, children[0], indentation, res, enums, info);
-            write!(res, " = ").unwrap();
-            to_rust(ast, children[1], indentation, res, enums, info);
+            if let AstNode::Index = &ast[children[0]].value {
+                let ch = ast[children[0]].children.as_ref().unwrap();
+                let mut list = String::new();
+                to_rust(ast, ch[0], indentation, &mut list, enums, info);
+                let mut idx = String::new();
+                to_rust(ast, ch[1], indentation, &mut idx, enums, info);
+                let list = if let AstNode::Index = &ast[ch[1]].value {
+                    list
+                } else {
+                    format!("&mut {list}")
+                };
+                print_tree(&ast.to_vec(), children[0]);
+                write!(
+                    res,
+                    "unsafe {{\n\t let mut list: *mut {} = {list};\n\t\
+                    let len = (*list).len();\n\tlet val=",
+                    ast[ch[0]].typ.as_ref().unwrap()
+                ).unwrap();
+                to_rust(ast, children[1], indentation, res, enums, info);
+                write!(res, ";\n\t(*list)[{{let pos={idx}; if pos >= 0 {{ pos as usize }} else \
+                {{ (pos + len as i32) as usize }} }}] = val\n}}").unwrap();
+            } else {
+                to_rust(ast, children[0], indentation, res, enums, info);
+                write!(res, " = ").unwrap();
+                to_rust(ast, children[1], indentation, res, enums, info);
+            }
         },
         AstNode::FirstAssignment => {
             if ast[pos].is_mut {
@@ -90,7 +113,6 @@ pub fn to_rust(
         AstNode::Identifier(name) => {
             write!(res, "{name}").unwrap();
         },
-        // todo floor div
         AstNode::Operator(op) => {
             match op {
                 OperatorType::FloorDiv => {
@@ -174,18 +196,31 @@ pub fn to_rust(
             }
         },
         AstNode::Index => {
-            to_rust(ast, children[0], indentation, res, enums, info);
-            if let Some(Type{ kind: TypeKind::Struct(stct), .. }) = &ast[children[1]].typ {
-                if *stct == TypName::Static("usize") {
-                    write!(res, "]").unwrap();
-                    to_rust(ast, children[1], indentation, res, enums, info);
-                    write!(res, "]").unwrap();
-                    return;
-                }
+            let as_pointer = should_be_mut_index(ast, pos);
+            write!(res, "unsafe {{").unwrap();
+            let mut list = String::new();
+            to_rust(ast, children[0], indentation, &mut list, enums, info);
+            let list = if let AstNode::Index = ast[children[0]].value {
+                format!("{list} as *mut")
+            } else if as_pointer {
+                format!("&mut {list} as *mut")
+            } else {
+                format!("&{list} as *const")
+            };
+            write!(
+                res,
+                "let list = {list} {};let len = (*list).len();",
+                ast[children[0]].typ.as_ref().unwrap()
+            ).unwrap();
+            if as_pointer {
+                write!(res, "&mut ").unwrap();
             }
-            write!(res, "[(").unwrap();
+            write!(res, "(*list)[{{ let pos =").unwrap();
             to_rust(ast, children[1], indentation, res, enums, info);
-            write!(res, ") as usize]").unwrap();
+            write!(
+                res,
+                "; if pos >= 0 {{ pos as usize }} else {{ (pos + len as i32) as usize }} }}]}}"
+            ).unwrap();
         },
         AstNode::Number(num) => {
             if !SPECIFIED_NUM_TYPE_RE.is_match(num) {
@@ -678,6 +713,15 @@ fn built_in_funcs(
             }
             write!(res, ")").unwrap();
         }
+        "min" => {
+            let args = unwrap_u(&ast[children[1]].children);
+            if args.len() == 1 {
+                to_rust(ast, args[0], 0, res, enums, info);
+                write!(res, ".min().expect(\"min on empty iter\")").unwrap();
+            } else {
+                todo!()
+            }
+        }
         _ => { return false }
     }
     true
@@ -700,7 +744,9 @@ pub fn get_struct_and_func_name<'a>(ast: &'a [Ast], children: &[usize]) -> Optio
         typ = &unwrap(ch)[0];
     }
     if let Type{ kind: TypeKind::Struct(struct_name), .. } = typ {
-        if let AstNode::Identifier(func_name) = &ast[unwrap_u(&ast[children[1]].children)[0]].value {
+        if let AstNode::Identifier(func_name) =
+            &ast[unwrap_u(&ast[children[1]].children)[0]].value
+        {
             return Some((struct_name, func_name))
         }
     }
@@ -733,5 +779,33 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &str, ast: &[Ast], info:
             )
         }
         _ => false
+    }
+}
+
+fn should_be_mut_index(ast: &[Ast], pos: usize) -> bool {
+    let parent = ast[pos].parent.unwrap();
+    match &ast[parent].value {
+        AstNode::Assignment => ast[parent].children.as_ref().unwrap()[0] == pos,
+        AstNode::Parentheses => should_be_mut_index(ast, parent),
+        AstNode::Index =>
+            ast[parent].children.as_ref().unwrap()[0] == pos,
+                // && should_be_mut_index(ast, parent),
+        AstNode::ForStatement | AstNode::ArgsDef | AstNode::Bool(_) | AstNode::Char(_)
+        | AstNode::ForVars | AstNode::Function(_) | AstNode::GenericsDeclaration
+        | AstNode::Identifier(_) | AstNode::Arg { .. } | AstNode::IfStatement | AstNode::Enum(_)
+        | AstNode::Number(_) | AstNode::Pass | AstNode::Continue | AstNode::Break
+        | AstNode::ReturnType | AstNode::StaticFunction(_) | AstNode::String { .. }
+        | AstNode::Struct(_) | AstNode::StructInit | AstNode::Trait { .. } | AstNode::Traits
+        | AstNode::Type(_) | AstNode::Types | AstNode::WhileStatement
+        => unreachable!(),
+        AstNode::Args | AstNode::Body | AstNode::ColonParentheses | AstNode::DictLiteral
+        | AstNode::FirstAssignment | AstNode::ForIter
+        | AstNode::ListLiteral | AstNode::Module | AstNode::Operator(_) | AstNode::Return
+        | AstNode::SetLiteral | AstNode::NamedArg(_)
+        => false,
+        AstNode::UnaryOp(op) => {
+            matches!(op, OperatorType::MutPointer)
+        }
+        AstNode::FunctionCall(_)  | AstNode::Property => true,
     }
 }

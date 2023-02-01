@@ -336,9 +336,9 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                 // todo this is messy...
                 let mut oper = String::new();
                 for c in input_code.chars().skip(*start).take(*end-*start) {
-                    if !matches!(str_to_op_type(&(oper.clone() + &c.to_string())), Some(_)) {
+                    if str_to_op_type(&format!("{oper}{c}")).is_none() && c != '!' {
                         let op = str_to_op_type(&oper).unwrap_or_else(||
-                            panic!("invalid operator {}", &oper.parse::<String>().unwrap())
+                            panic!("invalid operator {oper}")
                         );
                         res.push(unary_or_bin(&res, op));
                         oper = c.to_string()
@@ -349,10 +349,9 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                 if let Some(op) = str_to_op_type(&oper) {
                     unary_or_bin(&res, op)
                 } else {
-                    panic!("invalid operator {}", &oper.parse::<String>().unwrap())
+                    panic!("invalid operator {oper}")
                 }
             },
-            // Num { start, end } => parse_num(&input_code[*start..*end]),
             Num { start, end, .. } => SolidToken::Num(
                 String::from(&input_code[*start..*end])
             ),
@@ -371,10 +370,8 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
         };
         res.push(st);
     }
-    if !res.is_empty(){
-        if let SolidToken::NewLine = res.last().unwrap() {} else {
-            res.push(SolidToken::NewLine)
-        }
+    if !matches!(res.last(), Some(SolidToken::NewLine)) {
+        res.push(SolidToken::NewLine)
     }
     res
 }

@@ -35,40 +35,40 @@ impl Ast {
 
 #[derive(Clone, Debug)]
 pub enum AstNode {
-    Args,       // children = args
+    Args, // children = args
     ArgsDef,
-    Assignment,         // children[0] = var, children[1] = val
+    Assignment, // children[0] = var, children[1] = val
     Body,
-    Bool(bool),             // no children
+    Bool(bool), // no children
     Char(String),
-    ColonParentheses,       // children[0] = inside
+    ColonParentheses, // children[0] = inside
     DictLiteral, // children = elements
     Enum(String),
     FirstAssignment,
-    ForIter,        // children[0] = iter
-    ForStatement,   // children[0] = colon_parentheses(ForVars, ForIter), children[1] = body
-    ForVars,        // children = vars
+    ForIter, // children[0] = iter
+    ForStatement, // children[0] = colon_parentheses(ForVars, ForIter), children[1] = body
+    ForVars, // children = vars
     Function(String), // children[0] = args, children[1] = returnType, children[2] = body
     FunctionCall(bool), // bool = is_static, children[0] = func, children[1] = Args,
     GenericsDeclaration,
     Identifier(String),
     Arg{ name: String, is_arg: bool, is_kwarg: bool },
     IfStatement,
-    Index,       // child[0] = item, child[1] = index
+    Index, // child[0] = item, child[1] = index
     ListLiteral, // children = elements
     Module, // children = all the functions/classes/enums..
     Number(String),
     Operator(OperatorType), // children[0] = elem1, children[1] = elem2
-    Parentheses,            // children[0] = inside
+    Parentheses, // children[0] = inside
     Pass, Continue, Break,
-    Property,           // children[0] = obj, children[1] = prop
-    Return,     // children[0] = return val
+    Property, // children[0] = obj, children[1] = prop
+    Return, // children[0] = return val
     ReturnType,
     SetLiteral, // children = elements
     StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
     String { val: String, mutable: bool, },
     Struct(String), // children[0] = args, children[1] = functions, children[2] = body, children[3] = traits
-    StructInit,         // children[0] = struct, children[1] = Args,
+    StructInit, // children[0] = struct, children[1] = Args,
     Trait { name: String, strict: bool },  // children[0] = Module (functions)
     Traits,
     Type(String), // e.g.  struct A: \n type Inner

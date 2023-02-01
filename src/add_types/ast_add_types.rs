@@ -152,6 +152,7 @@ pub fn add_types(
                     ast[children[0]].typ = Some(typ)
                 }
             }
+            add_types(ast, children[0], vars, info, parent_struct);
         }
         AstNode::FirstAssignment => {
             add_types(ast, children[1], vars, info, parent_struct);
@@ -185,6 +186,7 @@ pub fn add_types(
             let name = unwrap_enum!(
                 &ast[children[0]].value, AstNode::Identifier(x), x.clone(), "function without identifier?"
             );
+            println!("FUNC: {name}");
             let input = if let Some(fnc) = info.funcs.get(&name) {
                 &fnc.input
             } else { panic!("unrecognized function `{name}`") };
@@ -599,10 +601,12 @@ fn add_optional_args( //3 not optimized // todo can't use name for positional ar
     let ast_len = ast.len();
     let mut to_add= vec![];
     let mut amount_of_pushed = 0;
+    println!("{:?}", &expected_args);
     for ex_arg in expected_args.iter().skip(amount_of_pos_args) {
         if let Some(pos) = supplied_kws.get(&ex_arg.name) {
             to_add.push(*pos);
-        } else {
+        } else if ex_arg.pos != usize::MAX {
+            println!("{:?}", ex_arg);
             add_to_tree(
                 children[1], ast,
                 ast[ex_arg.pos].clone()
@@ -610,6 +614,8 @@ fn add_optional_args( //3 not optimized // todo can't use name for positional ar
             ast[children[1]].children.as_mut().unwrap().pop();
             amount_of_pushed += 1;
             to_add.push(ast_len - 1 + amount_of_pushed);
+        } else {
+            panic!("not all positional args supplied")
         }
     }
     let args_children = ast[children[1]].children.as_mut().unwrap();

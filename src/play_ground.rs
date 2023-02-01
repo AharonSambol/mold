@@ -45,7 +45,21 @@ fn main() {
     // vec![].iter_mut().rev()
     a.next();
     println!("{:?}", a.inner);
-    let a = (5_f64 / 2_f64).floor();
+    let inferred = (5_f64 / 2_f64).floor();
+
+    let mut lst = vec![vec![1, 2], vec![3, 4]];
+    // lst.iter_mut(). = 2;
+    // get_list()[0][-1];
+    // lst = get_list();
+    // len = lst.len();
+    // idx1 = lst[(len+0) %len];
+    // idx2 = lst[(len+ -1) %len];
+    // let a = lst[0];
+    // a = vec![2];
+
+    // let mut a: Vec::<i32> = vec![1i32, 2i32];
+    // let _ = {let list = a;let len = list.len();list[(len + (0i32) as usize) % len]} = 3i32;
+    // lst[0][lst[0].len()-1] = 5;
     // let mut x: i32 = 325;
     // let mut a: i32 = 5;
     // let mut b: &mut i32 =  &mut a;

@@ -217,6 +217,13 @@ pub fn put_at_start(input: &str) -> String {
             args: vec!["x: &__len__"],
             return_typ: Some("int"),
         }),
+        //4 min
+        BuiltIn::Func(BuiltInFunc {
+            name: "min",
+            generics: Some(vec!["T"]),
+            args: vec!["x: Iterator[Item=T]"],
+            return_typ: Some("T"),
+        }),
         //4 range
         BuiltIn::Func(BuiltInFunc {
             name: "range",
