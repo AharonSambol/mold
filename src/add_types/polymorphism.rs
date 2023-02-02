@@ -7,7 +7,7 @@ use crate::add_types::utils::get_from_stack;
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
 use crate::mold_tokens::OperatorType;
-use crate::types::{GenericType, print_type, print_type_b, Type, TypeKind, TypName, unwrap, unwrap_u};
+use crate::types::{GenericType, print_type, Type, TypeKind, TypName, unwrap, unwrap_u};
 
 // TODO also cast: `as Box<dyn P>`
 fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leaves ast[pos] without anything pointing at it
@@ -49,19 +49,28 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leave
 
 pub fn make_enums(typ: &Type, enums: &mut HashMap<String, String>) {
     let types = unwrap(&typ.children);
-    let enm_name = typ.to_string();
+    let enm_name = escape_typ_chars(&typ.to_string());
+    println!("MAKING {}", enm_name);
+
     enums.entry(enm_name.clone()).or_insert_with(|| {
         let elems = types
             .iter()
-            .map(|x| format!("_{x}({x})"));
+            .map(|x| format!("_{}({x})", escape_typ_chars(&x.to_string())));
         let res = format!("enum {enm_name} {{ {} }}", join(elems, ","));
         res
     });
 }
 
+#[inline]
+pub fn escape_typ_chars(st: &str) -> String {
+    st.replace("::<", "_of_").replace('>', "_endof_")
+}
+
 fn add_one_of_enum(
     ast: &mut Vec<Ast>, pos: usize, enum_name: &str, enum_option: &str, info: &Info
 ) -> usize { // todo i think this leaves ast[pos] without anything pointing at it
+    println!("ADDING {}", enum_name);
+
     let ast_len = ast.len();
     let inner_val = ast[pos].clone();
     let parent_pos = inner_val.parent.unwrap();
@@ -149,9 +158,9 @@ pub fn check_for_boxes(
     if let TypeKind::OneOf = expected.kind {
         for typ in unwrap(&expected.children){
             if matches!(&got.typ, Some(t) if t == typ) {
-                make_enums(&expected, info.one_of_enums);
                 add_one_of_enum(
-                    ast, pos, &expected.to_string(), &format!("_{typ}"), info
+                    ast, pos, &expected.to_string(),
+                    &format!("_{}", escape_typ_chars(&typ.to_string())), info
                 );
                 return got.typ.clone().unwrap()
             }

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
-use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, typ_with_child, some_vec, unwrap_enum};
-use crate::add_types::ast_add_types::{NUM_TYPES, SPECIFIED_NUM_TYPE_RE};
+use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
+use crate::add_types::ast_add_types::{SPECIFIED_NUM_TYPE_RE};
 use crate::construct_ast::mold_ast::Info;
 use crate::construct_ast::tree_utils::print_tree;
 use crate::mold_tokens::OperatorType;
@@ -182,7 +182,12 @@ pub fn to_rust(
             }
         },
         AstNode::UnaryOp(op) => {
-            write!(res, "{op}").unwrap();
+            if matches!(op, OperatorType::MutPointer | OperatorType::Pointer)
+                && matches!(&ast[children[0]].value, AstNode::Index) {
+                //1 the index will already put a &mut\&
+            } else {
+                write!(res, "{op}").unwrap();
+            }
             to_rust(ast, children[0], indentation, res, enums, info);
         },
         AstNode::Parentheses => {
@@ -202,7 +207,7 @@ pub fn to_rust(
             to_rust(ast, children[0], indentation, &mut list, enums, info);
             let list = if let AstNode::Index = ast[children[0]].value {
                 format!("{list} as *mut")
-            } else if as_pointer {
+            } else if let IndexTyp::Mut = as_pointer {
                 format!("&mut {list} as *mut")
             } else {
                 format!("&{list} as *const")
@@ -212,8 +217,11 @@ pub fn to_rust(
                 "let list = {list} {};let len = (*list).len();",
                 ast[children[0]].typ.as_ref().unwrap()
             ).unwrap();
-            if as_pointer {
-                write!(res, "&mut ").unwrap();
+
+            match as_pointer {
+                IndexTyp::Mut => write!(res, "&mut ").unwrap(),
+                IndexTyp::Ref => write!(res, "&").unwrap(),
+                IndexTyp::Val => {}
             }
             write!(res, "(*list)[{{ let pos =").unwrap();
             to_rust(ast, children[1], indentation, res, enums, info);
@@ -697,11 +705,19 @@ fn built_in_funcs(
             let args = unwrap_u(&ast[args[0]].children);
             let mut formats = String::new();
             for arg in args {
-                let typ = ast[*arg].typ.as_ref().unwrap();
+                let mut typ = ast[*arg].typ.as_ref().unwrap();
+                let mut pointers = String::new();
+                while let Type{ kind: k@ (TypeKind::Pointer | TypeKind::MutPointer), children } = typ {
+                    pointers = match k {
+                        TypeKind::Pointer => { format!("&{pointers}") }
+                        _ => { format!("&mut {pointers}") }
+                    };
+                    typ = &children.as_ref().unwrap()[0];
+                }
                 if implements_trait(typ, "Display", ast, info) {
-                    write!(formats, "{{}} ").unwrap();
+                    write!(formats, "{pointers}{{}} ").unwrap();
                 } else if implements_trait(typ, "Debug", ast, info) {
-                    write!(formats, "{{:?}} ").unwrap();
+                    write!(formats, "{pointers}{{:?}} ").unwrap();
                 } else {
                     todo!()
                 }
@@ -782,14 +798,19 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &str, ast: &[Ast], info:
     }
 }
 
-fn should_be_mut_index(ast: &[Ast], pos: usize) -> bool {
+enum IndexTyp {
+    Mut, Ref, Val
+}
+fn should_be_mut_index(ast: &[Ast], pos: usize) -> IndexTyp {
     let parent = ast[pos].parent.unwrap();
     match &ast[parent].value {
-        AstNode::Assignment => ast[parent].children.as_ref().unwrap()[0] == pos,
         AstNode::Parentheses => should_be_mut_index(ast, parent),
-        AstNode::Index =>
-            ast[parent].children.as_ref().unwrap()[0] == pos,
-                // && should_be_mut_index(ast, parent),
+        AstNode::Assignment | AstNode::Index =>
+            if ast[parent].children.as_ref().unwrap()[0] == pos {
+                IndexTyp::Mut
+            } else {
+                IndexTyp::Val
+            }, // && should_be_mut_index(ast, parent),
         AstNode::ForStatement | AstNode::ArgsDef | AstNode::Bool(_) | AstNode::Char(_)
         | AstNode::ForVars | AstNode::Function(_) | AstNode::GenericsDeclaration
         | AstNode::Identifier(_) | AstNode::Arg { .. } | AstNode::IfStatement | AstNode::Enum(_)
@@ -802,10 +823,12 @@ fn should_be_mut_index(ast: &[Ast], pos: usize) -> bool {
         | AstNode::FirstAssignment | AstNode::ForIter
         | AstNode::ListLiteral | AstNode::Module | AstNode::Operator(_) | AstNode::Return
         | AstNode::SetLiteral | AstNode::NamedArg(_)
-        => false,
-        AstNode::UnaryOp(op) => {
-            matches!(op, OperatorType::MutPointer)
+        => IndexTyp::Val,
+        AstNode::UnaryOp(op) => match op {
+            OperatorType::MutPointer => IndexTyp::Mut,
+            OperatorType::Pointer => IndexTyp::Ref,
+            _ => IndexTyp::Val
         }
-        AstNode::FunctionCall(_)  | AstNode::Property => true,
+        AstNode::FunctionCall(_)  | AstNode::Property => IndexTyp::Mut,
     }
 }

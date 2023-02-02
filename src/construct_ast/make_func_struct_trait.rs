@@ -385,7 +385,8 @@ pub fn make_enum(
     info: &mut Info
 ) -> usize {
     let name =
-        if let SolidToken::Word(name) = &tokens[pos] { name.clone() } else { panic!("Invalid name for enum `{:?}`", tokens[pos]) };
+        if let SolidToken::Word(name) = &tokens[pos] { name.clone() }
+        else { panic!("Invalid name for enum `{:?}`", tokens[pos]) };
     let index = add_to_tree(parent, ast, Ast::new(AstNode::Enum(name.clone())));
 
     pos += 1;

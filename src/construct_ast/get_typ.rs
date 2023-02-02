@@ -5,6 +5,7 @@ use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
 use crate::types::{clean_type, MUT_STR_TYPE, Type, UNKNOWN_TYPE, TypeKind, GenericType, TypName};
 use crate::{typ_with_child, unwrap_enum, some_vec, IS_COMPILED};
 use crate::add_types::ast_add_types::add_types;
+use crate::add_types::polymorphism::make_enums;
 
 // should be passed pos = one after the opening parenthesis
 // returns where pos = the index of the closing brace
@@ -77,15 +78,18 @@ pub fn get_params(
 //                       ^              ^        ^
 pub fn get_arg_typ(
     tokens: &[SolidToken], pos: &mut usize,
-    info: &Info
+    info: &mut Info
 ) -> Type {
     try_get_arg_typ(tokens, pos, info, true, true).unwrap()
 }
 
+enum StructTraitOrEnum {
+    Struct, Trait, Enum
+}
 
 /// # is_top_call should be passed true as default
 pub fn try_get_arg_typ(
-    tokens: &[SolidToken], pos: &mut usize, info: &Info, panic: bool, is_top_call: bool
+    tokens: &[SolidToken], pos: &mut usize, info: &mut Info, panic: bool, is_top_call: bool
 ) -> Option<Type> {
     if info.structs.is_empty() {
         panic!()
@@ -96,18 +100,18 @@ pub fn try_get_arg_typ(
             SolidToken::Bracket(IsOpen::True) => {
                 if let Some(Type{ kind: TypeKind::Struct(_), .. }) = res {
                     if !get_inside_bracket_types(
-                        tokens, pos, info, panic, &mut res, info.structs
+                        tokens, pos, info, panic, &mut res, StructTraitOrEnum::Struct
                     ) { return None }
                 } else if let Some(Type{ kind: TypeKind::Trait(_), .. }) = res {
                     if !get_inside_bracket_types(
-                        tokens, pos, info, panic, &mut res, info.traits
+                        tokens, pos, info, panic, &mut res, StructTraitOrEnum::Trait
                     ) { return None }
                 } else if let Some(Type{ kind: TypeKind::Enum(_), .. }) = res {
                     if !get_inside_bracket_types(
-                        tokens, pos, info, panic, &mut res, info.enums
+                        tokens, pos, info, panic, &mut res, StructTraitOrEnum::Enum
                     ) { return None }
                 }
-                break
+                *pos -= 1;
             },
             SolidToken::Bracket(IsOpen::False)
             | SolidToken::Comma
@@ -123,6 +127,7 @@ pub fn try_get_arg_typ(
                 *pos -= 1;
                 if let Some(t) = t {
                     res = Some(typ.add_option(t));
+                    make_enums(&res.as_ref().unwrap(), info.one_of_enums);
                 } else if panic { panic!() } else { return None };
             }
             SolidToken::Word(wrd) => {
@@ -215,9 +220,9 @@ pub fn try_get_arg_typ(
     res
 }
 
-fn get_inside_bracket_types<T: STType>(
-    tokens: &[SolidToken], pos: &mut usize, info: &Info, panic: bool,
-    res: &mut Option<Type>, structs_or_traits: &HashMap<String, T>
+fn get_inside_bracket_types(
+    tokens: &[SolidToken], pos: &mut usize, info: &mut Info, panic: bool,
+    res: &mut Option<Type>, structs_or_traits: StructTraitOrEnum
 ) -> bool {
     let (struct_name, res_children) = unwrap_enum!(
         res,
@@ -227,15 +232,24 @@ fn get_inside_bracket_types<T: STType>(
         }),
         (n, c)
     );
-    if !structs_or_traits.contains_key(struct_name.get_str()) {
-        panic!("cannot find struct `{struct_name}`")
-    }
+
     *pos += 1;
-    let add_child = |t: Type, i: &mut usize, struct_name: &str| {
+    let add_child = |t: Type, i: &mut usize, info: &mut Info| {
         if let TypeKind::InnerType(_) = &t.kind {
             return t
         }
-        let generics = structs_or_traits[struct_name].get_generics().as_ref().unwrap();
+        fn get_generics<'a, T: STType>(hm: &'a HashMap<String, T>, name: &TypName) -> Option<&'a Vec<String>> {
+            if let Some(s) = hm.get(name.get_str()) {
+                s.get_generics().as_ref()
+            } else {
+                panic!("cannot find struct `{name}`")
+            }
+        }
+        let generics = match structs_or_traits {
+            StructTraitOrEnum::Struct => get_generics(info.structs, struct_name),
+            StructTraitOrEnum::Trait => get_generics(info.traits, struct_name),
+            StructTraitOrEnum::Enum => get_generics(info.enums, struct_name)
+        }.unwrap();
         if *i >= generics.len() {
             panic!("too many generics passed, expected only `{}`", generics.len())
         }
@@ -255,11 +269,7 @@ fn get_inside_bracket_types<T: STType>(
         *pos += 1;
         let t = try_get_arg_typ(tokens, pos, info, panic, false);
         if let Some(t) = t {
-            children.push(add_child(
-                t,
-                &mut generic_num,
-                struct_name.get_str()
-            ));
+            children.push(add_child(t, &mut generic_num, info));
         } else if panic { panic!() } else { return false };
     }
     *pos += 1;

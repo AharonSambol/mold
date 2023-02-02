@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter};
 use pretty_print_tree::{Color, PrettyPrintTree};
 use crate::construct_ast::ast_structure::join;
 use crate::{EMPTY_STR, unwrap_enum};
+use crate::add_types::polymorphism::escape_typ_chars;
 
 pub const UNKNOWN_TYPE: Type = Type {
     kind: TypeKind::Unknown,
@@ -138,7 +139,11 @@ impl Display for Type {
             TypeKind::Unknown => write!(f, ""),
             TypeKind::OneOf => {
                 let children = unwrap(&self.children);
-                write!(f, "{}", join(children.iter(), "__or__"))
+                write!(f, "{}", join(
+                    children.iter()
+                        .map(|x| escape_typ_chars(&x.to_string())),
+                    "__or__"
+                ))
             },
             TypeKind::_Tuple => {
                 write!(f, "({})", join(unwrap(&self.children).iter(), ","))

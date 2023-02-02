@@ -38,16 +38,6 @@ const EMPTY_STR: String = String::new();
 // codegen-units = 1
 // TODO some things dont need to be made into a box necessarily (e.g. when I do lst.len() it makes a box)
 fn main() {
-    let mut lst = vec![vec![1, 2], vec![3, 4]];
-    //
-    {
-        {
-            let mut lst = lst;
-            lst[0][0] = 6
-        }
-    }
-    // println!("{:?}", lst);
-    // return;
     // todo remove
     unsafe {
         IS_COMPILED = true;

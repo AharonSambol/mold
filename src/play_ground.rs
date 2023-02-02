@@ -67,6 +67,56 @@ fn main() {
     // println!("{}", Box::new(a));
 }
 
+
+
+fn bubble_sort(mut lst: &mut Vec::<i32>) {
+    for mut j in (0..(lst.len() as i32)) {
+        for mut i in (1i32..(lst.len() as i32) - j) {
+            if unsafe {
+                let list = &lst as *const &mut Vec::<i32>;
+                let len = (*list).len();(*list)[{
+                    let pos =i - 1i32; if pos >= 0 { pos as usize } else { (pos + len as i32) as usize }
+                }]
+            } > unsafe {
+                let list = &lst as *const &mut Vec::<i32>;
+                let len = (*list).len();
+                (*list)[{
+                    let pos =i; if pos >= 0 { pos as usize } else { (pos + len as i32) as usize }
+                }]
+            } {
+                let mut temp: i32 = unsafe {
+                    let list = &lst as *const &mut Vec::<i32>;
+                    let len = (*list).len();(*list)[{
+                        let pos =i; if pos >= 0 { pos as usize } else { (pos + len as i32) as usize }
+                    }]
+                };
+                unsafe {
+                    let mut list: *mut &mut Vec::<i32> = &mut lst;
+                    let len = (*list).len();
+                    let val= unsafe {
+                        let list = &lst as *const &mut Vec::<i32>;
+                        let len = (*list).len();(*list)[{
+                            let pos =i - 1i32; if pos >= 0 { pos as usize } else { (pos + len as i32) as usize }
+                        }]
+                    };
+                    (*list)[{
+                        let pos=i; if pos >= 0 { pos as usize } else { (pos + len as i32) as usize }
+                    }] = val
+                };
+                unsafe {
+                    let mut list: *mut &mut Vec::<i32> = &mut lst;
+                    let len = (*list).len();
+                    let val=temp;
+                    (*list)[{
+                        let pos=i - 1i32; if pos >= 0 { pos as usize } else { (pos + len as i32) as usize }
+                    }] = val
+                };
+            };
+        };
+    };
+}
+
+
 enum i32__or__bool { _i32(i32),_bool(bool), }
 
 trait __len__ {

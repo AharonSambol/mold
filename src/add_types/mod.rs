@@ -1,4 +1,4 @@
 pub mod ast_add_types;
 pub mod utils;
-mod polymorphism;
+pub mod polymorphism;
 mod generics;

@@ -186,7 +186,6 @@ pub fn add_types(
             let name = unwrap_enum!(
                 &ast[children[0]].value, AstNode::Identifier(x), x.clone(), "function without identifier?"
             );
-            println!("FUNC: {name}");
             let input = if let Some(fnc) = info.funcs.get(&name) {
                 &fnc.input
             } else { panic!("unrecognized function `{name}`") };
@@ -601,12 +600,10 @@ fn add_optional_args( //3 not optimized // todo can't use name for positional ar
     let ast_len = ast.len();
     let mut to_add= vec![];
     let mut amount_of_pushed = 0;
-    println!("{:?}", &expected_args);
     for ex_arg in expected_args.iter().skip(amount_of_pos_args) {
         if let Some(pos) = supplied_kws.get(&ex_arg.name) {
             to_add.push(*pos);
         } else if ex_arg.pos != usize::MAX {
-            println!("{:?}", ex_arg);
             add_to_tree(
                 children[1], ast,
                 ast[ex_arg.pos].clone()

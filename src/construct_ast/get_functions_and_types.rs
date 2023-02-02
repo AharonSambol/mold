@@ -71,7 +71,7 @@ pub fn get_struct_and_func_names(
             }
             let res = try_get_arg_typ(
                 tokens, &mut pos.clone(),
-                &Info {
+                &mut Info {
                     funcs: &mut funcs,
                     structs: &mut structs,
                     traits: &mut traits,
