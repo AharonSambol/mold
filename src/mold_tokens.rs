@@ -6,7 +6,7 @@ use crate::mold_tokens::Token::{
 };
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IsOpen { True, False }
 
 
@@ -38,7 +38,7 @@ enum Token {
     Tab, NewLine
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SolidToken {
     Brace(IsOpen), Bracket(IsOpen), Parenthesis(IsOpen),
     Word(String),
@@ -60,7 +60,7 @@ pub enum SolidToken {
     IMut
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OperatorType {
     Eq, IsEq, Bigger, Smaller, NEq, BEq, SEq,
     Plus, Minus, Mul, Pow, Div, Mod, FloorDiv,

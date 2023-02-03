@@ -514,6 +514,45 @@ pub fn to_rust(
         AstNode::NamedArg(_) => {
             to_rust(ast, unwrap_u(&ast[pos].children)[0], indentation, res, enums, info);
         }
+        AstNode::ListComprehension | AstNode::SetComprehension | AstNode::DictComprehension => {
+            match &ast[pos].value {
+                AstNode::ListComprehension => write!(res, "{{let mut res = vec![];"),
+                AstNode::SetComprehension => write!(res, "{{let mut res = HashSet::new();"),
+                AstNode::DictComprehension => write!(res, "{{let mut res = HashMap::new();"),
+                _ => unreachable!()
+            }.unwrap();
+            let loops = ast[children[1]].children.clone().unwrap();
+            for r#loop in loops.iter() {
+                let colon_par = ast[*r#loop].children.as_ref().unwrap();
+                write!(res, "for ").unwrap();
+                to_rust(ast, colon_par[0], indentation, res, enums, info);
+                write!(res, "{{").unwrap();
+            }
+            let close = if let Some(condition) = &ast[children[2]].children {
+                write!(res, "if ").unwrap();
+                to_rust(ast, condition[0], indentation, res, enums, info);
+                write!(res, "{{").unwrap();
+                1
+            } else {
+                0
+            };
+            if let AstNode::ListComprehension = &ast[pos].value {
+                write!(res, "res.push(").unwrap();
+            } else {
+                write!(res, "res.insert(").unwrap();
+            }
+            if let AstNode::DictComprehension = &ast[pos].value {
+                let parts = ast[children[0]].children.as_ref().unwrap();
+                to_rust(ast, parts[0], indentation, res, enums, info);
+                write!(res, ",").unwrap();
+                to_rust(ast, parts[1], indentation, res, enums, info);
+            } else {
+                to_rust(ast, ast[children[0]].children.as_ref().unwrap()[0], indentation, res, enums, info);
+            }
+            write!(res, ");").unwrap();
+            write!(res, "{}", "}".repeat(loops.len() + close)).unwrap();
+            write!(res, "res}}").unwrap();
+        }
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
 }
@@ -817,7 +856,8 @@ fn should_be_mut_index(ast: &[Ast], pos: usize) -> IndexTyp {
         | AstNode::Number(_) | AstNode::Pass | AstNode::Continue | AstNode::Break
         | AstNode::ReturnType | AstNode::StaticFunction(_) | AstNode::String { .. }
         | AstNode::Struct(_) | AstNode::StructInit | AstNode::Trait { .. } | AstNode::Traits
-        | AstNode::Type(_) | AstNode::Types | AstNode::WhileStatement
+        | AstNode::Type(_) | AstNode::Types | AstNode::WhileStatement | AstNode::ListComprehension
+        | AstNode::SetComprehension | AstNode::DictComprehension
         => unreachable!(),
         AstNode::Args | AstNode::Body | AstNode::ColonParentheses | AstNode::DictLiteral
         | AstNode::FirstAssignment | AstNode::ForIter

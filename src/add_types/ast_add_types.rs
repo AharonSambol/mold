@@ -32,6 +32,59 @@ pub fn add_types(
 ) {
     let children = ast[pos].children.clone().unwrap_or_default();
     match &ast[pos].value {
+        AstNode::ListComprehension | AstNode::SetComprehension | AstNode::DictComprehension => {
+            vars.push(HashMap::new());
+            for r#loop in ast[children[1]].children.clone().unwrap() {
+                let colon_par = ast[r#loop].children.as_ref().unwrap()[0];
+                add_types( //1 iter type
+                    ast,
+                    unwrap_u(&ast[colon_par].children)[1],
+                    vars, info, parent_struct
+                );
+                add_types_to_for_vars_and_iters(ast, vars, info, &ast[r#loop].children.clone().unwrap());
+            }
+            if let Some(condition) = &ast[children[2]].children {
+                add_types(ast, condition[0], vars, info, parent_struct);
+            }
+            let stmt = ast[children[0]].children.as_ref().unwrap()[0];
+            // panic!();
+            add_types(ast, stmt, vars, info, parent_struct);
+            if let AstNode::DictComprehension = &ast[pos].value {
+                ast[pos].typ = Some(typ_with_child!{
+                    TypeKind::Struct(TypName::Static("HashMap")),
+                    Type{
+                        kind: TypeKind::GenericsMap,
+                        children: some_vec![
+                            typ_with_child!{
+                                TypeKind::Generic(GenericType::Of(String::from("K"))),
+                                ast[ast[stmt].children.as_ref().unwrap()[0]].typ.clone().unwrap()
+
+                            },
+                            typ_with_child!{
+                                TypeKind::Generic(GenericType::Of(String::from("V"))),
+                                ast[ast[stmt].children.as_ref().unwrap()[1]].typ.clone().unwrap()
+                            },
+                        ]
+                    }
+                });
+            } else {
+                ast[pos].typ = Some(typ_with_child! {
+                    TypeKind::Struct(TypName::Static(match &ast[pos].value {
+                        AstNode::ListComprehension => "Vec",
+                        AstNode::SetComprehension => "HashSet",
+                        _ => unreachable!()
+                    })),
+                    typ_with_child!{
+                        TypeKind::GenericsMap,
+                        typ_with_child!{
+                            TypeKind::Generic(GenericType::Of(String::from("T"))),
+                            ast[stmt].typ.clone().unwrap()
+                        }
+                    }
+                });
+            }
+            vars.pop();
+        },
         AstNode::ForStatement => {
             //1 add_types to for-iter (not for-vars)
             add_types(
@@ -40,24 +93,7 @@ pub fn add_types(
                 vars, info, parent_struct
             );
             vars.push(HashMap::new());
-            let par = &ast[children[0]];
-            let for_vars = &ast[unwrap_u(&par.children)[0]];
-            let iter = &ast[unwrap_u(&par.children)[1]];
-            if unwrap_u(&for_vars.children).len() > 1 {
-                todo!()
-            }
-            let for_var_pos = unwrap_u(&for_vars.children)[0];
-            let mut typ = get_into_iter_return_typ(ast, info, iter);
-            if let Some(Type{ kind: TypeKind::Generic(GenericType::Of(_)), children }) = &typ {
-                println!("THIS ISNT USELESS");
-                typ = Some(children.as_ref().unwrap()[0].clone());
-            }
-            ast[for_var_pos].typ = typ;
-            add_to_stack(
-                vars,
-                unwrap_enum!(&ast[for_var_pos].value, AstNode::Identifier(n), n.clone()),
-                for_var_pos
-            );
+            add_types_to_for_vars_and_iters(ast, vars, info, &children);
             add_types(ast, children[1], vars, info, parent_struct);
             vars.pop();
         }
@@ -582,6 +618,29 @@ pub fn add_types(
         | AstNode::Trait { .. } | AstNode::Traits | AstNode::Type(_) | AstNode::Types
         | AstNode::Arg { .. }=> {}
     }
+}
+
+fn add_types_to_for_vars_and_iters(
+    ast: &mut Vec<Ast>, vars: &mut VarTypes, info: &mut Info, children: &Vec<usize>
+) {
+    let par = &ast[children[0]];
+    let for_vars = &ast[unwrap_u(&par.children)[0]];
+    let iter = &ast[unwrap_u(&par.children)[1]];
+    if unwrap_u(&for_vars.children).len() > 1 {
+        todo!()
+    }
+    let for_var_pos = unwrap_u(&for_vars.children)[0];
+    let mut typ = get_into_iter_return_typ(ast, info, iter);
+    if let Some(Type { kind: TypeKind::Generic(GenericType::Of(_)), children }) = &typ {
+        println!("THIS ISNT USELESS");
+        typ = Some(children.as_ref().unwrap()[0].clone());
+    }
+    ast[for_var_pos].typ = typ;
+    add_to_stack(
+        vars,
+        unwrap_enum!(&ast[for_var_pos].value, AstNode::Identifier(n), n.clone()),
+        for_var_pos
+    );
 }
 
 fn add_optional_args( //3 not optimized // todo can't use name for positional args

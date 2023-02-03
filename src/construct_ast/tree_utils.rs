@@ -49,6 +49,25 @@ pub fn add_to_tree(parent: usize, ast: &mut Vec<Ast>, mut new_node: Ast) -> usiz
     pos
 }
 
+pub fn extend_tree(ast: &mut Vec<Ast>, parent: usize, mut other: Vec<Ast>) {
+    let ast_len = ast.len();
+    for node in other.iter_mut() {
+        if let Some(p) = &mut node.parent {
+            *p += ast_len;
+        } else {
+            node.parent = Some(ast_len - 1);
+        };
+        if let Some(ch) = &mut node.children {
+            ch.iter_mut().for_each(|i| *i += ast_len);
+        }
+    }
+    ast.extend(other);
+    if let Some(ch) = &mut ast[parent].children {
+        ch.push(ast_len);
+    } else {
+        ast[parent].children = Some(vec![ast_len])
+    }
+}
 // pub fn remove_leaf(ast: &mut Vec<Ast>, pos: usize) {
 //     
 // }

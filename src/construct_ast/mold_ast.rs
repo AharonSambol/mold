@@ -9,7 +9,7 @@ use crate::types::{print_type_b, Type, TypeKind, unwrap, unwrap_u};
 use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
 use crate::construct_ast::get_typ::{get_arg_typ, get_params};
 use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait, make_enum};
-use crate::construct_ast::tree_utils::{add_to_tree, get_last, insert_as_parent_of_prev, print_tree};
+use crate::construct_ast::tree_utils::{add_to_tree, extend_tree, get_last, insert_as_parent_of_prev, print_tree};
 
 
 type TraitFuncs = HashMap<String, (usize, FuncType)>;
@@ -217,7 +217,7 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
         }
 
         for (trt, trt_funcs) in duck_traits.iter() {
-            if strct_traits.contains_key(trt) { println!("PASSING {trt}"); continue }
+            if strct_traits.contains_key(trt) { continue }
             //1 if all the functions in the trait are implemented
             // HashMap<String, (usize, HashMap<String, FuncType>)>
             if let Some(types_hm) = struct_matches_trait(trt_funcs, &funcs) {
@@ -488,7 +488,7 @@ pub fn make_ast_expression(
                     tokens, pos + 1, ast, par_pos, vars, info
                 ) - 1;
             },
-            SolidToken::Bracket(IsOpen::True) =>{
+            SolidToken::Bracket(IsOpen::True) => {
                 amount_of_open += 1;
                 if let SolidToken::Parenthesis(IsOpen::False)
                 | SolidToken::Bracket(IsOpen::False)
@@ -500,8 +500,17 @@ pub fn make_ast_expression(
                     pos = make_ast_expression(
                         tokens, pos + 1, ast, index, vars, info
                     ) - 1;
+                } else if let ComprehensionType::ListSet = get_comprehension_typ(tokens, pos) {
+                    //1 list comprehension
+                    let lst_comp = comprehension(
+                        tokens, &mut pos, vars, info, SolidToken::Bracket(IsOpen::True),
+                        SolidToken::Bracket(IsOpen::False),
+                        AstNode::ListComprehension
+                    );
+                    extend_tree(ast, parent, lst_comp);
+                    pos -= 1;
                 } else {
-                    //1 list-literal or comprehension
+                    //1 list literal
                     let list_parent = add_to_tree(parent, ast, Ast::new(AstNode::ListLiteral));
                     let starting_pos = pos;
                     while matches!(&tokens[pos], SolidToken::Comma) || pos == starting_pos {
@@ -514,29 +523,52 @@ pub fn make_ast_expression(
             },
             SolidToken::Brace(IsOpen::True) => {
                 amount_of_open += 1;
-                //1 set\dict-literal or comprehension
-                //3                                         | this is a placeholder |
-                let list_parent = add_to_tree(parent, ast, Ast::new(AstNode::SetLiteral));
-                let starting_pos = pos;
-                if let SolidToken::Brace(IsOpen::False) = tokens[pos + 1] {
-                    ast[list_parent].value = AstNode::DictLiteral;
-                } else {
-                    while matches!(&tokens[pos], SolidToken::Comma | SolidToken::Colon) || pos == starting_pos {
-                        if let SolidToken::Colon = tokens[pos] {
-                            if let AstNode::DictLiteral = ast[list_parent].value {
-                                if unwrap_u(&ast[list_parent].children).len() % 2 != 1 { panic!() }
-                            } else {
-                                if unwrap_u(&ast[list_parent].children).len() != 1 { panic!() }
-                                ast[list_parent].value = AstNode::DictLiteral;
-                            }
-                        } else if let AstNode::DictLiteral = ast[list_parent].value {
-                            if unwrap_u(&ast[list_parent].children).len() % 2 == 1 { panic!() }
-                        }
-                        pos = make_ast_expression(
-                            tokens, pos + 1, ast, list_parent, vars, info
+                let comprehension_typ = get_comprehension_typ(tokens, pos);
+                match comprehension_typ {
+                    ComprehensionType::Dict => {
+                        let lst_comp = comprehension(
+                            tokens, &mut pos, vars, info, SolidToken::Brace(IsOpen::True),
+                            SolidToken::Brace(IsOpen::False),
+                            AstNode::DictComprehension
                         );
+                        extend_tree(ast, parent, lst_comp);
+                        pos -= 1;
                     }
-                    pos -= 1;
+                    ComprehensionType::ListSet => {
+                        let lst_comp = comprehension(
+                            tokens, &mut pos, vars, info, SolidToken::Brace(IsOpen::True),
+                            SolidToken::Brace(IsOpen::False),
+                            AstNode::SetComprehension
+                        );
+                        extend_tree(ast, parent, lst_comp);
+                        pos -= 1;
+                    },
+                    ComprehensionType::None => {
+                        //1 set\dict literal
+                        //3                                                                | this is a placeholder |
+                        let list_parent = add_to_tree(parent, ast, Ast::new(AstNode::SetLiteral));
+                        let starting_pos = pos;
+                        if let SolidToken::Brace(IsOpen::False) = tokens[pos + 1] {
+                            ast[list_parent].value = AstNode::DictLiteral;
+                        } else {
+                            while matches!(&tokens[pos], SolidToken::Comma | SolidToken::Colon) || pos == starting_pos {
+                                if let SolidToken::Colon = tokens[pos] {
+                                    if let AstNode::DictLiteral = ast[list_parent].value {
+                                        if unwrap_u(&ast[list_parent].children).len() % 2 != 1 { panic!() }
+                                    } else {
+                                        if unwrap_u(&ast[list_parent].children).len() != 1 { panic!() }
+                                        ast[list_parent].value = AstNode::DictLiteral;
+                                    }
+                                } else if let AstNode::DictLiteral = ast[list_parent].value {
+                                    if unwrap_u(&ast[list_parent].children).len() % 2 == 1 { panic!() }
+                                }
+                                pos = make_ast_expression(
+                                    tokens, pos + 1, ast, list_parent, vars, info
+                                );
+                            }
+                            pos -= 1;
+                        }
+                    }
                 }
             },
             SolidToken::Parenthesis(IsOpen::False)
@@ -602,6 +634,164 @@ pub fn make_ast_expression(
         pos += 1;
     }
     pos
+}
+
+enum ComprehensionType {
+    ListSet, Dict, None
+}
+fn get_comprehension_typ(tokens: &[SolidToken], pos: usize) -> ComprehensionType {
+    let mut amount_of_open = 0;
+    for tok in tokens.iter().skip(pos) {
+        match tok {
+            SolidToken::Bracket(IsOpen::True)
+            | SolidToken::Brace(IsOpen::True)
+            | SolidToken::Parenthesis(IsOpen::True)
+            => amount_of_open += 1,
+            SolidToken::Bracket(IsOpen::False)
+            | SolidToken::Brace(IsOpen::False)
+            | SolidToken::Parenthesis(IsOpen::False)
+            => {
+                if amount_of_open == 1 { return ComprehensionType::None }
+                amount_of_open -= 1
+            },
+            SolidToken::For if amount_of_open == 1 => return ComprehensionType::ListSet,
+            SolidToken::Colon if amount_of_open == 1 => return ComprehensionType::Dict,
+            SolidToken::Comma if amount_of_open == 1 => return ComprehensionType::None,
+            _ => ()
+        }
+    }
+    unreachable!()
+}
+
+fn comprehension(
+    tokens: &[SolidToken], pos: &mut usize, vars: &mut VarTypes, info: &mut Info,
+    open_b_b_p: SolidToken, close_b_b_p: SolidToken, comprehension_typ: AstNode
+) -> Vec<Ast> {
+    let mut amount_of_open = 0;
+    let mut toks = vec![];
+    let mut comprehension = vec![Ast::new(comprehension_typ)];
+    let stmt_mod = add_to_tree(
+        0, &mut comprehension, Ast::new(AstNode::Module)
+    );
+    vars.push(HashMap::new());
+    //1 statement
+    loop {
+        *pos += 1;
+        match tokens[*pos] {
+            SolidToken::Bracket(IsOpen::True)
+            | SolidToken::Brace(IsOpen::True)
+            | SolidToken::Parenthesis(IsOpen::True) =>
+                if tokens[*pos] == open_b_b_p { amount_of_open += 1 },
+            SolidToken::Bracket(IsOpen::False)
+            | SolidToken::Brace(IsOpen::False)
+            | SolidToken::Parenthesis(IsOpen::False ) =>
+                if tokens[*pos] == close_b_b_p {
+                    if amount_of_open == 0 { break }
+                    amount_of_open -= 1
+                },
+            SolidToken::Colon if amount_of_open == 0 => {
+                toks.push(SolidToken::NewLine);
+                make_ast_expression(
+                    &toks, 0, &mut comprehension, stmt_mod, vars, info
+                );
+                toks.clear();
+                continue
+            }
+            SolidToken::For if amount_of_open == 0 => {
+                println!("TOKS: {toks:?}");
+                toks.push(SolidToken::NewLine);
+                make_ast_expression(
+                    &toks, 0, &mut comprehension, stmt_mod, vars, info
+                );
+                break
+            }
+            _ => ()
+        }
+        toks.push(tokens[*pos].clone());
+    }
+    let loops_mod = add_to_tree(0, &mut comprehension, Ast::new(AstNode::Module));
+    //1 loops
+    while *pos < tokens.len() && matches!(tokens[*pos], SolidToken::For) { //1 loops
+        *pos += 1;
+        let loop_pos = add_to_tree(
+            loops_mod, &mut comprehension, Ast::new(AstNode::ForStatement)
+        );
+        let pars_pos = add_to_tree(
+            loop_pos, &mut comprehension, Ast::new(AstNode::ColonParentheses)
+        );
+        let vars_pos = add_to_tree(
+            pars_pos, &mut comprehension, Ast::new(AstNode::ForVars)
+        );
+        let iter_pos = add_to_tree(
+            pars_pos, &mut comprehension, Ast::new(AstNode::ForIter)
+        );
+        vars.push(HashMap::new());
+        //4 vars:
+        get_for_loop_vars(tokens, pos, &mut comprehension, vars, vars_pos);
+        //4 iters:
+        amount_of_open = 0;
+        toks.clear();
+        loop { //1 statement
+            match tokens[*pos] {
+                SolidToken::Bracket(IsOpen::True)
+                | SolidToken::Brace(IsOpen::True)
+                | SolidToken::Parenthesis(IsOpen::True) =>
+                    if tokens[*pos] == open_b_b_p { amount_of_open += 1 },
+                SolidToken::Bracket(IsOpen::False)
+                | SolidToken::Brace(IsOpen::False)
+                | SolidToken::Parenthesis(IsOpen::False) =>
+                    if tokens[*pos] == close_b_b_p {
+                        if amount_of_open == 0 {
+                            toks.push(SolidToken::NewLine);
+                            make_ast_expression(
+                                &toks, 0, &mut comprehension, iter_pos, vars, info
+                            );
+                            break
+                        }
+                        amount_of_open -= 1
+                    },
+                SolidToken::For | SolidToken::If if amount_of_open == 0 => {
+                    toks.push(SolidToken::NewLine);
+                    make_ast_expression(
+                        &toks, 0, &mut comprehension, iter_pos, vars, info
+                    );
+                    break
+                }
+                _ => ()
+            }
+            toks.push(tokens[*pos].clone());
+            *pos += 1;
+        }
+        vars.pop();
+    }
+    //1 condition
+    let condition_mod = add_to_tree(0, &mut comprehension, Ast::new(AstNode::Module));
+    if *pos < tokens.len() && matches!(tokens[*pos], SolidToken::If) {
+        amount_of_open = 0;
+        toks.clear();
+        loop {
+            *pos += 1;
+            match tokens[*pos] {
+                SolidToken::Bracket(IsOpen::True)
+                | SolidToken::Brace(IsOpen::True)
+                | SolidToken::Parenthesis(IsOpen::True) =>
+                    if tokens[*pos] == open_b_b_p { amount_of_open += 1 },
+                SolidToken::Bracket(IsOpen::False)
+                | SolidToken::Brace(IsOpen::False)
+                | SolidToken::Parenthesis(IsOpen::False ) =>
+                    if tokens[*pos] == close_b_b_p {
+                        if amount_of_open == 0 { break }
+                        amount_of_open -= 1
+                    },
+                _ => ()
+            }
+            toks.push(tokens[*pos].clone());
+        }
+        toks.push(SolidToken::NewLine);
+        make_ast_expression(&toks, 0, &mut comprehension, condition_mod, vars, info);
+    }
+    vars.pop();
+    comprehension
 }
 
 fn word_tok(
@@ -789,20 +979,7 @@ fn for_statement(
     let body_pos = add_to_tree(loop_pos, ast, Ast::new(AstNode::Body));
     vars.push(HashMap::new());
     //4 vars:
-    loop {
-        let name = unwrap_enum!(&tokens[pos], SolidToken::Word(x), x, "expected identifier");
-        let i = add_to_tree(
-            vars_pos, ast,
-            Ast::new(AstNode::Identifier(name.clone()))
-        );
-        add_to_stack(vars, name.clone(), i);
-        pos += 2;
-        match &tokens[pos - 1] {
-            SolidToken::Comma => continue,
-            SolidToken::In => break,
-            _ => panic!("expected `in` or `,`")
-        }
-    }
+    get_for_loop_vars(tokens, &mut pos, ast, vars, vars_pos);
     //4 iters:
     pos = make_ast_expression(
         tokens, pos, ast, iter_pos, vars, info
@@ -814,4 +991,24 @@ fn for_statement(
     );
     vars.pop();
     pos - 1
+}
+
+fn get_for_loop_vars(
+    tokens: &[SolidToken], pos: &mut usize, ast: &mut Vec<Ast>,
+    vars: &mut VarTypes, vars_pos: usize
+) {
+    loop {
+        let name = unwrap_enum!(&tokens[*pos], SolidToken::Word(x), x, "expected identifier");
+        let i = add_to_tree(
+            vars_pos, ast,
+            Ast::new(AstNode::Identifier(name.clone()))
+        );
+        add_to_stack(vars, name.clone(), i);
+        *pos += 2;
+        match &tokens[*pos - 1] {
+            SolidToken::Comma => continue,
+            SolidToken::In => break,
+            _ => panic!("expected `in` or `,`")
+        }
+    }
 }

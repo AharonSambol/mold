@@ -42,6 +42,7 @@ pub enum AstNode {
     Bool(bool), // no children
     Char(String),
     ColonParentheses, // children[0] = inside
+    DictComprehension,
     DictLiteral, // children = elements
     Enum(String),
     FirstAssignment,
@@ -55,6 +56,7 @@ pub enum AstNode {
     Arg{ name: String, is_arg: bool, is_kwarg: bool },
     IfStatement,
     Index, // child[0] = item, child[1] = index
+    ListComprehension, // children[0] = statement, children[1] = loops, children[2] = if (optional)
     ListLiteral, // children = elements
     Module, // children = all the functions/classes/enums..
     Number(String),
@@ -64,6 +66,7 @@ pub enum AstNode {
     Property, // children[0] = obj, children[1] = prop
     Return, // children[0] = return val
     ReturnType,
+    SetComprehension,
     SetLiteral, // children = elements
     StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
     String { val: String, mutable: bool, },
@@ -141,7 +144,10 @@ impl AstNode {
             | AstNode::Operator(_)
             | AstNode::UnaryOp(_)
             | AstNode::Parentheses
+            | AstNode::DictComprehension
+            | AstNode::ListComprehension
             | AstNode::ListLiteral
+            | AstNode::SetComprehension
             | AstNode::SetLiteral
             | AstNode::DictLiteral
             | AstNode::Index => true,
@@ -180,6 +186,9 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            AstNode::DictComprehension=> write!(f, "{{DICT-COMPREHENSION}}"),
+            AstNode::SetComprehension => write!(f, "{{SET-COMPREHENSION}}"),
+            AstNode::ListComprehension => write!(f, "[COMPREHENSION]"),
             AstNode::NamedArg(name) => write!(f, "{name}="),
             AstNode::Arg { name, is_arg, is_kwarg } =>
                 write!(f, "{name}\n[{is_arg}, {is_kwarg}]"),

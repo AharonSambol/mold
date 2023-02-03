@@ -103,14 +103,10 @@ def get_range() -> List[List[int]]:
 #         return -1
 #     return *min(resses.iter())
 
-def a(b: List[int] | List[str]): # TODO
-    pass
-
-def cc(b: List[int | str]): # TODO
-    pass
-
 def main():
-    cc([1, 2])
+    lst = [[1, 2, 3], [4, 5], [6, 7, 8, 9]]
+    a = {x * 2 for arr in lst for x in arr if x % 2 == 0}
+    print(a)
 #     a = &mut [[1, 2]][0]
 #     print(a)
 #     a[1] = 33

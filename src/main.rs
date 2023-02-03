@@ -194,6 +194,20 @@ codegen-units = 1{}",
             ).as_ref()
         ).expect("couldn't write to cargo");
     }
+    if !cargo_contents.contains("list_comprehension_macro = \"*\"") {
+        let cargo_contents = cargo_contents.split_once("[dependencies]")
+            .expect("no [dependencies] found in Cargo.toml");
+        let mut file = File::create("out/Cargo.toml").unwrap();
+
+        file.write_all(
+            format!("\
+{}[dependencies]
+list_comprehension_macro = \"*\"{}",
+                    cargo_contents.0,
+                    cargo_contents.1
+            ).as_ref()
+        ).expect("couldn't write to cargo");
+    }
     let mut file = File::create("out/src/main.rs").unwrap();
     file.write_all(
         format!("//#![allow(warnings, unused)]
@@ -202,6 +216,7 @@ codegen-units = 1{}",
 use std::slice::{{Iter, IterMut}};
 use std::iter::Rev;
 use std::collections::{{HashMap, HashSet}};
+use list_comprehension_macro::comp;
 
 
 {one_of_enums}
@@ -209,10 +224,8 @@ use std::collections::{{HashMap, HashSet}};
 {}
 {rs}",
             join(enums.values(), "\n\n")
-        )
-        .as_ref(),
-    )
-    .unwrap();
+        ).as_ref(),
+    ).unwrap();
 
     let check = Command::new("cargo")
         .arg("check")
