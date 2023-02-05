@@ -62,7 +62,7 @@ pub fn apply_generics_to_method_call(return_typ: &Option<Type>, mut base: &Type)
 }
 
 /// # is_outer should be passed as true
-fn apply_map_to_generic_typ(typ: &Type, map: &HashMap<String, Type>, is_outer: bool) -> Type {
+pub fn apply_map_to_generic_typ(typ: &Type, map: &HashMap<String, Type>, is_outer: bool) -> Type {
     if let Type { kind: TypeKind::Generic(GenericType::Of(name)), children } = typ {
         if generic_isnt_defined(children, name) {
             return if is_outer {

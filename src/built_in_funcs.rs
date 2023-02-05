@@ -70,7 +70,8 @@ pub fn put_at_start(input: &str) -> String {
             ],
             traits: Some(vec!["Debug", "Display"]),
         }),
-        //1 Iter
+        // Iter / IterMut
+        /*//1 Iter
         BuiltIn::Struct(BuiltInStruct{
             name: "Iter",
             generics: Some(vec!["T"]),
@@ -99,7 +100,7 @@ pub fn put_at_start(input: &str) -> String {
                 "Iterator.Item = &mut T"
             ]),
             traits: Some(vec!["Debug"]),
-        }),
+        }),*/
         //1 Box
         BuiltIn::Struct(BuiltInStruct{
             name: "Box",
@@ -123,21 +124,22 @@ pub fn put_at_start(input: &str) -> String {
                 "len(self: &Self) -> int",
                 "__init__(self)",
                 "into_iter(self) -> IntoIterator[Item=T]",
-                "iter(self) -> Iter[T]",
-                "iter_mut(self) -> IterMut[T]",
                 "append(self, t: T)",
                 "index(self, pos: usize) -> T",
             ],
             traits: Some(vec!["Debug"]),
         }),
-        //1 Set
+        //1 HashSet
         BuiltIn::Struct(BuiltInStruct{
             name: "HashSet",
             generics: Some(vec!["T"]),
-            types: None,
+            types: Some(vec![
+                "IntoIterator.Item = T"
+            ]),
             methods: vec![ // todo
-               "__init__(self)",
+                "__init__(self)",
                 "add(self, t: T)",
+                "into_iter(self) -> IntoIterator[Item=T]",
             ],
             traits: Some(vec!["Debug"]),
         }),
@@ -145,9 +147,12 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Struct(BuiltInStruct{
             name: "HashMap",
             generics: Some(vec!["K", "V"]),
-            types: None,
+            types: Some(vec![
+                "IntoIterator.Item = K"
+            ]),
             methods: vec![
                 "__init__(self)",
+                "into_iter(self) -> IntoIterator[Item=K]",
             ], // todo
             traits: Some(vec!["Debug"]),
         }),
@@ -221,7 +226,14 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "min",
             generics: Some(vec!["T"]),
-            args: vec!["x: Iterator[Item=T]"],
+            args: vec!["x: IntoIterator[Item=T]"],
+            return_typ: Some("T"),
+        }),
+        //4 max
+        BuiltIn::Func(BuiltInFunc {
+            name: "max",
+            generics: Some(vec!["T"]),
+            args: vec!["x: IntoIterator[Item=T]"],
             return_typ: Some("T"),
         }),
         //4 range
@@ -326,7 +338,7 @@ pub fn put_at_start(input: &str) -> String {
             },
             BuiltIn::Func(func) => {
                 unsafe {
-                    IGNORE_FUNCS.insert(func.name);
+                    IGNORE_FUNCS.insert(func.name); // if you make this optional you need to also change where I don't box vals passed to builtin funcs 
                 }
                 let args = join(func.args.iter(), ",");
                 let rtrn = if let Some(t) = func.return_typ {

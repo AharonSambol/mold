@@ -1,14 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
-use crate::types::{
-    BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE,
-    Type, TypeKind, TypName, unwrap, unwrap_u
-};
+use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, print_type_b};
 use lazy_static::lazy_static;
+use pretty_print_tree::Color;
 use regex::Regex;
-use crate::{some_vec, unwrap_enum, typ_with_child};
-use crate::add_types::generics::{apply_generics_to_method_call, get_function_return_type, map_generic_types};
+use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS};
+use crate::add_types::generics::{apply_generics_to_method_call, apply_map_to_generic_typ, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::check_for_boxes;
 use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack};
 use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of_prev, print_tree};
@@ -249,9 +247,15 @@ pub fn add_types(
             } else if !args.is_empty() {
                 panic!("wasn't expecting any args")
             }
+            let mut generic_map = HashMap::new();
+            if let Some(input) = input {
+                for (exp, got) in input.iter().zip(args.iter()) {
+                    map_generic_types(&exp.typ, ast[*got].typ.as_ref().unwrap(), &mut generic_map);
+                }
+            }
             let args: Option<Vec<Type>> =
                 if args.is_empty() { None }
-                else if input.is_some() && name != "print" { //3 this might be problematic (print)
+                else if input.is_some() && !unsafe { IGNORE_FUNCS.contains(name.as_str()) } { //3 this might be problematic (print)
                     let expected_inputs = input.as_ref().unwrap();
                     Some(expected_inputs.clone().iter().zip(args.iter()).map(
                         |(exp, got)|
@@ -262,11 +266,12 @@ pub fn add_types(
                         |idx| ast[*idx].typ.clone().unwrap()
                     ).collect())
                 };
-            ast[pos].typ = get_function_return_type(
+            let typ = get_function_return_type(
                 &info.funcs[&name].output,
                 &info.funcs[&name].input,
                 &args
             );
+            ast[pos].typ = typ.map(|typ| apply_map_to_generic_typ(&typ, &generic_map, true));
         }
         AstNode::StructInit => {
             add_types(ast, children[1], vars, info, parent_struct);

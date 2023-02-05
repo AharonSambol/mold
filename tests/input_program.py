@@ -40,10 +40,16 @@ struct A:
 def fnc(a: int, b: bool):
     print(a, b)
 def main():
-    lst = [1, 2, 3, 4]
-#     b = iter(lst)
-    for i in iter_imut(lst):
+    lst = {1: 22, 2: 0, 3: 2, 4: 2}
+    print(min(lst))
+    print(max(iter_imut(lst)))
+    print(max(lst))
+    print()
+    for i in range(1,10,2)):
         print(i)
-    print(lst)
-    b := 6 not in lst
+#     b = iter(lst)
+#     for i in iter_imut(lst):
+#         print(i)
+#     print(lst)
+#     b := 6 not in lst
 #     print(b)

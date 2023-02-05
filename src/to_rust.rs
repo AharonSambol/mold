@@ -8,7 +8,7 @@ use crate::add_types::ast_add_types::{SPECIFIED_NUM_TYPE_RE};
 use crate::construct_ast::mold_ast::Info;
 use crate::construct_ast::tree_utils::print_tree;
 use crate::mold_tokens::OperatorType;
-use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap};
+use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap, print_type};
 
 type Enums = HashMap<String, String>;
 pub fn to_rust(
@@ -752,18 +752,23 @@ fn built_in_funcs(
     ast: &[Ast], name: &str, indentation: usize, res: &mut String,
     enums: &mut Enums, children: &[usize], info: &Info
 ) -> bool { // todo get rid of unnecessary boxes
+    #[inline] fn is_hm(ast: &[Ast], pos: usize) -> bool {
+        matches!(&ast[pos].typ.as_ref().unwrap().kind, TypeKind::Struct(name) if name == "HashMap")
+    }
+    let args = unwrap_u(&ast[children[1]].children);
+
     match name {
         "reversed" => {
             write!(res, "Box::new(").unwrap();
-            to_rust(ast, children[1], indentation, res, enums, info);
+            to_rust(ast, args[0], indentation, res, enums, info);
             write!(res, ".rev())").unwrap();
         }
         "range" => { // 3 ugly code
-            let pos = ast[children[0]].parent.unwrap();
-            let parent = ast[pos].parent.unwrap();
+            print_tree(&ast.to_vec(), ast[children[0]].parent.unwrap());
+            let pos_in_ast = ast[children[0]].parent.unwrap();
+            let parent = ast[pos_in_ast].parent.unwrap();
             let is_in_for = matches!(&ast[parent].value, AstNode::ForIter);
 
-            let args = unwrap_u(&ast[children[1]].children);
             if !is_in_for {
                 write!(res, "Box::new(").unwrap();
             }
@@ -772,7 +777,7 @@ fn built_in_funcs(
             }
             let mut optional_args = vec![];
             for i in args.iter().skip(1) {
-                if let Some(Type { kind: TypeKind::Enum(name), .. }) = &ast[*i].typ {
+                /*if let Some(Type { kind: TypeKind::Enum(name), .. }) = &ast[*i].typ {
                     if name == "i32__or__bool" {
                         let func_call = ast[*i].children.as_ref().unwrap()[1];
                         let func_children = ast[func_call].children.as_ref().unwrap();
@@ -782,6 +787,12 @@ fn built_in_funcs(
                             optional_args.push(args_pos.children.as_ref().unwrap()[0]);
                             continue
                         }
+                    }
+                }*/
+                if let Some(Type { kind: TypeKind::Struct(name), .. }) = &ast[*i].typ {
+                    if name == "i32" {
+                        optional_args.push(*i);
+                        continue
                     }
                 }
                 break
@@ -816,7 +827,6 @@ fn built_in_funcs(
         },
         "print" => {
             //1 the first arg will be a vec cuz its *args
-            let args = unwrap_u(&ast[children[1]].children);
             let args = unwrap_u(&ast[args[0]].children);
             let mut formats = String::new();
             for arg in args {
@@ -844,22 +854,41 @@ fn built_in_funcs(
             }
             write!(res, ")").unwrap();
         }
-        "min" => {
-            let args = unwrap_u(&ast[children[1]].children);
+        "min" | "max" => {
             if args.len() == 1 {
-                to_rust(ast, args[0], 0, res, enums, info);
-                write!(res, ".min().expect(\"min on empty iter\")").unwrap();
+                let mut iterable = String::new();
+                to_rust(ast, args[0], 0, &mut iterable, enums, info);
+                // let iterable = iterable
+                //     .strip_prefix("Box::new(").unwrap()
+                //     .strip_suffix(')').unwrap();
+
+                let is_iter = matches!(
+                    &ast[args[0]].typ.as_ref().unwrap().kind,
+                    TypeKind::Trait(name) if name == "Iterator"
+                );
+
+                if is_iter {
+                    write!(res, "{iterable}.{name}().expect(\"{name} on empty iter\")").unwrap();
+                } else if is_hm(ast, args[0]) {
+                    write!(res, "{iterable}.keys().{name}().expect(\"{name} on empty iter\")").unwrap();
+                } else {
+                    write!(res, "{iterable}.iter().{name}().expect(\"{name} on empty iter\")").unwrap();
+                }
+
             } else {
                 todo!()
             }
         }
         "iter" | "iter_imut" => { // TODO this doesn't need to be boxed
+            print_tree(&ast.to_vec(), args[0]);
             let mut lst = String::new();
-            to_rust(ast, children[1], 0, &mut lst, enums, info);
-            let lst = lst
-                .strip_prefix("Box::new(").unwrap()
-                .strip_suffix(')').unwrap();
-            write!(res, "Box::new({lst}.{}())", if name == "iter" { "iter_mut" } else { "iter" }).unwrap();
+            to_rust(ast, args[0], 0, &mut lst, enums, info);
+
+            if is_hm(ast, args[0]) {
+                write!(res, "Box::new({lst}.keys())").unwrap();
+            } else {
+                write!(res, "Box::new({lst}.{}())", if name == "iter" { "iter_mut" } else { "iter" }).unwrap();
+            }
         }
         _ => { return false }
     }
@@ -903,6 +932,7 @@ fn format_generics(generics_ast: &Ast) -> String {
 }
 
 pub fn implements_trait(mut typ: &Type, expected_trait: &str, ast: &[Ast], info: &Info) -> bool {
+    print_type(&Some(typ.clone()));
     if let TypeKind::Generic(GenericType::Of(_)) = &typ.kind {
         typ = &unwrap(&typ.children)[0];
     }
