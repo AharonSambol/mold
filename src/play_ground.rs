@@ -1,4 +1,7 @@
 use std::fmt::{Debug, Display};
+use std::ptr;
+
+
 enum E<T> {
     A(i32),
     B(T)
@@ -30,6 +33,11 @@ fn ff(a: &Vec<i32>) {
     // ln(&(Box::new(a) as Box<dyn Debug>));
 }
 fn main() {
+    let a = 1;
+    let b = a;
+    // print!("{}", ptr::eq(a, b));
+
+
     // let mut v = vec![1];
     let a = unsafe { let a = &mut vec![vec![1]][0] as *mut Vec<_>; (*a)[0] };
     println!("{a:?}");

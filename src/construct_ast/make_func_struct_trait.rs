@@ -293,8 +293,7 @@ pub fn make_struct(
 
         let mut vars = vec![HashMap::new()];
         let (init_body_tok_pos, init_body_pos, init_generics) = make_func_signature(
-            tokens, init_pos, ast, body_pos, &mut vars,
-            info, 
+            tokens, init_pos, ast, body_pos, &mut vars, info,
         );
         info.generics.push(init_generics);
         make_ast_statement(
@@ -309,13 +308,13 @@ pub fn make_struct(
                 if let AstNode::Identifier(left) = &ast[children[0]].value {
                     if left == "self" {
                         if let AstNode::Identifier(right) = &ast[children[1]].value {
-                            args.push((i, right.clone(), matches!(&ast[node.parent.unwrap()].value, AstNode::FirstAssignment)));
+                            args.push((i, right.clone())); //, matches!(&ast[node.parent.unwrap()].value, AstNode::FirstAssignment)));
                         }
                     }
                 }
             }
         }
-        for (idf_pos, name, _) in &args {
+        for (idf_pos, name) in &args {
             ast[*idf_pos] = Ast {
                 value: AstNode::Identifier(format!("_self_{}_", name)),
                 children: None,
@@ -334,7 +333,7 @@ pub fn make_struct(
                 let pos_0 = unwrap_u(&ast[args_pos].children)[0];
                 let first_arg_val = ast[pos_0].value.clone();
                 let args_children = &mut ast[args_pos].children;
-                if let AstNode::Identifier(name) = first_arg_val {
+                if let AstNode::Arg { name, .. } = first_arg_val {
                     if name == "self" {
                         let args_children = args_children.as_mut().unwrap();
                         args_children.remove(0);
@@ -342,10 +341,17 @@ pub fn make_struct(
                 }
             }
         }
-        args.retain(|(_, _, is_first_assign)| *is_first_assign);
-        for (idf_pos, name, _) in &args {
+        let mut seen_names = HashSet::new();
+        args.retain(|(_, name)| if seen_names.contains(name) {
+            false
+        } else {
+            seen_names.insert(name.clone());
+            true
+        });
+        for (idf_pos, name) in &args {
+
             add_to_tree(args_pos, ast, Ast {
-                value: AstNode::Identifier(name.clone()),
+                value: AstNode::Arg { name: name.clone(), is_arg: false, is_kwarg: false },
                 typ: ast[*idf_pos].typ.clone(),
                 children: None,
                 parent: None,
@@ -356,8 +362,9 @@ pub fn make_struct(
         let struct_init = add_to_tree(return_pos, ast, Ast::new(AstNode::StructInit));
         add_to_tree(struct_init, ast, Ast::new(AstNode::Identifier(name)));
         let args_pos = add_to_tree(struct_init, ast, Ast::new(AstNode::Args));
-        for (_, name, _) in args {
-            add_to_tree(args_pos, ast, Ast::new(AstNode::Identifier(format!("_self_{}_", name))));
+        for (_, name) in args {
+            add_to_tree(args_pos, ast, Ast::new(
+                AstNode::Identifier(format!("_self_{}_", name))));
         }
         for (body_tok_pos, body_pos, func_generics) in func_posses {
             info.generics.push(func_generics);

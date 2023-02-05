@@ -50,8 +50,6 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leave
 pub fn make_enums(typ: &Type, enums: &mut HashMap<String, String>) {
     let types = unwrap(&typ.children);
     let enm_name = escape_typ_chars(&typ.to_string());
-    println!("MAKING {}", enm_name);
-
     enums.entry(enm_name.clone()).or_insert_with(|| {
         let elems = types
             .iter()
@@ -69,8 +67,6 @@ pub fn escape_typ_chars(st: &str) -> String {
 fn add_one_of_enum(
     ast: &mut Vec<Ast>, pos: usize, enum_name: &str, enum_option: &str, info: &Info
 ) -> usize { // todo i think this leaves ast[pos] without anything pointing at it
-    println!("ADDING {}", enum_name);
-
     let ast_len = ast.len();
     let inner_val = ast[pos].clone();
     let parent_pos = inner_val.parent.unwrap();

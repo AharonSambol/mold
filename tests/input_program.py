@@ -30,8 +30,16 @@
 # def f(*a: int):
 #     pass
 #
+struct A:
+    def __init__(self, x: int):
+        self.x = x
+    def get(self: &Self) -> int:
+        x = self.x
+        return x
 
+def fnc(a: int, b: bool):
+    print(a, b)
 def main():
-    a = 1
-    b = a cast f32
+    lst = {1, 2, 3, 4}
+    b = 6 not in lst
     print(b)

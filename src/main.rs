@@ -216,6 +216,7 @@ list_comprehension_macro = \"*\"{}",
 use std::slice::{{Iter, IterMut}};
 use std::iter::Rev;
 use std::collections::{{HashMap, HashSet}};
+use std::ptr;
 use list_comprehension_macro::comp;
 
 

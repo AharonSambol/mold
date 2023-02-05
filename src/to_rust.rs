@@ -10,10 +10,9 @@ use crate::construct_ast::tree_utils::print_tree;
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap};
 
-
+type Enums = HashMap<String, String>;
 pub fn to_rust(
-    ast: &[Ast], pos: usize, indentation: usize, res: &mut String,
-    enums: &mut HashMap<String, String>, info: &Info
+    ast: &[Ast], pos: usize, indentation: usize, res: &mut String, enums: &mut Enums, info: &Info
 ) {
     let children = unwrap_u(&ast[pos].children);
 
@@ -118,7 +117,7 @@ pub fn to_rust(
                 OperatorType::FloorDiv => {
                     #[inline] fn div(
                         ast: &[Ast], children: &Vec<usize>, indentation: usize,
-                        res: &mut String, enums: &mut HashMap<String, String>, info: &Info
+                        res: &mut String, enums: &mut Enums, info: &Info
                     ) {
                         to_rust(ast, children[0], indentation, res, enums, info);
                         write!(res, " / ").unwrap();
@@ -163,6 +162,20 @@ pub fn to_rust(
                     write!(res, ".pow(").unwrap();
                     to_rust(ast, children[1], indentation, res, enums, info);
                     write!(res, ")").unwrap();
+                }
+                OperatorType::Is => {
+                    is_to_rust(ast, indentation, res, enums, info, children);
+                }
+                OperatorType::IsNot => {
+                    write!(res, "!").unwrap();
+                    is_to_rust(ast, indentation, res, enums, info, children);
+                }
+                OperatorType::In => {
+                    in_to_rust(&ast, indentation, res, enums, info, &children);
+                }
+                OperatorType::NotIn => {
+                    write!(res, "!").unwrap();
+                    in_to_rust(&ast, indentation, res, enums, info, &children);
                 }
                 _ if is_string_addition(ast, pos, op) => {
                     to_rust(ast, children[0], indentation, res, enums, info);
@@ -370,14 +383,14 @@ pub fn to_rust(
                 unwrap_u(&param.children).iter()
                     .map(|&x|
                         format!("{}: {}",
-                            unwrap_enum!(&ast[x].value, AstNode::Identifier(n), n),
+                            unwrap_enum!(&ast[x].value, AstNode::Arg { name, .. }, name),
                             ast[x].typ.as_ref().unwrap()
                         )
                     ),
                 ", "
             );
             write!(res,
-                   "#[derive(Debug, Clone)]\nstruct {name}{generic} {{ {param} }}\n\
+                   "#[derive(Debug, Clone, PartialEq)]\nstruct {name}{generic} {{ {param} }}\n\
                     impl{generic} {name}{generic} {{"
             ).unwrap();
             let mut trait_functions = vec![];
@@ -562,14 +575,68 @@ pub fn to_rust(
             to_rust(ast, children[0], indentation, res, enums, info);
             write!(res, " as {}", ast[pos].typ.as_ref().unwrap()).unwrap();
         }
+        AstNode::Arg { name, .. } => {
+            write!(res, "{name}").unwrap();
+        }
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
+}
+
+fn in_to_rust(ast: &&[Ast], indentation: usize, res: &mut String, enums: &mut Enums, info: &Info, children: &&Vec<usize>) {
+    #[inline] fn is_hm(node: &Ast) -> bool {
+        let mut node_typ = node.typ.as_ref().unwrap();
+        while let TypeKind::Pointer | TypeKind::MutPointer = &node_typ.kind {
+            node_typ = &node_typ.children.as_ref().unwrap()[0];
+        }
+        if let TypeKind::Struct(name) = &node_typ.kind {
+            if name == "HashMap" {
+                return true
+            }
+        }
+        false
+    }
+    to_rust(ast, children[1], indentation, res, enums, info);
+    if is_hm(&ast[children[1]]) {
+        write!(res, ".contains_key(").unwrap();
+    } else {
+        write!(res, ".contains(").unwrap();
+    }
+    if let TypeKind::Pointer | TypeKind::MutPointer = ast[children[0]].typ.as_ref().unwrap().kind {
+        to_rust(ast, children[0], indentation, res, enums, info);
+    } else {
+        write!(res, "&").unwrap();
+        to_rust(ast, children[0], indentation, res, enums, info);
+    }
+    write!(res, ")").unwrap();
+}
+
+fn is_to_rust(
+    ast: &[Ast], indentation: usize, res: &mut String, enums: &mut Enums,
+    info: &Info, children: &[usize]
+) {
+    #[inline] fn as_ptr(
+        ast: &[Ast], pos: usize, indentation: usize, res: &mut String,
+        enums: &mut Enums, info: &Info
+    ) {
+        if let TypeKind::Pointer | TypeKind::MutPointer = ast[pos].typ.as_ref().unwrap().kind {
+            to_rust(ast, pos, indentation, res, enums, info);
+        } else {
+            write!(res, "&(").unwrap();
+            to_rust(ast, pos, indentation, res, enums, info);
+            write!(res, ") as *const _").unwrap();
+        }
+    }
+    write!(res, "ptr::eq(").unwrap();
+    as_ptr(ast, children[0], indentation, res, enums, info);
+    write!(res, ",").unwrap();
+    as_ptr(ast, children[1], indentation, res, enums, info);
+    write!(res, ")").unwrap();
 }
 
 fn print_function_rust(
     name: &str,
     ast: &[Ast], indentation: usize, res: &mut String,
-    enums: &mut HashMap<String, String>,
+    enums: &mut Enums,
     children: &[usize], info: &Info
 ) {
     let generics_ast = &ast[children[0]];
@@ -598,7 +665,7 @@ fn print_function_rust(
 
 fn built_in_methods(
     ast: &[Ast], indentation: usize, res: &mut String,
-    enums: &mut HashMap<String, String>, children: &[usize], info: &Info
+    enums: &mut Enums, children: &[usize], info: &Info
 ) -> bool {
     if let Some((struct_name, func_name)) = get_struct_and_func_name(ast, children) {
         let arg_pos = unwrap_u(&ast[children[1]].children)[1];
@@ -683,7 +750,7 @@ fn built_in_methods(
 
 fn built_in_funcs(
     ast: &[Ast], name: &str, indentation: usize, res: &mut String,
-    enums: &mut HashMap<String, String>, children: &[usize], info: &Info
+    enums: &mut Enums, children: &[usize], info: &Info
 ) -> bool { // todo get rid of unnecessary boxes
     match name {
         "reversed" => {
@@ -831,7 +898,6 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &str, ast: &[Ast], info:
     if let TypeKind::Generic(GenericType::Of(_)) = &typ.kind {
         typ = &unwrap(&typ.children)[0];
     }
-    println!("TYP: {typ}");
     match &typ.kind {
         TypeKind::Trait(name) => name == expected_trait,
         TypeKind::Struct(struct_name) => {

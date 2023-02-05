@@ -480,6 +480,9 @@ pub fn make_ast_expression(
     let mut amount_of_open = 0;
     while pos < tokens.len() {
         let token = &tokens[pos];
+        let token = if let SolidToken::In = token {
+            &SolidToken::Operator(OperatorType::In)
+        } else { token };
         match token {
             SolidToken::Parenthesis(IsOpen::True) => {
                 amount_of_open += 1;
@@ -647,6 +650,7 @@ enum ComprehensionType {
     ListSet, Dict, None
 }
 fn get_comprehension_typ(tokens: &[SolidToken], pos: usize) -> ComprehensionType {
+    let mut is_dict = false;
     let mut amount_of_open = 0;
     for tok in tokens.iter().skip(pos) {
         match tok {
@@ -661,8 +665,9 @@ fn get_comprehension_typ(tokens: &[SolidToken], pos: usize) -> ComprehensionType
                 if amount_of_open == 1 { return ComprehensionType::None }
                 amount_of_open -= 1
             },
-            SolidToken::For if amount_of_open == 1 => return ComprehensionType::ListSet,
-            SolidToken::Colon if amount_of_open == 1 => return ComprehensionType::Dict,
+            SolidToken::Colon if amount_of_open == 1 => is_dict = true,
+            SolidToken::For if amount_of_open == 1 =>
+                return if is_dict { ComprehensionType::Dict } else { ComprehensionType::ListSet },
             SolidToken::Comma if amount_of_open == 1 => return ComprehensionType::None,
             _ => ()
         }

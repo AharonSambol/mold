@@ -57,7 +57,7 @@ pub enum SolidToken {
     Match, Case, While, For,
     Break, Continue, Return, Pass,
     Cast,
-    In, Is,
+    In,
     IMut
 }
 
@@ -69,7 +69,7 @@ pub enum OperatorType {
     BinOr, BinAnd, Xor, BinNot,
     OrEq, AndEq, XorEq,
     ShiftR, ShiftL,
-    And, Or, Not,
+    And, Or, Not, Is, In, IsNot, NotIn,
     Returns,
     MutPointer, Pointer, Dereference
 }
@@ -115,6 +115,10 @@ impl Display for OperatorType {
             OperatorType::And => if unsafe { IS_COMPILED } { "&&" } else { " and " },
             OperatorType::Or => if unsafe { IS_COMPILED } { "||" } else { " or " },
             OperatorType::Not => if unsafe { IS_COMPILED } { "!" } else { " not " },
+            OperatorType::Is => " is ",
+            OperatorType::In => " in ",
+            OperatorType::IsNot => " is not ",
+            OperatorType::NotIn => " not in ",
         })
     }
 }
@@ -321,8 +325,23 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                     "return" => SolidToken::Return, "pass" => SolidToken::Pass,
                     "and" => SolidToken::Operator(OperatorType::And),
                     "or" => SolidToken::Operator(OperatorType::Or),
-                    "not" => SolidToken::Operator(OperatorType::Not),
-                    "in" => SolidToken::In, "is" => SolidToken::Is,
+                    "not" => {
+                        if let Some(SolidToken::Operator(OperatorType::Is)) = res.last() {
+                            res.pop();
+                            SolidToken::Operator(OperatorType::IsNot)
+                        } else {
+                            SolidToken::UnaryOperator(OperatorType::Not)
+                        }
+                    },
+                    "is" => SolidToken::Operator(OperatorType::Is),
+                    "in" => {
+                        if let Some(SolidToken::UnaryOperator(OperatorType::Not)) = res.last() {
+                            res.pop();
+                            SolidToken::Operator(OperatorType::NotIn)
+                        } else {
+                            SolidToken::In
+                        }
+                    },
                     "True" | "true" => SolidToken::Bool(true),
                     "False" | "false" => SolidToken::Bool(false),
                     "imut" => SolidToken::IMut, "cast" => SolidToken::Cast,
@@ -401,7 +420,6 @@ fn unary_or_bin(res: &Vec<SolidToken>, op: OperatorType) -> SolidToken {
     | SolidToken::If
     | SolidToken::Elif
     | SolidToken::For
-    | SolidToken::Is
     | SolidToken::In
     | SolidToken::Colon = res[idx] {
         match op {

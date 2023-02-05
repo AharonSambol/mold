@@ -11,7 +11,7 @@ lazy_static!{
     pub static ref NONE: String = String::from("_NONE");
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum ToWrapVal {
     Nothing,
     GetAsValue,
@@ -124,14 +124,22 @@ pub fn to_python(
                     "{name}.v = {}",
                     to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
                 ),
-                AstNode::Property | AstNode::Index => format!(
+                AstNode::Property => {
+                    let prop_children = ast[children[0]].children.as_ref().unwrap();
+                    format!(
+                        "{}.setattr('{}', {})",
+                        to_python(ast, prop_children[0], indentation, ToWrapVal::GetName),
+                        to_python(ast, prop_children[1], indentation, ToWrapVal::GetName),
+                        to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
+                    )
+                }
+                AstNode::Index => format!(
                     "{} = {}",
                     to_python(ast, children[0], indentation, ToWrapVal::GetName),
                     to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
                 ),
                 _ => todo!()
             }
-
         },
         AstNode::Identifier(name) => {
             let name = if name == "None" { &NONE } else { name };
@@ -388,6 +396,9 @@ pub fn to_python(
             res
         }
         AstNode::Args => {
+            if let ToWrapVal::GetName = add_val_wrapper {
+                panic!();
+            }
             if children.is_empty() {
                 return EMPTY_STR;
             }
@@ -412,7 +423,6 @@ pub fn to_python(
             if let Some(res) = built_in_methods(ast, indentation, children, false) {
                 return res;
             }
-            // TODO does this work with getattr?
             if let AstNode::FunctionCall(true) = ast[children[1]].value {
                 let func_name_pos = unwrap_u(&ast[children[1]].children)[0];
                 let func_name = unwrap_enum!(&ast[func_name_pos].value, AstNode::Identifier(n), n);
@@ -423,7 +433,7 @@ pub fn to_python(
                             ast, children[0], indentation, ToWrapVal::GetName
                         ),
                         to_python(
-                            ast, unwrap_u(&ast[children[1]].children)[1], indentation, ToWrapVal::GetName
+                            ast, unwrap_u(&ast[children[1]].children)[1], indentation, ToWrapVal::GetAsValue
                         )
                     )
                 } else {
@@ -439,7 +449,7 @@ pub fn to_python(
                     res
                 }
             }
-            let base = to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue);
+            let base = to_python(ast, children[0], indentation, ToWrapVal::GetName);
             if let Ast { value: AstNode::FunctionCall(_), children: Some(ch), .. } = &ast[children[1]] {
                 return match add_val_wrapper {
                     ToWrapVal::Nothing => panic!(),
@@ -447,13 +457,13 @@ pub fn to_python(
                         "_value_({}.getattr('{}')({}))",
                         base,
                         to_python(ast, ch[0], indentation, ToWrapVal::GetName),
-                        to_python(ast, ch[1], indentation, ToWrapVal::GetName)
+                        to_python(ast, ch[1], indentation, ToWrapVal::GetAsValue)
                     ),
                     ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!(
                         "{}.getattr('{}')({})",
                         base,
                         to_python(ast, ch[0], indentation, ToWrapVal::GetName),
-                        to_python(ast, ch[1], indentation, ToWrapVal::GetName)
+                        to_python(ast, ch[1], indentation, ToWrapVal::GetAsValue)
                     ),
                 }
             }
@@ -642,7 +652,6 @@ fn normal_func_to_py(
 
 fn add_value_to_named_args(ast: &[Ast], children: &[usize]) -> String {
     let named_args: Vec<_> = unwrap_u(&ast[children[1]].children).iter().filter_map(|x| {
-        println!("@{:?}", &ast[*x].value);
         if ast[*x].children.is_some() {
             Some(unwrap_enum!(&ast[*x].value, AstNode::Arg { name, .. }, name))
         } else { None }

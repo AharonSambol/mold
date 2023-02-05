@@ -1,10 +1,11 @@
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
-use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, print_type_b, print_type};
+use crate::types::{
+    BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE,
+    Type, TypeKind, TypName, unwrap, unwrap_u
+};
 use lazy_static::lazy_static;
-use pretty_print_tree::Color;
 use regex::Regex;
 use crate::{some_vec, unwrap_enum, typ_with_child};
 use crate::add_types::generics::{apply_generics_to_method_call, get_function_return_type, map_generic_types};
@@ -182,7 +183,7 @@ pub fn add_types(
                     add_to_stack(vars, name, children[0]);
                     ast[pos].value = AstNode::FirstAssignment;
                     let typ = check_for_boxes(
-                        ast[pos].typ.clone().unwrap(), ast, children[1],
+                        ast[children[1]].typ.clone().unwrap(), ast, children[1],
                         info, vars
                     );
                     ast[children[0]].typ = Some(typ)
@@ -425,7 +426,8 @@ pub fn add_types(
                 }
             });
         }
-        AstNode::Operator(_) => {
+        AstNode::Operator(op) => {
+            let op = op.clone();
             add_types(ast, children[0], vars, info, parent_struct);
             add_types(ast, children[1], vars, info, parent_struct);
             let mut t1 = ast[children[0]].typ.as_ref().unwrap();
@@ -453,7 +455,7 @@ pub fn add_types(
             if *t1_name != *t2_name && !(
                 *t1_name == TypName::Static("String")
                 && *t2_name  == TypName::Static("str")
-            ) {
+            ) && !matches!(op, OperatorType::In | OperatorType::NotIn) {
                 panic!("`{}` not implemented for `{t1_name}` and `{t2_name}`",
                     unwrap_enum!(&ast[pos].value, AstNode::Operator(op), op)
                 )
@@ -462,7 +464,9 @@ pub fn add_types(
             ast[pos].typ = match op_typ {
                 OperatorType::And | OperatorType::Or | OperatorType::Bigger
                 | OperatorType::Smaller | OperatorType::IsEq | OperatorType::SEq
-                | OperatorType::BEq | OperatorType::Not => Some(typ_with_child!{
+                | OperatorType::BEq | OperatorType::Not | OperatorType::Is
+                | OperatorType::In | OperatorType::NotIn
+                => Some(typ_with_child!{
                     BOOL_TYPE,
                     Type {
                         kind: GenericsMap,
@@ -492,7 +496,6 @@ pub fn add_types(
                         children: None
                     }
                 }),
-
                 _ => Some(t1.clone())
             };
 
@@ -531,9 +534,7 @@ pub fn add_types(
                             _ => panic!("type `{}` cannot be dereferenced", typ),
                         }
                     }
-                    let res = dref(ast[children[0]].typ.as_ref().unwrap());
-                    print_type_b(&res, Color::Black);
-                    res
+                    dref(ast[children[0]].typ.as_ref().unwrap())
                 }
                 _ => ast[children[0]].typ.clone()
             }
@@ -604,7 +605,7 @@ pub fn add_types(
             let mut hm = HashMap::new();
             for child in unwrap_u(&ast[children[1]].children) {
                 hm.insert(
-                    unwrap_enum!(&ast[*child].value, AstNode::Identifier(name), name.clone()),
+                    unwrap_enum!(&ast[*child].value, AstNode::Arg{ name, .. }, name.clone()),
                     *child
                 );
             }
@@ -892,7 +893,7 @@ pub fn get_property_idf_typ(
 ) -> Option<Type>{
     let args_def = &ast[unwrap_u(&struct_description.children)[usize::from(is_struct)]];
     for child_pos in unwrap_u(&args_def.children) {
-        if let AstNode::Identifier(name) = &ast[*child_pos].value {
+        if let AstNode::Arg{ name, .. } = &ast[*child_pos].value {
             if name == right {
                 return apply_generics_to_method_call(
                     &ast[*child_pos].typ.clone(),
