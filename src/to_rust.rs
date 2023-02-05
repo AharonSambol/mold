@@ -853,13 +853,13 @@ fn built_in_funcs(
                 todo!()
             }
         }
-        "iter" | "iter_mut" => { // TODO this doesn't need to be boxed
+        "iter" | "iter_imut" => { // TODO this doesn't need to be boxed
             let mut lst = String::new();
             to_rust(ast, children[1], 0, &mut lst, enums, info);
             let lst = lst
                 .strip_prefix("Box::new(").unwrap()
                 .strip_suffix(')').unwrap();
-            write!(res, "Box::new({lst}.{name}())").unwrap();
+            write!(res, "Box::new({lst}.{}())", if name == "iter" { "iter_mut" } else { "iter" }).unwrap();
         }
         _ => { return false }
     }

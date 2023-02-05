@@ -42,7 +42,7 @@ def fnc(a: int, b: bool):
 def main():
     lst = [1, 2, 3, 4]
 #     b = iter(lst)
-    for i in iter_mut(lst):
+    for i in iter_imut(lst):
         print(i)
     print(lst)
     b := 6 not in lst

@@ -251,14 +251,14 @@ pub fn put_at_start(input: &str) -> String {
             name: "iter",
             generics: Some(vec!["T"]),
             args: vec!["t: IntoIterator[Item=T]"],
-            return_typ: Some("Iterator[Item=&T]"),
+            return_typ: Some("Iterator[Item=&mut T]"),
         }),
-        //4 iter mut
+        //4 iter imut
         BuiltIn::Func(BuiltInFunc{
-            name: "iter_mut",
+            name: "iter_imut",
             generics: Some(vec!["T"]),
             args: vec!["t: IntoIterator[Item=T]"],
-            return_typ: Some("Iterator[Item=&mut T]"),
+            return_typ: Some("Iterator[Item=&T]"),
         }),
         /* //1 Rev
         StructFunc::Struct(BuiltInStruct{
