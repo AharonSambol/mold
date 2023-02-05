@@ -6,7 +6,7 @@ use crate::mold_tokens::Token::{
 };
 
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IsOpen { True, False }
 
 
@@ -38,7 +38,7 @@ enum Token {
     Tab, NewLine
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SolidToken {
     Brace(IsOpen), Bracket(IsOpen), Parenthesis(IsOpen),
     Word(String),
@@ -56,11 +56,12 @@ pub enum SolidToken {
     If, Else, Elif,
     Match, Case, While, For,
     Break, Continue, Return, Pass,
+    Cast,
     In, Is,
     IMut
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OperatorType {
     Eq, IsEq, Bigger, Smaller, NEq, BEq, SEq,
     Plus, Minus, Mul, Pow, Div, Mod, FloorDiv,
@@ -324,7 +325,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                     "in" => SolidToken::In, "is" => SolidToken::Is,
                     "True" | "true" => SolidToken::Bool(true),
                     "False" | "false" => SolidToken::Bool(false),
-                    "imut" => SolidToken::IMut,
+                    "imut" => SolidToken::IMut, "cast" => SolidToken::Cast,
                     _ => SolidToken::Word(clean(st))
                 }
             },

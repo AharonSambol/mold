@@ -69,32 +69,32 @@ pub fn to_rust(
             to_rust(ast, children[1], indentation + 1, res, enums, info);
         },
         AstNode::Assignment => {
-            if let AstNode::Index = &ast[children[0]].value {
-                let ch = ast[children[0]].children.as_ref().unwrap();
-                let mut list = String::new();
-                to_rust(ast, ch[0], indentation, &mut list, enums, info);
-                let mut idx = String::new();
-                to_rust(ast, ch[1], indentation, &mut idx, enums, info);
-                let list = if let AstNode::Index = &ast[ch[1]].value {
-                    list
-                } else {
-                    format!("&mut {list}")
-                };
-                print_tree(&ast.to_vec(), children[0]);
-                write!(
-                    res,
-                    "unsafe {{\n\t let mut list: *mut {} = {list};\n\t\
-                    let len = (*list).len();\n\tlet val=",
-                    ast[ch[0]].typ.as_ref().unwrap()
-                ).unwrap();
-                to_rust(ast, children[1], indentation, res, enums, info);
-                write!(res, ";\n\t(*list)[{{let pos={idx}; if pos >= 0 {{ pos as usize }} else \
-                {{ (pos + len as i32) as usize }} }}] = val\n}}").unwrap();
-            } else {
+            // if let AstNode::Index = &ast[children[0]].value {
+            //     let ch = ast[children[0]].children.as_ref().unwrap();
+            //     let mut list = String::new();
+            //     to_rust(ast, ch[0], indentation, &mut list, enums, info);
+            //     let mut idx = String::new();
+            //     to_rust(ast, ch[1], indentation, &mut idx, enums, info);
+            //     let list = if let AstNode::Index = &ast[ch[1]].value {
+            //         list
+            //     } else {
+            //         format!("&mut {list}")
+            //     };
+            //     print_tree(&ast.to_vec(), children[0]);
+            //     write!(
+            //         res,
+            //         "unsafe {{\n\t let mut list: *mut {} = {list};\n\t\
+            //         let len = (*list).len();\n\tlet val=",
+            //         ast[ch[0]].typ.as_ref().unwrap()
+            //     ).unwrap();
+            //     to_rust(ast, children[1], indentation, res, enums, info);
+            //     write!(res, ";\n\t(*list)[{{let pos={idx}; if pos >= 0 {{ pos as usize }} else \
+            //     {{ (pos + len as i32) as usize }} }}] = val\n}}").unwrap();
+            // } else {
                 to_rust(ast, children[0], indentation, res, enums, info);
                 write!(res, " = ").unwrap();
                 to_rust(ast, children[1], indentation, res, enums, info);
-            }
+            // }
         },
         AstNode::FirstAssignment => {
             if ast[pos].is_mut {
@@ -201,34 +201,39 @@ pub fn to_rust(
             }
         },
         AstNode::Index => {
-            let as_pointer = should_be_mut_index(ast, pos);
-            write!(res, "unsafe {{").unwrap();
-            let mut list = String::new();
-            to_rust(ast, children[0], indentation, &mut list, enums, info);
-            let list = if let AstNode::Index = ast[children[0]].value {
-                format!("{list} as *mut")
-            } else if let IndexTyp::Mut = as_pointer {
-                format!("&mut {list} as *mut")
-            } else {
-                format!("&{list} as *const")
-            };
-            write!(
-                res,
-                "let list = {list} {};let len = (*list).len();",
-                ast[children[0]].typ.as_ref().unwrap()
-            ).unwrap();
+            // todo maybe make a wrapper class for list which knows what its len is
+            // let as_pointer = should_be_mut_index(ast, pos);
+            // write!(res, "unsafe {{").unwrap();
+            // let mut list = String::new();
+            // to_rust(ast, children[0], indentation, &mut list, enums, info);
+            // let list = if let AstNode::Index = ast[children[0]].value {
+            //     format!("{list} as *mut")
+            // } else if let IndexTyp::Mut = as_pointer {
+            //     format!("&mut {list} as *mut")
+            // } else {
+            //     format!("&{list} as *const")
+            // };
+            // write!(
+            //     res,
+            //     "let list = {list} {};let len = (*list).len();",
+            //     ast[children[0]].typ.as_ref().unwrap()
+            // ).unwrap();
 
-            match as_pointer {
-                IndexTyp::Mut => write!(res, "&mut ").unwrap(),
-                IndexTyp::Ref => write!(res, "&").unwrap(),
-                IndexTyp::Val => {}
-            }
-            write!(res, "(*list)[{{ let pos =").unwrap();
+            // match as_pointer {
+            //     IndexTyp::Mut => write!(res, "&mut ").unwrap(),
+            //     IndexTyp::Ref => write!(res, "&").unwrap(),
+            //     IndexTyp::Val => {}
+            // }
+            // write!(res, "(*list)[{{ let pos =").unwrap();
+            // to_rust(ast, children[1], indentation, res, enums, info);
+            // write!(
+            //     res,
+            //     "; if pos >= 0 {{ pos as usize }} else {{ (pos + len as i32) as usize }} }}]}}"
+            // ).unwrap();
+            to_rust(ast, children[0], indentation, res, enums, info);
+            write!(res, "[(").unwrap();
             to_rust(ast, children[1], indentation, res, enums, info);
-            write!(
-                res,
-                "; if pos >= 0 {{ pos as usize }} else {{ (pos + len as i32) as usize }} }}]}}"
-            ).unwrap();
+            write!(res, ") as usize]").unwrap();
         },
         AstNode::Number(num) => {
             if !SPECIFIED_NUM_TYPE_RE.is_match(num) {
@@ -523,9 +528,9 @@ pub fn to_rust(
             }.unwrap();
             let loops = ast[children[1]].children.clone().unwrap();
             for r#loop in loops.iter() {
-                let colon_par = ast[*r#loop].children.as_ref().unwrap();
+                let colon_par = ast[*r#loop].children.as_ref().unwrap()[0];
                 write!(res, "for ").unwrap();
-                to_rust(ast, colon_par[0], indentation, res, enums, info);
+                to_rust(ast, colon_par, indentation, res, enums, info);
                 write!(res, "{{").unwrap();
             }
             let close = if let Some(condition) = &ast[children[2]].children {
@@ -552,6 +557,10 @@ pub fn to_rust(
             write!(res, ");").unwrap();
             write!(res, "{}", "}".repeat(loops.len() + close)).unwrap();
             write!(res, "res}}").unwrap();
+        }
+        AstNode::Cast => {
+            to_rust(ast, children[0], indentation, res, enums, info);
+            write!(res, " as {}", ast[pos].typ.as_ref().unwrap()).unwrap();
         }
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
@@ -837,38 +846,38 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &str, ast: &[Ast], info:
     }
 }
 
-enum IndexTyp {
-    Mut, Ref, Val
-}
-fn should_be_mut_index(ast: &[Ast], pos: usize) -> IndexTyp {
-    let parent = ast[pos].parent.unwrap();
-    match &ast[parent].value {
-        AstNode::Parentheses => should_be_mut_index(ast, parent),
-        AstNode::Assignment | AstNode::Index =>
-            if ast[parent].children.as_ref().unwrap()[0] == pos {
-                IndexTyp::Mut
-            } else {
-                IndexTyp::Val
-            }, // && should_be_mut_index(ast, parent),
-        AstNode::ForStatement | AstNode::ArgsDef | AstNode::Bool(_) | AstNode::Char(_)
-        | AstNode::ForVars | AstNode::Function(_) | AstNode::GenericsDeclaration
-        | AstNode::Identifier(_) | AstNode::Arg { .. } | AstNode::IfStatement | AstNode::Enum(_)
-        | AstNode::Number(_) | AstNode::Pass | AstNode::Continue | AstNode::Break
-        | AstNode::ReturnType | AstNode::StaticFunction(_) | AstNode::String { .. }
-        | AstNode::Struct(_) | AstNode::StructInit | AstNode::Trait { .. } | AstNode::Traits
-        | AstNode::Type(_) | AstNode::Types | AstNode::WhileStatement | AstNode::ListComprehension
-        | AstNode::SetComprehension | AstNode::DictComprehension
-        => unreachable!(),
-        AstNode::Args | AstNode::Body | AstNode::ColonParentheses | AstNode::DictLiteral
-        | AstNode::FirstAssignment | AstNode::ForIter
-        | AstNode::ListLiteral | AstNode::Module | AstNode::Operator(_) | AstNode::Return
-        | AstNode::SetLiteral | AstNode::NamedArg(_)
-        => IndexTyp::Val,
-        AstNode::UnaryOp(op) => match op {
-            OperatorType::MutPointer => IndexTyp::Mut,
-            OperatorType::Pointer => IndexTyp::Ref,
-            _ => IndexTyp::Val
-        }
-        AstNode::FunctionCall(_)  | AstNode::Property => IndexTyp::Mut,
-    }
-}
+// enum IndexTyp {
+//     Mut, Ref, Val
+// }
+// fn should_be_mut_index(ast: &[Ast], pos: usize) -> IndexTyp {
+//     let parent = ast[pos].parent.unwrap();
+//     match &ast[parent].value {
+//         AstNode::Parentheses => should_be_mut_index(ast, parent),
+//         AstNode::Assignment | AstNode::Index =>
+//             if ast[parent].children.as_ref().unwrap()[0] == pos {
+//                 IndexTyp::Mut
+//             } else {
+//                 IndexTyp::Val
+//             }, // && should_be_mut_index(ast, parent),
+//         AstNode::ForStatement | AstNode::ArgsDef | AstNode::Bool(_) | AstNode::Char(_)
+//         | AstNode::ForVars | AstNode::Function(_) | AstNode::GenericsDeclaration
+//         | AstNode::Identifier(_) | AstNode::Arg { .. } | AstNode::IfStatement | AstNode::Enum(_)
+//         | AstNode::Number(_) | AstNode::Pass | AstNode::Continue | AstNode::Break
+//         | AstNode::ReturnType | AstNode::StaticFunction(_) | AstNode::String { .. }
+//         | AstNode::Struct(_) | AstNode::StructInit | AstNode::Trait { .. } | AstNode::Traits
+//         | AstNode::Type(_) | AstNode::Types | AstNode::WhileStatement | AstNode::ListComprehension
+//         | AstNode::SetComprehension | AstNode::DictComprehension
+//         => unreachable!(),
+//         AstNode::Args | AstNode::Body | AstNode::ColonParentheses | AstNode::DictLiteral
+//         | AstNode::FirstAssignment | AstNode::ForIter
+//         | AstNode::ListLiteral | AstNode::Module | AstNode::Operator(_) | AstNode::Return
+//         | AstNode::SetLiteral | AstNode::NamedArg(_)
+//         => IndexTyp::Val,
+//         AstNode::UnaryOp(op) => match op {
+//             OperatorType::MutPointer => IndexTyp::Mut,
+//             OperatorType::Pointer => IndexTyp::Ref,
+//             _ => IndexTyp::Val
+//         }
+//         AstNode::FunctionCall(_)  | AstNode::Property => IndexTyp::Mut,
+//     }
+// }

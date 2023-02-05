@@ -581,6 +581,49 @@ pub fn to_python(
                 to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue)
             )
         }
+        AstNode::ListComprehension | AstNode::SetComprehension | AstNode::DictComprehension => {
+            let parts = ast[children[0]].children.as_ref().unwrap();
+            let loops = ast[children[1]].children.clone().unwrap();
+            format!("{}{}{}{}{}",
+                /*[{*/match &ast[pos].value {
+                    AstNode::ListComprehension => "[",
+                    AstNode::SetComprehension | AstNode::DictComprehension => "{",
+                    _ => unreachable!()
+                },
+                /*expression*/if let AstNode::DictComprehension = &ast[pos].value {
+                    format!(
+                        "{}: {}",
+                        to_python(ast, parts[0], indentation, ToWrapVal::GetInnerValue),
+                        to_python(ast, parts[1], indentation, ToWrapVal::GetInnerValue)
+                    )
+                } else {
+                    to_python(ast, parts[0], indentation, ToWrapVal::GetInnerValue)
+                },
+                /*loops*/loops.iter().map(|r#loop| {
+                    let colon_par = ast[*r#loop].children.as_ref().unwrap()[0];
+                    let loop_parts = ast[colon_par].children.as_ref().unwrap();
+                    format!(" for {} in map(_value_, {})",
+                            to_python(ast, loop_parts[0], indentation, ToWrapVal::Nothing),
+                            to_python(ast, loop_parts[1], indentation, ToWrapVal::Nothing)
+                                .strip_prefix(" in ").unwrap()
+                    )
+                }).collect::<Vec<_>>().concat(),
+                /*condition*/if let Some(condition) = &ast[children[2]].children {
+                    format!(
+                        " if {}",
+                        to_python(ast, condition[0], indentation, ToWrapVal::GetInnerValue)
+                    )
+                } else { EMPTY_STR },
+                /*}]*/match &ast[pos].value {
+                    AstNode::ListComprehension => "]",
+                    AstNode::SetComprehension | AstNode::DictComprehension => "}",
+                    _ => unreachable!()
+                }
+            )
+        }
+        AstNode::Cast => {
+            to_python(ast, children[0], indentation, add_val_wrapper)
+        }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }

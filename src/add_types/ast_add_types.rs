@@ -616,7 +616,7 @@ pub fn add_types(
         }
         AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
         | AstNode::Trait { .. } | AstNode::Traits | AstNode::Type(_) | AstNode::Types
-        | AstNode::Arg { .. }=> {}
+        | AstNode::Arg { .. } | AstNode::Cast => {}
     }
 }
 
@@ -819,7 +819,8 @@ fn get_into_iter_return_typ(ast: &[Ast], info: &Info, iter: &Ast) -> Option<Type
                 panic!("couldn't find `Item` type in `{trait_name}`")
             },
             TypeKind::Pointer | TypeKind::MutPointer => {
-                let inner_typ = &unwrap(&typ.children)[0];
+                let generic = &unwrap(&typ.children)[0];
+                let inner_typ = &unwrap(&generic.children)[0];
                 Some(typ_with_child! {
                     typ.kind.clone(),
                     match_kind(ast, info, inner_typ).unwrap()

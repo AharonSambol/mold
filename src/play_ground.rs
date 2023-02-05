@@ -30,6 +30,9 @@ fn ff(a: &Vec<i32>) {
     // ln(&(Box::new(a) as Box<dyn Debug>));
 }
 fn main() {
+    // let mut v = vec![1];
+    let a = unsafe { let a = &mut vec![vec![1]][0] as *mut Vec<_>; (*a)[0] };
+    println!("{a:?}");
     func(2);
     let mut a: Box<dyn Iterator<Item=i32>> = Box::new((0..10));
     a.into_iter().next();

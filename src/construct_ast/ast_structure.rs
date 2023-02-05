@@ -40,6 +40,7 @@ pub enum AstNode {
     Assignment, // children[0] = var, children[1] = val
     Body,
     Bool(bool), // no children
+    Cast, // children[0] = thing that's being cast
     Char(String),
     ColonParentheses, // children[0] = inside
     DictComprehension,
@@ -144,6 +145,7 @@ impl AstNode {
             | AstNode::Operator(_)
             | AstNode::UnaryOp(_)
             | AstNode::Parentheses
+            | AstNode::Cast
             | AstNode::DictComprehension
             | AstNode::ListComprehension
             | AstNode::ListLiteral
@@ -186,6 +188,7 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            AstNode::Cast=> write!(f, "[CAST]"),
             AstNode::DictComprehension=> write!(f, "{{DICT-COMPREHENSION}}"),
             AstNode::SetComprehension => write!(f, "{{SET-COMPREHENSION}}"),
             AstNode::ListComprehension => write!(f, "[COMPREHENSION]"),

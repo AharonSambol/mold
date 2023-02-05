@@ -629,6 +629,13 @@ pub fn make_ast_expression(
                     tokens, pos, ast, 0, vars, info, true, parent
                 );
             }
+            SolidToken::Cast => {
+                pos += 1;
+                let typ= get_arg_typ(tokens, &mut pos, info);
+                let cast = insert_as_parent_of_prev(ast, parent, AstNode::Cast);
+                ast[cast].typ = Some(typ);
+                pos -= 1;
+            }
             _ => panic!("unexpected token {:?}", token)
         }
         pos += 1;

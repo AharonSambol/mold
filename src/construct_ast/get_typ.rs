@@ -77,8 +77,7 @@ pub fn get_params(
 // e.g.     x: int | bool, y: int | None) -> bool:
 //                       ^              ^        ^
 pub fn get_arg_typ(
-    tokens: &[SolidToken], pos: &mut usize,
-    info: &mut Info
+    tokens: &[SolidToken], pos: &mut usize, info: &mut Info
 ) -> Type {
     try_get_arg_typ(tokens, pos, info, true, true).unwrap()
 }
