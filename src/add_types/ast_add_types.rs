@@ -179,7 +179,16 @@ pub fn add_types(
             add_types(ast, children[1], vars, info, parent_struct);
             if let AstNode::Identifier(name) = &ast[children[0]].value {
                 let name = name.clone();
-                if get_from_stack(vars, &name).is_none() {
+                if let Some(i) = get_from_stack(vars, &name) {
+                    let should_be = &ast[i].typ;
+                    if ast[children[1]].typ != *should_be {
+                        panic!(
+                            "expected {} but found {}. variables can't change type, if you want to override use `:=`",
+                            should_be.as_ref().unwrap(),
+                            ast[children[1]].typ.as_ref().unwrap()
+                        );
+                    }
+                } else {
                     add_to_stack(vars, name, children[0]);
                     ast[pos].value = AstNode::FirstAssignment;
                     let typ = check_for_boxes(
@@ -465,7 +474,7 @@ pub fn add_types(
                 OperatorType::And | OperatorType::Or | OperatorType::Bigger
                 | OperatorType::Smaller | OperatorType::IsEq | OperatorType::SEq
                 | OperatorType::BEq | OperatorType::Not | OperatorType::Is
-                | OperatorType::In | OperatorType::NotIn
+                | OperatorType::In | OperatorType::NotIn | OperatorType::IsNot
                 => Some(typ_with_child!{
                     BOOL_TYPE,
                     Type {

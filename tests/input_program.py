@@ -40,6 +40,10 @@ struct A:
 def fnc(a: int, b: bool):
     print(a, b)
 def main():
-    lst = {1, 2, 3, 4}
-    b = 6 not in lst
-    print(b)
+    lst = [1, 2, 3, 4]
+#     b = iter(lst)
+    for i in iter_mut(lst):
+        print(i)
+    print(lst)
+    b := 6 not in lst
+#     print(b)

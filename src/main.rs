@@ -40,7 +40,7 @@ const EMPTY_STR: String = String::new();
 fn main() {
     // todo remove
     unsafe {
-        IS_COMPILED = true;
+        // IS_COMPILED = true;
     }
     let mut path = String::from("tests/input_program.py");
     // let mut path = String::from("tests/pointers.py");

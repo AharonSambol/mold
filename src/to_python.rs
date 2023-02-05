@@ -711,6 +711,10 @@ fn built_in_funcs(
                 to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
             ))
         }
+        "iter_mut" => Some(format!(
+            "iter({})",
+            to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
+        )),
         _ => { None }
     }
 }

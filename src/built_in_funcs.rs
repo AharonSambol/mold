@@ -246,6 +246,20 @@ pub fn put_at_start(input: &str) -> String {
             args: vec!["t: Iterator[Item=T]"],
             return_typ: Some("Iterator[Item=T]"),
         }),
+        //4 iter
+        BuiltIn::Func(BuiltInFunc{
+            name: "iter",
+            generics: Some(vec!["T"]),
+            args: vec!["t: IntoIterator[Item=T]"],
+            return_typ: Some("Iterator[Item=&T]"),
+        }),
+        //4 iter mut
+        BuiltIn::Func(BuiltInFunc{
+            name: "iter_mut",
+            generics: Some(vec!["T"]),
+            args: vec!["t: IntoIterator[Item=T]"],
+            return_typ: Some("Iterator[Item=&mut T]"),
+        }),
         /* //1 Rev
         StructFunc::Struct(BuiltInStruct{
             name: "Rev",
