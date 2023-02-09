@@ -1,5 +1,4 @@
-#![allow(clippy::too_many_arguments)]
-
+#![allow(clippy::too_many_arguments, clippy::only_used_in_recursion)]
 mod construct_ast;
 mod mold_tokens;
 #[allow(warnings, unused)] mod play_ground;
@@ -33,6 +32,7 @@ static mut IGNORE_ENUMS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 
 const EMPTY_STR: String = String::new();
 
+
 // 2 optimizations:
 // lto = "fat"
 // codegen-units = 1
@@ -40,12 +40,13 @@ const EMPTY_STR: String = String::new();
 fn main() {
     // todo remove
     unsafe {
-        IS_COMPILED = true;
+        // IS_COMPILED = true;
     }
     let mut path = String::from("tests/input_program.py");
     // let mut path = String::from("tests/pointers.py");
     // let mut path = String::from("tests/generics.py");
     // let mut path = String::from("tests/lists.py");
+    // let mut path = String::from("tests/algos.py");
     for argument in env::args() {
         if argument == "compile" {
             unsafe {
@@ -87,8 +88,7 @@ from copy import deepcopy
 
 
 class _built_in_list_(list):
-    def iter(self): return iter(_pointer_(_value_(x)) for x in self)
-    def iter_mut(self): return iter(_pointer_(_value_(x)) for x in self)
+    def __iter__(self): return iter(_pointer_(_value_(x)) for x in super().__iter__())
     def append(self, val): return super().append(val.v)
     def getattr(self, attr): return self.__getattribute__(attr)
     def setattr(self, name, val): return self.__setattr__(name, val)
@@ -162,12 +162,15 @@ if __name__ == '__main__':
 }
 
 fn compile(ast: &[Ast], info: &Info) {
-    let mut rs = String::new();
     let mut enums = HashMap::new();
-    to_rust::to_rust(ast, 0, 0, &mut rs, &mut enums, info);
+    let rs = to_rust::to_rust(ast, 0, 0, &mut enums, info);
     // let enums = to_rust::make_enums(&enums);
     let rs = rs.trim();
-    let one_of_enums = join(info.one_of_enums.values(), "\n\n");
+    let mut one_of_enums = info.one_of_enums.clone();
+    one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
+        "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
+    );
+    let one_of_enums = join(one_of_enums.values(), "\n\n");
     println!("\n{one_of_enums}\n{rs}");
     // println!("\n{}", rs.split_once(CODE_END_FLAG).unwrap().0.trim_end());
 
@@ -219,6 +222,20 @@ use std::collections::{{HashMap, HashSet}};
 use std::ptr;
 use list_comprehension_macro::comp;
 
+#[inline] fn _index_mut<T>(vc: &mut Vec<T>, pos: i32) -> &mut T {{
+    if pos >= 0 {{
+        vc.iter_mut().nth(pos as usize)
+    }} else {{
+        vc.iter_mut().rev().nth(-pos as usize -1)
+    }}.unwrap()
+}}
+#[inline] fn _index<T>(vc: &Vec<T>, pos: i32) -> &T {{
+    if pos >= 0 {{
+        vc.iter().nth(pos as usize)
+    }} else {{
+        vc.iter().rev().nth(-pos as usize -1)
+    }}.unwrap()
+}}
 
 {one_of_enums}
 

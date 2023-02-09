@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use pretty_print_tree::{Color, PrettyPrintTree};
 use crate::construct_ast::ast_structure::join;
-use crate::{EMPTY_STR, unwrap_enum};
+use crate::{EMPTY_STR};
 use crate::add_types::polymorphism::escape_typ_chars;
 
 pub const UNKNOWN_TYPE: Type = Type {

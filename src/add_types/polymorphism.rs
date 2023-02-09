@@ -1,13 +1,28 @@
 use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
-use crate::{typ_with_child, unwrap_enum, some_vec};
+use crate::{typ_with_child, unwrap_enum, some_vec, EMPTY_STR};
 use crate::add_types::ast_add_types::{find_index_typ, get_enum_property_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
-use crate::add_types::generics::{apply_generics_to_method_call, get_function_return_type};
+use crate::add_types::generics::{apply_generics_from_base, get_function_return_type};
 use crate::add_types::utils::get_from_stack;
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
 use crate::mold_tokens::OperatorType;
 use crate::types::{GenericType, print_type, Type, TypeKind, TypName, unwrap, unwrap_u};
+// TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// TODO fn a(*arg: T): ...
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 // TODO also cast: `as Box<dyn P>`
 fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leaves ast[pos] without anything pointing at it
@@ -49,19 +64,44 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leave
 
 pub fn make_enums(typ: &Type, enums: &mut HashMap<String, String>) {
     let types = unwrap(&typ.children);
+    let mut generics = vec![];
+    types.iter().for_each(|x| if let Some(ch) = &x.children {
+        if let TypeKind::GenericsMap = &ch[0].kind {
+            for mut generic in unwrap(&ch[0].children) {
+                if let TypeKind::InnerType(_) = &generic.kind {
+                    generic = &generic.children.as_ref().unwrap()[0];
+                }
+                if let TypeKind::Generic(GenericType::Of(name)) = &generic.kind {
+                    if !generics.contains(name) {
+                        generics.push(name.clone());
+                    }
+                }
+            }
+        }
+    });
+
+    let generics = if generics.is_empty() {
+        EMPTY_STR
+    } else {
+        format!("<{}>", join(generics.iter(), ","))
+    };
     let enm_name = escape_typ_chars(&typ.to_string());
     enums.entry(enm_name.clone()).or_insert_with(|| {
         let elems = types
             .iter()
             .map(|x| format!("_{}({x})", escape_typ_chars(&x.to_string())));
-        let res = format!("enum {enm_name} {{ {} }}", join(elems, ","));
+        let res = format!("enum {enm_name} {generics} {{ {} }}", join(elems, ","));
         res
     });
 }
 
 #[inline]
 pub fn escape_typ_chars(st: &str) -> String {
-    st.replace("::<", "_of_").replace('>', "_endof_")
+    st
+        .replace("::<", "_of_")
+        .replace('>', "_endof_")
+        .replace("Box<dyn ", "_boxof_")
+        .replace('=', "_eq_")
 }
 
 fn add_one_of_enum(
@@ -100,14 +140,14 @@ fn add_one_of_enum(
 pub fn check_for_boxes(
     expected: Type, ast: &mut Vec<Ast>, pos: usize, info: &mut Info, vars: &VarTypes
 ) -> Type {
-    fn is_box_typ(typ: &Type) -> bool {
+    #[inline] fn is_box_typ(typ: &Type) -> bool {
         match &typ.kind {
             TypeKind::Struct(bx) => bx == "Box",
             TypeKind::Trait(_) => true,
             _ => false
         }
     }
-    fn supplied_box(
+    #[inline] fn supplied_box(
         got: &Ast, vars: &VarTypes, ast: &[Ast], info: &Info, pos: usize
     ) -> bool {
         match &got.value {
@@ -127,7 +167,7 @@ pub fn check_for_boxes(
             AstNode::Index => {
                 is_box_typ(
                     &find_index_typ(
-                        ast, info, unwrap_u(&got.children), pos
+                        ast, info, got.children.as_ref().unwrap()[0], pos
                     ).unwrap()
                 )
             }
@@ -186,7 +226,7 @@ pub fn check_for_boxes(
                                 .iter()
                                 .map(|i| (
                                     unwrap_enum!(&ast[*i].value, AstNode::Type(name), name.clone()),
-                                    apply_generics_to_method_call(&ast[*i].typ, got_typ)
+                                    apply_generics_from_base(&ast[*i].typ, got_typ)
                                 ));
                             let res = typ_with_child! {
                                 TypeKind::Trait(expected_trait.clone()),
@@ -329,8 +369,10 @@ pub fn check_for_boxes(
                                 }
                             }
                         }
+
                         let struct_pos = info.structs[ex_name.get_str()].pos;
                         let args_def = &ast[unwrap_u(&ast[struct_pos].children)[1]];
+
                         let expected_args: Vec<_> = unwrap_u(&args_def.children).iter().map(|x|
                             if let Some(Type { kind: TypeKind::Generic(GenericType::Of(name)), .. }) = &ast[*x].typ {
                                 generics_map[name].clone()
@@ -399,7 +441,7 @@ pub fn check_for_boxes(
                 }
                 AstNode::Index => {
                     find_index_typ(
-                        ast, info, unwrap_u(&got.children), pos
+                        ast, info, got.children.as_ref().unwrap()[0], pos
                     ).unwrap()
                 }
                 AstNode::FunctionCall(_) => {
@@ -452,7 +494,6 @@ pub fn check_for_boxes(
         },
         TypeKind::Generic(_) => {}
         TypeKind::Pointer | TypeKind::MutPointer => {
-            print_tree(ast, got.parent.unwrap());
             // let got_children = unwrap_u(&got.children).clone();
             let typ = match &got.value {
                 AstNode::UnaryOp(OperatorType::Pointer | OperatorType::MutPointer) => {
@@ -472,7 +513,7 @@ pub fn check_for_boxes(
                 }
                 AstNode::Index => {
                     find_index_typ(
-                        ast, info, unwrap_u(&got.children), pos
+                        ast, info, got.children.as_ref().unwrap()[0], pos
                     ).unwrap()
                 }
                 AstNode::FunctionCall(_) => {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::{typ_with_child, unwrap_enum, some_vec};
 use crate::construct_ast::ast_structure::Param;
-use crate::types::{GenericType, Type, TypeKind, unwrap};
+use crate::types::{GenericType, print_type, Type, TypeKind, unwrap};
 
 //2 only generics whose children are also T
 //  as in [Generic(Of("T"))]
@@ -37,10 +37,21 @@ pub fn map_generic_types(generic: &Type, t: &Type, res: &mut HashMap<String, Typ
     // todo these should be of the same Type::kind
     for (child1, child2) in unwrap(&generic.children).iter().zip(unwrap(&t.children)) {
         map_generic_types(child1, child2, res);
+        // if matches!(child1.kind, TypeKind::GenericsMap) && matches!(child2.kind, TypeKind::GenericsMap) {
+        //     for (generic1, generic2) in unwrap(&child1.children).iter().zip(unwrap(&child2.children)) {
+        //         for (val1, val2) in unwrap(&generic1.children).iter().zip(unwrap(&generic2.children)) {
+        //              map_generic_types(val1, val2, res);
+        //         }
+        //     }
+        // } else {
+        //     dbg!(&child1.kind);
+        //     dbg!(&child2.kind);
+        //     todo!()
+        // }
     }
 }
 
-pub fn apply_generics_to_method_call(return_typ: &Option<Type>, mut base: &Type) -> Option<Type> {
+pub fn apply_generics_from_base(return_typ: &Option<Type>, mut base: &Type) -> Option<Type> {
     if let Some(rt) = return_typ {
         while let Type { kind: TypeKind::Pointer | TypeKind::MutPointer, children: Some(children) } = base {
             base = &children[0];

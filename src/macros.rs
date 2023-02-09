@@ -35,7 +35,8 @@
             generics: None,
             methods: vec![
                 concat!("clone() -> ", stringify!($val)),
-                "__init__(self)"
+                "__init__(self)",
+                "__str__(self: &Self) -> str",
             ],
             types: None,
             traits: Some(vec![

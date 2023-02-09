@@ -22,9 +22,31 @@ impl Iter_ for A {
         self.inner[0]
     }
 }
+enum IIOrI <T> {
+    // II(Box<dyn IntoIterator::<Item=T, IntoIter=G>>),
+    I(Box<dyn Iterator::<Item=T>>)
+}
 
-
+#[inline] fn index<T>(vc: &mut Vec<T>, pos: i32) -> &mut T {
+    if pos < 0 {
+        vc.iter_mut().rev().nth(-pos as usize).unwrap()
+    } else{
+        vc.iter_mut().nth(pos as usize).unwrap()
+    }
+}
 fn func<T>(a: T) -> Box<dyn Iterator<Item=i32>> {
+    let mut vc = vec![1, 2, 3, 4, 5];
+    *index(&mut vc, -1) = 7;
+    println!("{:?}", vc);
+    // let a = IIOrI::I(
+    //     Box::new(vc.iter())
+    // );
+    // if let IIOrI::I(mut a) = a {
+    //     // let b = vec![1].into_iter();
+    //     a.for_each(|i|
+    //         println!("{i}")
+    //     );
+    // }
     // let b = *a;
     return Box::new(vec![1].into_iter());
 }
@@ -33,10 +55,13 @@ fn ff(a: &Vec<i32>) {
     // ln(&(Box::new(a) as Box<dyn Debug>));
 }
 fn main() {
-    let a = 1;
+    let a = 1i32.pow(3u32);
+    let a = vec![1, 2, 3];
+    let s = a.iter().sum::<u32>();
+    let a = 1.2f32;
     let b = a;
+    let a = a.abs();
     // print!("{}", ptr::eq(a, b));
-
 
     // let mut v = vec![1];
     let a = unsafe { let a = &mut vec![vec![1]][0] as *mut Vec<_>; (*a)[0] };

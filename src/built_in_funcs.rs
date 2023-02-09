@@ -64,6 +64,7 @@ pub fn put_at_start(input: &str) -> String {
                 "lower(self, s: str) -> str",
                 "upper(self, s: str) -> str",
                 "__init__(self)",
+                "__str__(self: &Self) -> str",
                 // todo chars()
                 // todo is(digit\numeric\ascii...)
                 // todo "join(lst: List[T]) -> int",
@@ -121,8 +122,8 @@ pub fn put_at_start(input: &str) -> String {
             ]),
             methods: vec![
                 "__len__(self: &Self) -> int",
-                "len(self: &Self) -> int",
                 "__init__(self)",
+                "__str__(self: &Self) -> str",
                 "into_iter(self) -> IntoIterator[Item=T]",
                 "append(self, t: T)",
                 "index(self, pos: usize) -> T",
@@ -137,13 +138,15 @@ pub fn put_at_start(input: &str) -> String {
                 "IntoIterator.Item = T"
             ]),
             methods: vec![ // todo
+                "__len__(self: &Self) -> int",
                 "__init__(self)",
+                "__str__(self: &Self) -> str",
                 "add(self, t: T)",
                 "into_iter(self) -> IntoIterator[Item=T]",
             ],
             traits: Some(vec!["Debug"]),
         }),
-        //1 Dict
+        //1 HashMap
         BuiltIn::Struct(BuiltInStruct{
             name: "HashMap",
             generics: Some(vec!["K", "V"]),
@@ -152,6 +155,8 @@ pub fn put_at_start(input: &str) -> String {
             ]),
             methods: vec![
                 "__init__(self)",
+                "__len__(self: &Self) -> int",
+                "__str__(self: &Self) -> str",
                 "into_iter(self) -> IntoIterator[Item=K]",
             ], // todo
             traits: Some(vec!["Debug"]),
@@ -167,6 +172,17 @@ pub fn put_at_start(input: &str) -> String {
             types: None,
             ignore: false
         }), // todo Sized?
+        //2 __str__
+        BuiltIn::Trait(BuiltInTrait {
+            name: "__str__",
+            duck: true,
+            generics: None,
+            methods: vec![
+                "__str__(self: &Self) -> str",
+            ],
+            types: None,
+            ignore: false
+        }),
         //2 Iterator
         BuiltIn::Trait(BuiltInTrait {
             name: "Iterator",
@@ -222,18 +238,39 @@ pub fn put_at_start(input: &str) -> String {
             args: vec!["x: &__len__"],
             return_typ: Some("int"),
         }),
-        //4 min
+        //4 min TODO add support for lambda
         BuiltIn::Func(BuiltInFunc {
             name: "min",
             generics: Some(vec!["T"]),
             args: vec!["x: IntoIterator[Item=T]"],
             return_typ: Some("T"),
         }),
-        //4 max
+        //4 max TODO add support for lambda
         BuiltIn::Func(BuiltInFunc {
             name: "max",
             generics: Some(vec!["T"]),
+            args: vec!["x: IntoIterator[Item=T] | Iterator[Item=T]"],
+            return_typ: Some("T"),
+        }),
+        //4 sum
+        BuiltIn::Func(BuiltInFunc {
+            name: "sum",
+            generics: Some(vec!["T"]),
             args: vec!["x: IntoIterator[Item=T]"],
+            return_typ: Some("T"),
+        }),
+        //4 abs
+        BuiltIn::Func(BuiltInFunc {
+            name: "abs",
+            generics: Some(vec!["T"]), // todo which i8 | i16 | i32 | i64 | i128 | isize | f32 | f64
+            args: vec!["x: T"],
+            return_typ: Some("T"),
+        }),
+        //4 pow
+        BuiltIn::Func(BuiltInFunc {
+            name: "pow",
+            generics: Some(vec!["T, G"]), // todo which i8 | i16 | i32 | i64 | i128 | isize | f32 | f64
+            args: vec!["base: T, pow: G, mod: int = False"], //1 base, pow, mod?
             return_typ: Some("T"),
         }),
         //4 range
@@ -248,7 +285,7 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "print",
             generics: None,
-            args: vec!["*a: Display"], //1 the type (Display) is ignored, anything is accepted
+            args: vec!["*a: __str__"], //1 the type (Display) is ignored, anything is accepted
             return_typ: None,
         }),
         //4 reversed
@@ -338,7 +375,7 @@ pub fn put_at_start(input: &str) -> String {
             },
             BuiltIn::Func(func) => {
                 unsafe {
-                    IGNORE_FUNCS.insert(func.name); // if you make this optional you need to also change where I don't box vals passed to builtin funcs 
+                    IGNORE_FUNCS.insert(func.name); // if you make this optional you need to also change where I don't box vals passed to builtin funcs
                 }
                 let args = join(func.args.iter(), ",");
                 let rtrn = if let Some(t) = func.return_typ {

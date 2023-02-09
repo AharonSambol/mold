@@ -72,7 +72,7 @@ pub enum AstNode {
     StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
     String { val: String, mutable: bool, },
     Struct(String), // children[0] = args, children[1] = functions, children[2] = body, children[3] = traits
-    StructInit, // children[0] = struct, children[1] = Args,
+    StructInit, // children[0] = struct, children[1] = Args, // TODO dont think this is right...
     Trait { name: String, strict: bool },  // children[0] = Module (functions)
     Traits,
     Type(String), // e.g.  struct A: \n type Inner
@@ -244,6 +244,7 @@ impl Display for AstNode {
     }
 }
 
+// 2 probably a bit faster if for iters of &str of String didnt do this unnecessary map
 #[inline]
 pub fn join<T: Display, I: Iterator<Item=T>>(lst: I, sep: &str) -> String {
     lst.map(|x| x.to_string())

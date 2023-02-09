@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use fmt::Write;
+use pretty_print_tree::Color;
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::find_generics::{find_generics_in_typ, get_generic_names, get_generics, is_generic};
 use crate::construct_ast::get_typ::{get_arg_typ, get_params};
 use crate::construct_ast::mold_ast::{FuncType, StructType, TraitType, Info, make_ast_statement, VarTypes, EnumType};
 use crate::construct_ast::tree_utils::{add_to_tree};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{GenericType, print_type, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
+use crate::types::{GenericType, print_type, print_type_b, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
 use crate::{IS_COMPILED, some_vec, typ_with_child, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::add_to_stack;
@@ -63,17 +64,20 @@ fn make_func_signature(
 
     //1 generics
     let generics_names = get_generics(&mut pos, tokens, index, ast);
+    let mut struct_generics_names = vec![];
     let mut generics_hs = HashSet::from_iter(generics_names.iter().cloned());
     if let Some(struct_parent) = ast[parent].parent {
         if let AstNode::Struct(_) = ast[struct_parent].value {
             let struct_generics = &ast[unwrap_u(&ast[struct_parent].children)[0]];
             let stct_g_typ = struct_generics.typ.as_ref().unwrap();
             for child in unwrap(&stct_g_typ.children) {
-                unwrap_enum!(
+                let name = unwrap_enum!(
                     child,
                     Type { kind: TypeKind::Generic(GenericType::Declaration(name)), .. },
-                    generics_hs.insert(name.clone())
+                    name
                 );
+                struct_generics_names.push(name.clone());
+                generics_hs.insert(name.clone());
             }
         }
     }
@@ -149,11 +153,26 @@ fn make_func_signature(
                 TypeKind::Struct(TypName::Str(name.clone())),
                 Type{
                     kind: TypeKind::GenericsMap,
-                    children: None,
+                    children: if struct_generics_names.is_empty() { None } else {
+                        Some(struct_generics_names.iter().map(
+                            |name| typ_with_child! {
+                                TypeKind::Generic(GenericType::Of(name.clone())),
+                                Type {
+                                    kind: TypeKind::Generic(GenericType::Of(name.clone())),
+                                    children: None
+                                }
+                            }
+                        ).collect())
+                    },
                 }
             });
+            // println!("?* {:?}", generics_names);
+            // println!("? {:?}", generics_hs);
+            // println!("! {:?}", ast[return_pos].typ.as_ref().unwrap().children);
         }
     }
+    // println!("(({:?}", name);
+    // print_type_b(&ast[return_pos].typ, Color::Black);
     if let SolidToken::Colon = tokens[pos] {} else {
         panic!("expected colon, found `{:?}`", tokens[pos])
     }
@@ -280,7 +299,7 @@ pub fn make_struct(
             if let SolidToken::Word(name) = &tokens[x + 1] {
                 name == "__init__"
             } else { false }
-        ).unwrap_or_else(|| panic!("no __init__ function found in {name}")).0; // todo dont need init
+        ).unwrap_or_else(|| panic!("no `__init__` function found in `{name}`")).0; // todo dont need init
         let init_pos = func_posses.swap_remove(init_pos);
         let func_posses: Vec<_> = func_posses.iter().map(
             |func_pos| {

@@ -3,8 +3,8 @@ def func(a: &mut int):
 
 def main():
     x = 325
-    a = 5 + -(4 / -2)
-    a_val = a + 1
+    a = 5 + -(4 // -2) # 7
+    a_val = a + 1 # 8
     b = &mut a
     d: &mut int = b
     c: List[&mut int] = [&mut x, b]

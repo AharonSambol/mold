@@ -136,7 +136,7 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
                 (unwrap_enum!(&ast[*trt].value, AstNode::Identifier(name), name.clone()), *trt)
             })
         );
-        fn struct_matches_trait(
+        #[inline] fn struct_matches_trait(
             trt_funcs: &TraitFuncs, funcs: &TraitFuncs
         ) -> Option<HashMap<String, Type>> {
             let mut hm = HashMap::new();
@@ -250,7 +250,7 @@ fn add_trait_to_struct(
             Ast::new(AstNode::Function(new_func_name))
         );
         // let trt_func_parts = ast[*trt_func_pos].children.clone().unwrap();
-        let (fp, _) = funcs.get(func_name).unwrap();
+        let (fp, _) = funcs.get(func_name).unwrap_or_else(||panic!("expected implementation of `{}`", func_name));
         let func_parts = ast[*fp].children.clone().unwrap();
         add_to_tree(func_pos, ast, ast[func_parts[0]].clone());
         add_to_tree(func_pos, ast, ast[func_parts[1]].clone());
@@ -441,9 +441,11 @@ pub fn make_ast_statement(
                     tokens, pos + 1, ast, parent, indent,
                     vars, info, st, false
                 );
-                let assignment = *unwrap_u(&ast[parent].children).last().unwrap();
-                let assignment = &mut ast[assignment];
+                let assignment_pos = *unwrap_u(&ast[parent].children).last().unwrap();
+                let assignment = &mut ast[assignment_pos];
                 assignment.is_mut = false;
+                let var_pos = ast[assignment_pos].children.as_ref().unwrap()[0];
+                ast[var_pos].is_mut = false;
             }
             SolidToken::UnaryOperator(OperatorType::Dereference) => {
                 let deref_pos = add_to_tree(parent, ast, Ast::new(
@@ -856,10 +858,10 @@ fn word_tok(
             SolidToken::Brace(IsOpen::True)
             | SolidToken::Parenthesis(IsOpen::True) => {
                 let word = unwrap_enum!(&tokens[pos - 1], SolidToken::Word(w), w);
-                if unsafe { IS_COMPILED } && word == "len" {
-                    turn_len_func_to_method(tokens, &mut pos, ast, parent, vars, info, word);
-                    continue
-                }
+                // if unsafe { IS_COMPILED } && word == "len" {
+                //     turn_len_func_to_method(tokens, &mut pos, ast, parent, vars, info, word);
+                //     continue
+                // }
                 let index = if info.structs.contains_key(word) && word != "str" { // TODO !!!!!!!!!!!!!!1
                     let prop_pos = insert_as_parent_of_prev(
                         ast, parent, AstNode::Property
@@ -913,7 +915,7 @@ fn word_tok(
     }
 }
 
-fn turn_len_func_to_method(
+/*fn turn_len_func_to_method(
     tokens: &[SolidToken], pos: &mut usize, ast: &mut Vec<Ast>, parent: usize,
     vars: &mut VarTypes, info: &mut Info, word: &str
 ) {
@@ -941,7 +943,7 @@ fn turn_len_func_to_method(
     add_to_tree(
         func_call_pos, ast, Ast::new(AstNode::Args)
     );
-}
+}*/
 
 fn add_property(
     tokens: &[SolidToken], pos: usize, ast: &mut Vec<Ast>, indent: usize,

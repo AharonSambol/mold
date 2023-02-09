@@ -72,14 +72,14 @@ pub fn extend_tree(ast: &mut Vec<Ast>, parent: usize, mut other: Vec<Ast>) {
 //     
 // }
 
-pub fn print_tree(ast: &Vec<Ast>, pos: usize){
+pub fn print_tree(ast: &[Ast], pos: usize){
     let ppt = {
-        PrettyPrintTree::<(&Vec<Ast>, usize)>::new(
+        PrettyPrintTree::<(&[Ast], usize)>::new(
             Box::new(|(vc, pos)| {
                 if let Some(t) = &vc[*pos].typ {
-                    format!("{pos}. {}\n:{t}\n({:?})", vc[*pos].value, vc[*pos].parent)
+                    format!("{pos}. {}\n:{t}\n({:?})\n[{}]", vc[*pos].value, vc[*pos].parent, vc[*pos].is_mut)
                 } else {
-                    format!("{pos}. {}\n({:?})", vc[*pos].value, vc[*pos].parent)
+                    format!("{pos}. {}\n({:?})\n[{}]", vc[*pos].value, vc[*pos].parent, vc[*pos].is_mut)
                 }
             }),
             Box::new(|(vc, pos)| {
@@ -90,9 +90,10 @@ pub fn print_tree(ast: &Vec<Ast>, pos: usize){
                 children.unwrap().iter().map(|x| (*vc, *x)).filter(
                     |(_, x)|
                         match &vc[*x].value {
+                            AstNode::StaticFunction(name)
+                            | AstNode::Function(name) =>    !unsafe { IGNORE_FUNCS  .contains(name.as_str()) },
                             AstNode::Struct(name) =>        !unsafe { IGNORE_STRUCTS.contains(name.as_str()) },
                             AstNode::Trait{name, .. } =>    !unsafe { IGNORE_TRAITS .contains(name.as_str()) },
-                            AstNode::Function(name) =>      !unsafe { IGNORE_FUNCS  .contains(name.as_str()) },
                             AstNode::Enum(name) =>          !unsafe { IGNORE_ENUMS  .contains(name.as_str()) },
                             _ => true
                         }

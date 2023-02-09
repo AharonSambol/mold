@@ -1,6 +1,6 @@
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::construct_ast::mold_ast::{VarTypes, StructTypes, TraitTypes};
-use crate::types::unwrap_u;
+use crate::types::{GenericType, Type, TypeKind, unwrap, unwrap_u};
 
 pub fn find_function_in_struct(
     ast: &[Ast], structs: &StructTypes, struct_name: &str, func_name: &str, pos: usize
@@ -67,4 +67,14 @@ pub fn get_from_stack(vars: &VarTypes, var: &String) -> Option<usize> {
 #[inline]
 pub fn add_to_stack(vars: &mut VarTypes, var: String, pos: usize) {
     vars.last_mut().unwrap().insert(var, pos);
+}
+
+pub fn get_pointer_inner<'a>(mut typ: &'a Type) -> &'a Type {
+    while let TypeKind::MutPointer | TypeKind::Pointer = &typ.kind {
+        typ = &unwrap(&typ.children)[0];
+        if let TypeKind::Generic(GenericType::Of(_)) = &typ.kind {
+            typ = &unwrap(&typ.children)[0];
+        }
+    }
+    typ
 }

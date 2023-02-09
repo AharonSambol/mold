@@ -138,6 +138,11 @@ pub fn to_python(
                     to_python(ast, children[0], indentation, ToWrapVal::GetName),
                     to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
                 ),
+                AstNode::UnaryOp(OperatorType::Dereference) => format!(
+                    "{}.v = {}",
+                    to_python(ast, children[0], indentation, ToWrapVal::GetName),
+                    to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
+                ),
                 _ => todo!()
             }
         },
@@ -357,7 +362,7 @@ pub fn to_python(
                 },
             }
         },
-        AstNode::Pass => { String::from("pass") },
+        AstNode::Pass => String::from("pass"),
         AstNode::FunctionCall(_) => {
             // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             if let AstNode::Identifier(name) = &ast[children[0]].value {
@@ -449,7 +454,7 @@ pub fn to_python(
                     res
                 }
             }
-            let base = to_python(ast, children[0], indentation, ToWrapVal::GetName);
+            let base = to_python(ast, children[0], indentation, ToWrapVal::GetAsValue);
             if let Ast { value: AstNode::FunctionCall(_), children: Some(ch), .. } = &ast[children[1]] {
                 return match add_val_wrapper {
                     ToWrapVal::Nothing => panic!(),
@@ -703,7 +708,7 @@ fn built_in_funcs(
         )),
         "len" => Some(format!(
             "{}.getattr('__len__')()",
-            to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
+            to_python(ast, children[1], indentation, ToWrapVal::GetAsValue)
         )),
         "range" => {
             Some(format!(
@@ -711,8 +716,12 @@ fn built_in_funcs(
                 to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
             ))
         }
-        "iter_mut" => Some(format!(
-            "iter({})",
+        "iter" | "iter_imut" => Some(format!(
+            "{}.getattr('__iter__')()",
+            to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
+        )),
+        "min" | "max" | "abs" | "sum" => Some(format!(
+            "{name}({})",
             to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
         )),
         _ => { None }
