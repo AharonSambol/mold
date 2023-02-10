@@ -270,7 +270,7 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "pow",
             generics: Some(vec!["T, G"]), // todo which i8 | i16 | i32 | i64 | i128 | isize | f32 | f64
-            args: vec!["base: T, pow: G, mod: int = False"], //1 base, pow, mod?
+            args: vec!["base: T, pow: G, mod: G = 0"], //1 base, pow, mod?
             return_typ: Some("T"),
         }),
         //4 range

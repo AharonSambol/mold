@@ -474,7 +474,8 @@ pub fn check_for_boxes(
                         check_for_boxes(new_expected, ast, got_children[0], info, vars);
                     } else {
                         let new_expected = match op {
-                            OperatorType::DivEq | OperatorType::Div => todo!(),
+                            OperatorType::Div => todo!(),
+                            OperatorType::OpEq(op) if OperatorType::Div == **op => todo!(),
                             _ => expected.clone()
                         };
                         for child in got_children {

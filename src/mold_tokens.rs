@@ -65,7 +65,8 @@ pub enum SolidToken {
 pub enum OperatorType {
     Eq, IsEq, Bigger, Smaller, NEq, BEq, SEq,
     Plus, Minus, Mul, Pow, Div, Mod, FloorDiv,
-    PlusEq, MinusEq, MulEq, PowEq, DivEq, ModEq, FloorDivEq,
+    OpEq(Box<OperatorType>),
+    // PlusEq, MinusEq, MulEq, PowEq, DivEq, ModEq, FloorDivEq,
     BinOr, BinAnd, Xor, BinNot,
     OrEq, AndEq, XorEq,
     ShiftR, ShiftL,
@@ -77,6 +78,9 @@ pub enum OperatorType {
 // todo is, in, not
 impl Display for OperatorType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let OperatorType::OpEq(op) = self {
+            return write!(f, "{}=", **op)
+        }
         write!(f, "{}", match self {
             OperatorType::Eq => "=",
             OperatorType::IsEq => "==",
@@ -92,13 +96,13 @@ impl Display for OperatorType {
             OperatorType::Div => "/",
             OperatorType::Mod => "%",
             OperatorType::FloorDiv => if unsafe { IS_COMPILED } { "/" } else { "//" },
-            OperatorType::PlusEq => "+=",
-            OperatorType::MinusEq => "-=",
-            OperatorType::MulEq => "*=",
-            OperatorType::PowEq => if unsafe { IS_COMPILED } { todo!() } else { "**=" },
-            OperatorType::DivEq => "/=",
-            OperatorType::ModEq => "%=",
-            OperatorType::FloorDivEq => "//=",
+            // OperatorType::PlusEq => "+=",
+            // OperatorType::MinusEq => "-=",
+            // OperatorType::MulEq => "*=",
+            // OperatorType::PowEq => if unsafe { IS_COMPILED } { todo!() } else { "**=" },
+            // OperatorType::DivEq => "/=",
+            // OperatorType::ModEq => "%=",
+            // OperatorType::FloorDivEq => "//=",
             OperatorType::BinOr => "|",
             OperatorType::Pointer => "&", //1 python ignores this
             OperatorType::MutPointer => "&mut ", //1 python ignores this
@@ -119,6 +123,7 @@ impl Display for OperatorType {
             OperatorType::In => " in ",
             OperatorType::IsNot => " is not ",
             OperatorType::NotIn => " not in ",
+            OperatorType::OpEq(_) => unreachable!(),
         })
     }
 }
@@ -444,9 +449,13 @@ fn str_to_op_type(st: &str) -> Option<OperatorType> {
         "+" => OperatorType::Plus,  "-" => OperatorType::Minus,     "*" => OperatorType::Mul,
         "/" => OperatorType::Div,   "//" => OperatorType::FloorDiv,
         "**" => OperatorType::Pow,  "%" => OperatorType::Mod,
-        "+=" => OperatorType::PlusEq,   "-=" => OperatorType::MinusEq,  "*=" => OperatorType::MulEq,
-        "/=" => OperatorType::DivEq,    "//=" => OperatorType::FloorDivEq,
-        "**=" => OperatorType::PowEq,   "%=" => OperatorType::ModEq,
+        "+=" => OperatorType::OpEq(Box::new(OperatorType::Plus)),
+        "-=" => OperatorType::OpEq(Box::new(OperatorType::Minus)),
+        "*=" => OperatorType::OpEq(Box::new(OperatorType::Mul)),
+        "/=" => OperatorType::OpEq(Box::new(OperatorType::Div)),
+        "//=" => OperatorType::OpEq(Box::new(OperatorType::FloorDiv)),
+        "**=" => OperatorType::OpEq(Box::new(OperatorType::Pow)),
+        "%=" => OperatorType::OpEq(Box::new(OperatorType::Mod)),
         "|" => OperatorType::BinOr,    "&" => OperatorType::BinAnd,
         "^" => OperatorType::Xor,   "~" => OperatorType::BinNot,
         "|=" => OperatorType::OrEq, "&=" => OperatorType::AndEq,    "^=" => OperatorType::XorEq,

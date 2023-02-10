@@ -26,7 +26,7 @@ pub fn map_generic_types(generic: &Type, t: &Type, res: &mut HashMap<String, Typ
         if generic_isnt_defined(children, name) {
             if let Some(r) = res.get(name) {
                 if r != t {
-                    panic!("expected '{}' and '{}' to be of the same type", r, t);
+                    panic!("expected `{}` and `{}` to be of the same type", r, t);
                 }
             } else {
                 res.insert(name.clone(), t.clone());

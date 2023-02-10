@@ -45,26 +45,8 @@ def ar() -> List[int]:
 
 def change(lst: &mut List[int]):
     lst[0] = 100
+
 def main():
-    lst = {1: 22, 2: 0, 3: 2, 4: 2}
-    imut lst := [[1,2],[3,4]]
-#     res = lst[-1][0]
-#     print(res)
-#     l = [1, 2, 3, 4]
-#     change(&mut l)
-#     print(l)
-#     print(min(lst))
-#     print(max(iter_imut(lst)))
-#     print(len(lst))
-#     print(abs(-3.2))
-#     lst := [1, 3, 4]
-#     print(sum(lst))
-#     a = 2
-#     b = 4
-#     c = pow(a, b, 2.3)
-#     for i in reversed(iter(lst)):
-#         print(i)
-#     b = iter(lst)
-#     print(lst)
-#     b := 6 not in lst
-#     print(b)
+    a = 0
+    a += 1
+    print(a)

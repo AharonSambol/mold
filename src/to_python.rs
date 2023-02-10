@@ -118,28 +118,33 @@ pub fn to_python(
                 to_python(ast, children[1], indentation, ToWrapVal::GetAsValue)
             )
         },
-        AstNode::Assignment => {
+        AstNode::Assignment | AstNode::OpAssignment(_) => {
+            let op = if let AstNode::OpAssignment(op) = &ast[pos].value {
+                op.to_string()
+            } else { EMPTY_STR };
             match &ast[children[0]].value {
                 AstNode::Identifier(name) => format!(
-                    "{name}.v = {}",
+                    "{name}.v {op}= {}",
                     to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
                 ),
                 AstNode::Property => {
                     let prop_children = ast[children[0]].children.as_ref().unwrap();
-                    format!(
-                        "{}.setattr('{}', {})",
-                        to_python(ast, prop_children[0], indentation, ToWrapVal::GetName),
-                        to_python(ast, prop_children[1], indentation, ToWrapVal::GetName),
-                        to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
-                    )
+                    let base = to_python(ast, prop_children[0], indentation, ToWrapVal::GetName);
+                    let attr = to_python(ast, prop_children[1], indentation, ToWrapVal::GetName);
+                    let val = to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue);
+                    if !op.is_empty() {
+                        format!("{base}.setattr('{attr}', {base}.getattr('{attr}') {op} {val})")
+                    } else {
+                        format!("{base}.setattr('{attr}', {val})")
+                    }
                 }
                 AstNode::Index => format!(
-                    "{} = {}",
+                    "{} {op}= {}",
                     to_python(ast, children[0], indentation, ToWrapVal::GetName),
                     to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
                 ),
                 AstNode::UnaryOp(OperatorType::Dereference) => format!(
-                    "{}.v = {}",
+                    "{}.v {op}= {}",
                     to_python(ast, children[0], indentation, ToWrapVal::GetName),
                     to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
                 ),
@@ -703,7 +708,7 @@ fn built_in_funcs(
     // let arg_pos = unwrap_u(&ast[children[1]].children)[1];
     match name {
         "reversed" => Some(format!(
-            "reversed({})",
+            "reversed(list({}))", //3 pretty bad that I need to turn it into a list first
             to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
         )),
         "len" => Some(format!(
@@ -717,11 +722,15 @@ fn built_in_funcs(
             ))
         }
         "iter" | "iter_imut" => Some(format!(
-            "{}.getattr('__iter__')()",
+            "{}.getattr('_iter_')()",
             to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
         )),
-        "min" | "max" | "abs" | "sum" => Some(format!(
+        "min" | "max" | "abs" => Some(format!(
             "{name}({})",
+            to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
+        )),
+        "sum" => Some(format!(
+            "{name}(x._dereference_all() if hasattr(x, '_dereference_all') else x for x in {})",
             to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
         )),
         _ => { None }

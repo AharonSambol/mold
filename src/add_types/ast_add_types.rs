@@ -159,6 +159,29 @@ pub fn add_types(
                 add_to_stack(vars, name, children[0]);
             } else { todo!() }
         }
+        AstNode::OpAssignment(op) => {
+            let op = op.clone();
+            add_types(ast, children[0], vars, info, parent_struct);
+            add_types(ast, children[1], vars, info, parent_struct);
+            let t1 = &ast[children[0]].typ.as_ref().unwrap();
+            let t2 = &ast[children[1]].typ.as_ref().unwrap();
+            if t1 != t2 {
+                panic!(
+                    "Can't {}",
+                    match op {
+                        OperatorType::Plus => format!("add `{t2}` to `{t1}`"),
+                        OperatorType::Minus => format!("subtract `{t2}` from `{t1}`"),
+                        OperatorType::Mul => format!("multiply `{t1}` by `{t2}`"),
+                        OperatorType::Div => format!("divide `{t1}` by `{t2}`"),
+                        OperatorType::FloorDiv => format!("floor divide `{t1}` by `{t2}`"),
+                        OperatorType::Pow => format!("raise `{t1}` to the `{t2}`"),
+                        OperatorType::Mod => format!("modulo `{t1}` by `{t2}`"),
+                        _ => unreachable!()
+                    }
+                )
+            }
+            ast[pos].typ = Some((*t1).clone());
+        }
         AstNode::FunctionCall(_) => {
             add_type_func_call(ast, pos, vars, info, parent_struct, &children);
         }
@@ -375,7 +398,9 @@ fn add_type_operator(
                 children: None
             }
         }),
-        OperatorType::Div | OperatorType::DivEq => Some(typ_with_child! {
+        _ if matches!(&op, OperatorType::Div)
+            || matches!(&op, OperatorType::OpEq(op) if OperatorType::Div == **op)
+        => Some(typ_with_child! {
             TypeKind::Struct(TypName::Static(
                 if matches!(&t1.kind, TypeKind::Struct(name) if name == "f64") { "f64" }
                 else { "f32" }
@@ -385,7 +410,9 @@ fn add_type_operator(
                 children: None
             }
         }),
-        OperatorType::FloorDiv | OperatorType::FloorDivEq => Some(typ_with_child! {
+        _ if matches!(&op, OperatorType::FloorDiv)
+            || matches!(&op, OperatorType::OpEq(op) if OperatorType::FloorDiv == **op)
+        => Some(typ_with_child! {
             TypeKind::Struct(
                 if matches!(
                     &t1.kind,
@@ -650,8 +677,7 @@ fn add_type_func_call(
         if args.is_empty() { None }
         else if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
             check_that_is_castable(
-                expected_inputs, &args, info, ast,
-                unsafe { IGNORE_FUNCS.contains(name.as_str()) }
+                expected_inputs, &args, info, ast, true
             )
         } else {
             Some(expected_inputs.clone().iter().zip(args.iter()).map(
@@ -670,6 +696,7 @@ fn add_type_func_call(
 
 fn is_castable(exp: &Type, got: &Type, ast: &[Ast], info: &Info, is_built_in: bool) -> bool {
     match &exp.kind {
+        TypeKind::Generic(GenericType::Of(_)) => true,
         TypeKind::OneOf => {
             exp.children.as_ref().unwrap().iter().any(|opt|
                 is_castable(opt, got, ast, info, is_built_in)
@@ -704,7 +731,6 @@ fn add_types_to_for_vars_and_iters(
     let for_var_pos = unwrap_u(&for_vars.children)[0];
     let mut typ = get_into_iter_return_typ(ast, info, iter);
     if let Some(Type { kind: TypeKind::Generic(GenericType::Of(_)), children }) = &typ {
-        println!("THIS ISNT USELESS");
         typ = Some(children.as_ref().unwrap()[0].clone());
     }
     ast[for_var_pos].typ = typ;

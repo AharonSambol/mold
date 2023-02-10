@@ -909,6 +909,19 @@ fn word_tok(
                     tokens, pos, ast, indent, vars, info, is_expression, parent
                 );
             },
+            SolidToken::Operator(OperatorType::OpEq(op)) => {
+                if is_expression { return pos - 1 }
+
+                let mut parent = parent;
+                while ast[parent].value.is_expression() {
+                    parent = ast[parent].parent.unwrap();
+                }
+                let index = insert_as_parent_of_prev(ast, parent, AstNode::OpAssignment(*op.clone()));
+
+                return make_ast_expression(
+                    tokens, pos + 1, ast, index, vars, info
+                ) - 1;
+            }
             _ if is_expression => return pos - 1,
             _ => panic!("Unexpected token {:?}", tokens[pos]),
         }

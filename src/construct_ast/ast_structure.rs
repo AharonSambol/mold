@@ -38,6 +38,7 @@ pub enum AstNode {
     Args, // children = args
     ArgsDef,
     Assignment, // children[0] = var, children[1] = val
+    OpAssignment(OperatorType), // children[0] = var, children[1] = val
     Body,
     Bool(bool), // no children
     Cast, // children[0] = thing that's being cast
@@ -154,12 +155,13 @@ impl AstNode {
             | AstNode::DictLiteral
             | AstNode::Index => true,
             AstNode::FirstAssignment
+            | AstNode::Assignment
+            | AstNode::OpAssignment(_)
             | AstNode::NamedArg(_)
             | AstNode::Arg { .. }
             | AstNode::Pass
             | AstNode::Continue
             | AstNode::Break
-            | AstNode::Assignment
             | AstNode::Body
             | AstNode::Module
             | AstNode::Function { .. }
@@ -208,6 +210,7 @@ impl Display for AstNode {
                 write!(f, "{}", if *s { "STATIC_FUNC_CALL" } else { "FUNC_CALL" })
             }
             AstNode::StructInit => write!(f, "STRUCT_INIT"),
+            AstNode::OpAssignment(op) => write!(f, "{op}="),
             AstNode::Assignment => write!(f, "="),
             AstNode::FirstAssignment => write!(f, ":="),
             AstNode::Property => write!(f, "PROPERTY"),

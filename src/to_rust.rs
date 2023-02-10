@@ -103,6 +103,13 @@ pub fn to_rust(
                 to_rust(ast, children[1], indentation, enums, info)
             )
         }
+        AstNode::OpAssignment(op) => {
+            format!(
+                "{} {op}= {}",
+                to_rust(ast, children[0], indentation, enums, info),
+                to_rust(ast, children[1], indentation, enums, info)
+            )
+        }
         AstNode::Identifier(name) => { name.clone() },
         AstNode::Operator(op) => {
             match op {
@@ -126,9 +133,9 @@ pub fn to_rust(
                         div(ast, children, indentation, enums, info)
                     }
                 }
-                OperatorType::FloorDivEq => {
-                    todo!()
-                }
+                // OperatorType::FloorDivEq => {
+                //     todo!()
+                // }
                 OperatorType::Div => {
                     //1 casts both nums to f32 unless their f32/64 and joins with `/`
                     join(
@@ -148,9 +155,9 @@ pub fn to_rust(
                         " / "
                     )
                 }
-                OperatorType::DivEq => {
-                    todo!()
-                }
+                // OperatorType::DivEq => {
+                //     todo!()
+                // }
                 OperatorType::Pow => {
                     format!(
                         "{}.pow({})",
@@ -163,9 +170,9 @@ pub fn to_rust(
                 OperatorType::IsNot =>
                     format!("!{}", is_to_rust(ast, indentation, enums, info, children)),
                 OperatorType::In =>
-                    in_to_rust(&ast, indentation, enums, info, &children),
+                    in_to_rust(ast, indentation, enums, info, children),
                 OperatorType::NotIn =>
-                    format!("!{}", in_to_rust(&ast, indentation, enums, info, &children)),
+                    format!("!{}", in_to_rust(ast, indentation, enums, info, children)),
                 _ if is_string_addition(ast, pos, op) => {
                     let res = format!(
                         "{} {op} {}",
@@ -198,7 +205,6 @@ pub fn to_rust(
             ).collect::<Vec<_>>().concat()
         },
         AstNode::Index => {
-            print_tree(ast, pos);
             format!(
                 "{}{}, {})",
                 match ast[children[0]].typ.as_ref().unwrap().kind {
@@ -878,14 +884,21 @@ fn built_in_funcs(
             if args.len() > 3 {
                 panic!("too many args passed to `pow` expected at most 3 (at least 2), got `{}`", args.len())
             }
+            let base_typ = unwrap_enum!(
+                &ast[args[0]].typ.as_ref().unwrap().kind,
+                TypeKind::Struct(name), name.get_str()
+            );
+            let is_float = ["f32", "f64"].contains(&base_typ);
+            let cast_to = if is_float { base_typ } else { "u32" };
+            // panic!("{:?}", ast[args[2]].value);
 
             format!(
-                "({}.pow(({}) as u32{})",
+                "({}).{}({}{})",
                 to_rust(ast, args[0], 0, enums, info),
+                if is_float { "powf" } else { "pow" },
                 to_rust(ast, args[1], 0, enums, info),
-
-                if !matches!(ast[args[2]].value, AstNode::Bool(false)) {
-                    format!(" % {}", to_rust(ast, args[2], 0, enums, info))
+                if !matches!(ast[args[2]].value, AstNode::UnaryOp(OperatorType::Minus)) {
+                    format!(" % ({})", to_rust(ast, args[2], 0, enums, info))
                 } else { EMPTY_STR }
             )
         }
