@@ -74,6 +74,7 @@ pub enum AstNode {
     String { val: String, mutable: bool, },
     Struct(String), // children[0] = args, children[1] = functions, children[2] = body, children[3] = traits
     StructInit, // children[0] = struct, children[1] = Args, // TODO dont think this is right...
+    Ternary, // children[0] = val if true, children[1] = condition, children[2] = val if false
     Trait { name: String, strict: bool },  // children[0] = Module (functions)
     Traits,
     Type(String), // e.g.  struct A: \n type Inner
@@ -139,6 +140,7 @@ impl AstNode {
             | AstNode::FunctionCall(_)
             | AstNode::StructInit
             | AstNode::Property
+            | AstNode::Ternary
             | AstNode::Number(_)
             | AstNode::Char(_)
             | AstNode::String { .. }
@@ -190,8 +192,9 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            AstNode::Cast=> write!(f, "[CAST]"),
-            AstNode::DictComprehension=> write!(f, "{{DICT-COMPREHENSION}}"),
+            AstNode::Ternary => write!(f, "[TERNARY]"),
+            AstNode::Cast => write!(f, "[CAST]"),
+            AstNode::DictComprehension => write!(f, "{{DICT-COMPREHENSION}}"),
             AstNode::SetComprehension => write!(f, "{{SET-COMPREHENSION}}"),
             AstNode::ListComprehension => write!(f, "[COMPREHENSION]"),
             AstNode::NamedArg(name) => write!(f, "{name}="),

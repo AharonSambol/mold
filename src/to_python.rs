@@ -644,6 +644,15 @@ pub fn to_python(
         AstNode::Cast => {
             to_python(ast, children[0], indentation, add_val_wrapper)
         }
+        AstNode::Ternary => {
+            format!(
+                "{} if {} else {}",
+                to_python(ast, children[0], indentation, add_val_wrapper),
+                to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue),
+                to_python(ast, children[2], indentation, add_val_wrapper)
+            )
+        }
+
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }

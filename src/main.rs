@@ -18,7 +18,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 use once_cell::sync::Lazy;
-use crate::built_in_funcs::{put_at_start};
+use crate::built_in_funcs::put_at_start;
 use crate::construct_ast::mold_ast;
 use crate::construct_ast::mold_ast::Info;
 use crate::mold_tokens::SolidToken;
@@ -36,11 +36,11 @@ const EMPTY_STR: String = String::new();
 // 2 optimizations:
 // lto = "fat"
 // codegen-units = 1
-// TODO some things dont need to be made into a box necessarily (e.g. when I do lst.len() it makes a box)
+// TODO some things dont necessarily need to be made into a box (e.g. lst.len())
 fn main() {
     // todo remove
     unsafe {
-        // IS_COMPILED = true;
+        IS_COMPILED = true;
     }
     let mut path = String::from("tests/input_program.py");
     // let mut path = String::from("tests/built_ins.py");

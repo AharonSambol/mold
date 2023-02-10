@@ -537,6 +537,14 @@ pub fn to_rust(
             )
         }
         AstNode::Arg { name, .. } => name.clone(),
+        AstNode::Ternary => {
+            format!(
+                "if {} {{ {} }} else {{ {} }}",
+                to_rust(ast, children[1], indentation, enums, info),
+                to_rust(ast, children[0], indentation, enums, info),
+                to_rust(ast, children[2], indentation, enums, info),
+            )
+        }
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
 }

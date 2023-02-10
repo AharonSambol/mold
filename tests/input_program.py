@@ -47,6 +47,6 @@ def change(lst: &mut List[int]):
     lst[0] = 100
 
 def main():
-    a = 0
-    a += 1
-    print(a)
+    a = 2
+    b = 1 if a != 0 else 2
+    print(b)

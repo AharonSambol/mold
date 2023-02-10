@@ -358,6 +358,26 @@ pub fn add_types(
             add_types(ast, children[2], vars, info, &parent_struct); //1 module
             vars.pop();
         }
+        AstNode::Ternary => {
+            add_types(ast, children[0], vars, info, parent_struct);
+            add_types(ast, children[1], vars, info, parent_struct);
+            add_types(ast, children[2], vars, info, parent_struct);
+
+            if !matches!(
+                &ast[children[1]].typ.as_ref().unwrap().kind,
+                TypeKind::Struct(name) if name == "bool"
+            ) {
+                panic!("condition isn't bool") //todo truthy falsy
+            }
+            if ast[children[0]].typ != ast[children[2]].typ {
+                panic!(
+                    "`if` and `else` have incompatible types. expected `{}`, found `{}`",
+                    ast[children[0]].typ.as_ref().unwrap(),
+                    ast[children[2]].typ.as_ref().unwrap()
+                )
+            }
+            ast[pos].typ = ast[children[0]].typ.clone();
+        }
         AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
         | AstNode::Trait { .. } | AstNode::Traits | AstNode::Type(_) | AstNode::Types
         | AstNode::Arg { .. } | AstNode::Cast => {}
@@ -389,7 +409,7 @@ fn add_type_operator(
     ast[pos].typ = match op {
         OperatorType::And | OperatorType::Or | OperatorType::Bigger
         | OperatorType::Smaller | OperatorType::IsEq | OperatorType::SEq
-        | OperatorType::BEq | OperatorType::Not | OperatorType::Is
+        | OperatorType::BEq | OperatorType::NEq | OperatorType::Not | OperatorType::Is
         | OperatorType::In | OperatorType::NotIn | OperatorType::IsNot
         => Some(typ_with_child! {
             BOOL_TYPE,

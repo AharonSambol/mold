@@ -641,6 +641,32 @@ pub fn make_ast_expression(
                 ast[cast].typ = Some(typ);
                 pos -= 1;
             }
+            SolidToken::If => { //1 ternary
+                let mut parent = parent;
+                while ast[parent].value.is_expression() {
+                    parent = ast[parent].parent.unwrap();
+                }
+                let index = insert_as_parent_of_prev(ast, parent, AstNode::Ternary);
+                let mut amount_of_open = 0;
+                // let mut new_tokens = vec![]; //todo this can be a slice instead (find end index)
+                for (i, tok) in tokens.iter().enumerate().skip(pos) {
+                    match tok {
+                        SolidToken::Brace(IsOpen::True) | SolidToken::Bracket(IsOpen::True)
+                        | SolidToken::Parenthesis(IsOpen::True) => amount_of_open += 1,
+                        SolidToken::Brace(IsOpen::False) | SolidToken::Bracket(IsOpen::False)
+                        | SolidToken::Parenthesis(IsOpen::False) => amount_of_open -= 1,
+                        SolidToken::Else if amount_of_open == 0 => {
+                            make_ast_expression(
+                                &tokens[pos+1..i], 0, ast, index, vars, info
+                            );
+                            pos = i + 1;
+                            break
+                        },
+                        _ => ()
+                    }
+                }
+                make_ast_expression(tokens, pos, ast, index, vars, info);
+            }
             _ => panic!("unexpected token {:?}", token)
         }
         pos += 1;
