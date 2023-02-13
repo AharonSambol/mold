@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use crate::construct_ast::ast_structure::join;
-use crate::IS_COMPILED;
+use crate::{IS_COMPILED, PARSED_FILES, PARSING_FILES};
 
 pub struct CopyFolder {
     pub temp_path: String,
@@ -38,7 +38,7 @@ impl Drop for CopyFolder {
     }
 }
 impl CopyFolder {
-    pub fn start(&self, file_path: &str) {
+    pub fn start(&self, file_path: &str) -> Option<File> {
         if unsafe { IS_COMPILED } {
             /*1 mkdir */ Command::new("mkdir")
                 .arg(&self.temp_path)
@@ -49,24 +49,14 @@ impl CopyFolder {
                 .arg(format!("{}/.", self.module_path))
                 .arg(format!("{}/", self.temp_path))
                 .output().expect("cp command failed to start");
-            let path = PathBuf::from(&self.temp_path);
-            change_file_extensions(&path, "rs");
             let src = self.temp_path.rsplit_once('/').unwrap().0;
             /*1 make main */ Command::new("touch")
                 .arg("main.rs")
                 .current_dir(src)
                 .spawn().expect("touch command failed to start")
                 .wait().expect("touch failed");
-            let mut main = File::create(format!("{src}/main.rs")).unwrap(); // todo windows is \
-            let module_name = self.temp_path.as_str().rsplit_once('/').unwrap().1; // todo windows is \
-            let file_name = file_path
-                .strip_prefix(&self.temp_path).unwrap()
-                .strip_prefix('/').unwrap()
-                .replace('/', "::"); // todo windows is \
-            let file_name = file_name.strip_suffix(".rs").unwrap();
-            main.write_all(format!(
-                "mod {module_name}; fn main() {{ {module_name}::{file_name}::main(); }}"
-            ).as_ref()).unwrap();
+            let main = File::create(format!("{src}/main.rs")).unwrap(); // todo windows is \
+            Some(main)
         } else {
             println!("module_path: {:?}", self.module_path);
             println!("temp_path: {:?}", self.temp_path);
@@ -81,11 +71,29 @@ impl CopyFolder {
                 .output().expect("ls command failed to start");
             let path = PathBuf::from(&self.module_path);
             change_file_extensions(&path, "py");
+            None
         }
     }
 }
 
-fn change_file_extensions(path: &Path, new_ex: &str) -> bool {
+pub fn delete_unused_files(path: &Path) {
+    for child in fs::read_dir(path).unwrap() {
+        let child = child.unwrap().path();
+        if child.metadata().unwrap().is_file() {
+            if matches!(child.extension(), Some(ex) if ex == "mo"){
+                // 1 annoying lint
+                if unsafe {
+                    !PARSED_FILES.contains_key(child.as_path().to_str().unwrap())
+                } {
+                    fs::remove_file(child).unwrap();
+                }
+            }
+        } else {
+            delete_unused_files(&child);
+        }
+    }
+}
+pub fn change_file_extensions(path: &Path, new_ex: &str) -> bool {
     let mut file_names = vec![];
     for child in fs::read_dir(path).unwrap() {
         let mut child = child.unwrap().path();

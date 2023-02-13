@@ -130,8 +130,6 @@ pub fn add_types(
                 } else { //1 first assignment
                     add_to_stack(vars, name.clone(), children[0]);
                     ast[pos].value = AstNode::FirstAssignment;
-                    println!("expected:");
-                    print_tree(ast, pos);
                     ast[children[0]].typ = Some(check_for_boxes(
                         ast[children[1]].typ.clone().unwrap(), ast, children[1],
                         info, vars
@@ -1040,7 +1038,7 @@ pub fn find_index_typ(ast: &[Ast], info: &Info, base: usize, pos: usize) -> Opti
                 ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", trait_name)),
             Some(Type { kind: TypeKind::Pointer | TypeKind::MutPointer, children: chs, .. }) =>
                 return find_index_func(&Some(unwrap(chs)[0].clone()), ast, info, pos), // todo pos here might not be correct in the case of &Self
-            _ => panic!()
+            _ => panic!("{typ:?}")
         }
     }
     let index_func = find_index_func(&ast[base].typ, ast, info, pos);

@@ -27,25 +27,9 @@ trait It:
 #
 # type i = int
 # type IList = List[i]
-# def f(*a: int):
-#     pass
-#
-struct A:
-    def __init__(self, x: int):
-        self.x = x
-    def get(self: &Self) -> int:
-        x = self.x
-        return x
 
-def fnc(a: int, b: bool):
-    print(a, b)
-
-def ar() -> List[int]:
-    return [1, 2, 3]
-
-def change(lst: &mut List[int]):
-    lst[0] = 100
+def a(*arg: T) -> T:
+    return arg[0]
 
 def main():
-    b = 1 if a != 0 else 2
-    print(b)
+    print(a(1, 2, 3))

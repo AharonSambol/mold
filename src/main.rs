@@ -12,18 +12,17 @@ mod copy_folder;
 
 use construct_ast::ast_structure::{Ast, join};
 use std::collections::{HashMap, HashSet};
-use std::env;
-use std::fs;
+use std::{env, fs};
 use std::fs::File;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use once_cell::sync::Lazy;
 use crate::built_in_funcs::put_at_start;
 use crate::construct_ast::mold_ast;
 use crate::construct_ast::mold_ast::{FileInfo, Info};
 use crate::construct_ast::tree_utils::clone_sub_tree;
-use crate::copy_folder::CopyFolder;
+use crate::copy_folder::{change_file_extensions, CopyFolder, delete_unused_files};
 use crate::mold_tokens::SolidToken;
 use crate::to_python::ToWrapVal;
 
@@ -56,16 +55,16 @@ fn main() {
     }
     let path = path.unwrap_or_else(|| String::from("."));
 
-    // let mut path = String::from("tests/input_program.mo");
-    let path = String::from("tests/import_package/imports.mo");
-    let path = fs::canonicalize(path).unwrap().to_str().unwrap().to_string();
+    let mut path = String::from("tests/input_program.mo");
+    // let path = String::from("tests/import_package/imports.mo");
     // let mut path = String::from("tests/built_ins.mo");
     // let mut path = String::from("tests/enums.mo");
     // let mut path = String::from("tests/pointers.mo");
     // let mut path = String::from("tests/generics.mo");
     // let mut path = String::from("tests/lists.mo");
     // let mut path = String::from("tests/algos.mo");
-    // todo find this:
+
+    let path = fs::canonicalize(path).unwrap().to_str().unwrap().to_string();
 
     let module_path_buf = find_module_path(&path);
     let module_path = module_path_buf.to_str().unwrap().to_string();
@@ -78,18 +77,13 @@ fn main() {
         format!("{}_TEMP_", module_path)
     };
     let path = if unsafe { IS_COMPILED } {
-        println!("path: {path}, module_path: {module_path}, temp: {temp_path}");
-        let res = path.replacen(&module_path, &temp_path, 1).replacen(".mo", ".rs", 1);
-        println!("RES: {res}");
-        res
+        path.replacen(&module_path, &temp_path, 1)
+        //.replacen(".mo", ".rs", 1);
     } else {
         path.replacen(".mo", ".py", 1)
     };
-    let copy_folder = CopyFolder {
-        temp_path,
-        module_path,
-    };
-    copy_folder.start(&path);
+    let copy_folder = CopyFolder { temp_path, module_path };
+    let main = copy_folder.start(&path);
 
     if !unsafe { IS_COMPILED } {
         let python_built_ins = {"class built_in_list_(list):
@@ -165,19 +159,58 @@ class pointer_:
         built_ins.write_all(python_built_ins.as_ref()).unwrap();
     }
 
-    parse_file(&path);
-    // if unsafe { IS_COMPILED } {
-    //     fs::rename(
-    //         path.clone(),
-    //         format!("{}/main.rs", path.rsplit_once('/').unwrap().0)
-    //     ).unwrap(); //todo windows \
-    // }
+    let mut one_of_enums = HashMap::new();
+
+    parse_file(&path, &mut one_of_enums);
+    if unsafe { IS_COMPILED } {
+        let module_name = copy_folder.temp_path.as_str().rsplit_once('/').unwrap().1; // todo windows is \
+        let file_name = path
+            .strip_prefix(&copy_folder.temp_path).unwrap()
+            .strip_prefix('/').unwrap()
+            .replace('/', "::"); // todo windows is \
+        // let file_name = file_name.strip_suffix(".rs").unwrap();
+        let file_name = file_name.strip_suffix(".mo").unwrap();
+
+        one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
+            "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
+        );
+
+        main.unwrap().write_all({ format!("
+#![allow(unused, non_camel_case_types)]
+mod {module_name};
+
+{}
+
+#[inline] fn _index_mut<T>(vc: &mut Vec<T>, pos: i32) -> &mut T {{
+    if pos >= 0 {{
+        vc.iter_mut().nth(pos as usize)
+    }} else {{
+        vc.iter_mut().rev().nth(-pos as usize -1)
+    }}.unwrap()
+}}
+#[inline] fn _index<T>(vc: &Vec<T>, pos: i32) -> &T {{
+    if pos >= 0 {{
+        vc.iter().nth(pos as usize)
+    }} else {{
+        vc.iter().rev().nth(-pos as usize -1)
+    }}.unwrap()
+}}
+
+fn main() {{ {module_name}::{file_name}::main(); }}
+",
+            join(one_of_enums.values(), "\n")
+        )}.as_ref()).unwrap();
+
+        let path = PathBuf::from(&copy_folder.temp_path);
+        delete_unused_files(&path);
+        change_file_extensions(&path, "rs");
+    }
     run(&path);
 
     drop(copy_folder);
 }
 
-fn parse_file(path: &String) {
+fn parse_file(path: &String, one_of_enums: &mut HashMap<String, String>) {
     println!("parsing: {path}");
     unsafe {
         if PARSING_FILES.contains(path) {
@@ -195,7 +228,7 @@ fn parse_file(path: &String) {
         structs: &mut Default::default(),
         traits: &mut Default::default(),
         enums: &mut Default::default(),
-        one_of_enums: &mut Default::default(),
+        one_of_enums,
         types: &mut Default::default(),
         generics: &mut vec![],
         struct_inner_types: &mut Default::default(),
@@ -206,7 +239,13 @@ fn parse_file(path: &String) {
     if unsafe { IS_COMPILED } {
         let (enums, code) = compile(&ast, &info);
         let mut file = File::create(path).unwrap();
-        file.write_all(code.as_ref()).unwrap();
+        file.write_all(format!("
+use std::{{slice::{{Iter, IterMut}}, iter::Rev, collections::{{HashMap, HashSet}}, ptr}};
+use list_comprehension_macro::comp;
+use crate::{{ _index_mut, _index, {} }};
+{code}",
+            join(enums.keys(), ",")
+        ).as_ref()).unwrap();
     } else {
         let mut file = File::create(path).unwrap();
         file.write_all(interpret(&ast).as_ref()).unwrap();
@@ -293,7 +332,6 @@ if __name__ == '__main__':
 
 fn compile(ast: &[Ast], info: &Info) -> (HashMap<String, String>, String) {
     let rs = to_rust::to_rust(ast, 0, 0, info);
-    // let enums = to_rust::make_enums(&enums);
     let rs = rs.trim();
     // TODO something about this... v
     let mut one_of_enums = info.one_of_enums.clone();
@@ -302,73 +340,48 @@ fn compile(ast: &[Ast], info: &Info) -> (HashMap<String, String>, String) {
     );
     let one_of_enums_st = join(one_of_enums.values(), "\n\n");
     println!("\n{one_of_enums_st}\n{rs}");
-    // println!("\n{}", rs.split_once(CODE_END_FLAG).unwrap().0.trim_end());
+    /*
+    if !Path::new("/out").exists() {
+        Command::new("cargo")
+            .arg("new")
+            .arg("out")
+            .output()
+            .expect("ls command failed to start");
+    }
 
-    // if !Path::new("/out").exists() {
-    //     Command::new("cargo")
-    //         .arg("new")
-    //         .arg("out")
-    //         .output()
-    //         .expect("ls command failed to start");
-    // }
-//     let cargo_contents = fs::read_to_string("out/Cargo.toml").unwrap();
-//     if !cargo_contents.contains("\nlto =") && !cargo_contents.contains("\ncodegen-units = ") {
-//         let cargo_contents = cargo_contents.split_once("[package]")
-//             .expect("no [package] found in Cargo.toml");
-//         let mut file = File::create("out/Cargo.toml").unwrap();
-//
-//         file.write_all(
-//             format!("\
-// {}[package]
-// lto = \"fat\"
-// codegen-units = 1{}",
-//                     cargo_contents.0,
-//                     cargo_contents.1
-//             ).as_ref()
-//         ).expect("couldn't write to cargo");
-//     }
-//     if !cargo_contents.contains("list_comprehension_macro = \"*\"") {
-//         let cargo_contents = cargo_contents.split_once("[dependencies]")
-//             .expect("no [dependencies] found in Cargo.toml");
-//         let mut file = File::create("out/Cargo.toml").unwrap();
-//
-//         file.write_all(
-//             format!("\
-// {}[dependencies]
-// list_comprehension_macro = \"*\"{}",
-//                     cargo_contents.0,
-//                     cargo_contents.1
-//             ).as_ref()
-//         ).expect("couldn't write to cargo");
-//     }
-//     let mut file = File::create("out/src/main.rs").unwrap();
-    (one_of_enums, {
-        format!("//#![allow(warnings, unused)]
-#![allow(unused, non_camel_case_types)]
+    let cargo_contents = fs::read_to_string("out/Cargo.toml").unwrap();
+    if !cargo_contents.contains("\nlto =") && !cargo_contents.contains("\ncodegen-units = ") {
+        let cargo_contents = cargo_contents.split_once("[package]")
+            .expect("no [package] found in Cargo.toml");
+        let mut file = File::create("out/Cargo.toml").unwrap();
 
-use std::slice::{{Iter, IterMut}};
-use std::iter::Rev;
-use std::collections::{{HashMap, HashSet}};
-use std::ptr;
-use list_comprehension_macro::comp;
+        file.write_all(
+            format!("\
+{}[package]
+lto = \"fat\"
+codegen-units = 1{}",
+                    cargo_contents.0,
+                    cargo_contents.1
+            ).as_ref()
+        ).expect("couldn't write to cargo");
+    }
+    if !cargo_contents.contains("list_comprehension_macro = \"*\"") {
+        let cargo_contents = cargo_contents.split_once("[dependencies]")
+            .expect("no [dependencies] found in Cargo.toml");
+        let mut file = File::create("out/Cargo.toml").unwrap();
 
-#[inline] fn _index_mut<T>(vc: &mut Vec<T>, pos: i32) -> &mut T {{
-    if pos >= 0 {{
-        vc.iter_mut().nth(pos as usize)
-    }} else {{
-        vc.iter_mut().rev().nth(-pos as usize -1)
-    }}.unwrap()
-}}
-#[inline] fn _index<T>(vc: &Vec<T>, pos: i32) -> &T {{
-    if pos >= 0 {{
-        vc.iter().nth(pos as usize)
-    }} else {{
-        vc.iter().rev().nth(-pos as usize -1)
-    }}.unwrap()
-}}
-
-{rs}")
-    })
+        file.write_all(
+            format!("\
+{}[dependencies]
+list_comprehension_macro = \"*\"{}",
+                    cargo_contents.0,
+                    cargo_contents.1
+            ).as_ref()
+        ).expect("couldn't write to cargo");
+    }
+    let mut file = File::create("out/src/main.rs").unwrap();
+    */
+    (one_of_enums, rs.to_string())
 }
 
 

@@ -503,7 +503,7 @@ pub fn make_ast_statement(
                     pos += 1;
                 }
                 let last = if unsafe { IS_COMPILED } {
-                    format!("{}.rs", module.pop().unwrap())
+                    format!("{}.mo", module.pop().unwrap())
                 } else {
                     format!("{}.py", module.pop().unwrap())
                 };
@@ -518,7 +518,7 @@ pub fn make_ast_statement(
                     info
                 } else {
                     let module_path = module.to_str().unwrap().to_string();
-                    parse_file(&module_path);
+                    parse_file(&module_path, info.one_of_enums);
                     unsafe { PARSED_FILES.get(&module_path).unwrap() }
                 };
 

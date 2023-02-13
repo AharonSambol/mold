@@ -198,12 +198,12 @@ impl Display for Type {
 }
 
 impl Type {
-    pub fn new(typ: String) -> Type {
-        Type {
-            kind: TypeKind::Struct(clean_type(typ)),
-            children: None
-        }
-    }
+    // pub fn new(typ: String) -> Type {
+    //     Type {
+    //         kind: TypeKind::Struct(clean_type(typ)),
+    //         children: None
+    //     }
+    // }
 
     pub fn add_option(mut self, mut typ: Type) -> Type {
         if let TypeKind::OneOf = self.kind {

@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use pretty_print_tree::PrettyPrintTree;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
-use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, some_vec};
+use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, parse_file, some_vec};
 use crate::types::unwrap_u;
 
 #[inline]
@@ -9,7 +10,7 @@ pub fn get_last(arr: &Option<Vec<usize>>) -> usize {
 }
 
 pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNode) -> usize {
-    let index = get_last(&mut ast[parent].children);
+    let index = get_last(&ast[parent].children);
     ast.insert(index, Ast {
         value,
         children: some_vec![index + 1],
@@ -89,7 +90,6 @@ pub fn clone_sub_tree(ast: &[Ast], head: usize, exclude_children: Option<usize>)
                     children: None,
                     ..ast[*i].clone()
                 };
-                // panic!("{}: {:?}", *i, node.value);
                 res.push(node);
                 continue
             }
@@ -101,8 +101,6 @@ pub fn clone_sub_tree(ast: &[Ast], head: usize, exclude_children: Option<usize>)
     }
     let mut res = vec![];
     add_node(ast, &mut res, head, None, exclude_children);
-    // dbg!(&res);
-    // print_tree(&res, 0);
     res
 }
 

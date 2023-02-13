@@ -90,7 +90,7 @@ pub fn make_enums(typ: &Type, enums: &mut HashMap<String, String>) {
         let elems = types
             .iter()
             .map(|x| format!("_{}({x})", escape_typ_chars(&x.to_string())));
-        let res = format!("enum {enm_name} {generics} {{ {} }}", join(elems, ","));
+        let res = format!("pub enum {enm_name} {generics} {{ {} }}", join(elems, ","));
         res
     });
 }
@@ -484,6 +484,7 @@ pub fn check_for_boxes(
                     }
                     expected.clone()  //1 got what expected, no need to panic
                 },
+                AstNode::Cast => got.typ.clone().unwrap(),
                 _ => panic!("expected: {:?}, got.kind: {:?}", expected.kind, got.value)
             };
             if !can_soft_cast(&typ, &expected) {

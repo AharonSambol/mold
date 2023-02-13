@@ -3,17 +3,13 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
-use lazy_static::lazy_static;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
-use crate::add_types::ast_add_types::{find_index_typ, get_inner_type, SPECIFIED_NUM_TYPE_RE};
+use crate::add_types::ast_add_types::{get_inner_type, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::apply_generics_from_base;
 use crate::add_types::utils::get_pointer_inner;
 use crate::construct_ast::mold_ast::Info;
-use crate::construct_ast::tree_utils::print_tree;
 use crate::mold_tokens::OperatorType;
-use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap, print_type};
-
-type Enums = HashMap<String, String>;
+use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap};
 
 //4 probably using a string builder would be much more efficient (but less readable IMO)
 pub fn to_rust(
