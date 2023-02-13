@@ -1,6 +1,7 @@
 use pretty_print_tree::PrettyPrintTree;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, some_vec};
+use crate::types::unwrap_u;
 
 #[inline]
 pub fn get_last(arr: &Option<Vec<usize>>) -> usize {
@@ -68,9 +69,42 @@ pub fn extend_tree(ast: &mut Vec<Ast>, parent: usize, mut other: Vec<Ast>) {
         ast[parent].children = Some(vec![ast_len])
     }
 }
-// pub fn remove_leaf(ast: &mut Vec<Ast>, pos: usize) {
-//     
-// }
+
+pub fn clone_sub_tree(ast: &[Ast], head: usize, exclude_children: Option<usize>) -> Vec<Ast> {
+    fn add_node(ast: &[Ast], res: &mut Vec<Ast>, pos: usize, parent: Option<usize>, exclude: Option<usize>) {
+        let index = res.len();
+        let node = Ast {
+            parent,
+            children: None,
+            ..ast[pos].clone()
+        };
+        res.push(node);
+        let mut children = vec![];
+        for i in unwrap_u(&ast[pos].children) {
+            children.push(res.len());
+
+            if matches!(exclude, Some(pos) if pos == *i) {
+                let node = Ast {
+                    parent,
+                    children: None,
+                    ..ast[*i].clone()
+                };
+                // panic!("{}: {:?}", *i, node.value);
+                res.push(node);
+                continue
+            }
+            add_node(ast, res, *i, Some(index), exclude);
+        }
+        if !children.is_empty() {
+            res[index].children = Some(children);
+        }
+    }
+    let mut res = vec![];
+    add_node(ast, &mut res, head, None, exclude_children);
+    // dbg!(&res);
+    // print_tree(&res, 0);
+    res
+}
 
 pub fn print_tree(ast: &[Ast], pos: usize){
     let ppt = {

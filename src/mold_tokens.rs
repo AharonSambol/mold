@@ -56,9 +56,8 @@ pub enum SolidToken {
     If, Else, Elif,
     Match, Case, While, For,
     Break, Continue, Return, Pass,
-    Cast,
-    In,
-    IMut
+    Cast, In, IMut,
+    From, Import, As,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -350,6 +349,8 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                     "True" | "true" => SolidToken::Bool(true),
                     "False" | "false" => SolidToken::Bool(false),
                     "imut" => SolidToken::IMut, "cast" => SolidToken::Cast,
+                    "from" => SolidToken::From, "import" => SolidToken::Import,
+                    "as" => SolidToken::As,
                     _ => SolidToken::Word(clean(st))
                 }
             },

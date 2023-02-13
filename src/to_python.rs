@@ -19,6 +19,7 @@ pub enum ToWrapVal {
     GetName
 }
 
+//4 probably using a string builder would be much more efficient (but less readable IMO)
 pub fn to_python(
     ast: &[Ast], pos: usize, indentation: usize, add_val_wrapper: ToWrapVal
 ) -> String {
@@ -42,13 +43,13 @@ pub fn to_python(
             }
 
             let name = if name.contains("::") {
-                name.split("::").last().unwrap().to_string()
+                name.rsplit_once("::").unwrap().1.to_string()
             } else { name.clone() };
             if indentation == 1 {
                 let named_args = add_value_to_named_args(ast, children);
                 format!(
 "def {name}({}){}:
-{}self = _value_(self)
+{}self = value_(self)
 {}{named_args}{}",
                     to_python(ast, children[1], indentation, ToWrapVal::Nothing), //1 param
                     to_python(ast, children[2], indentation, ToWrapVal::Nothing), //1 return
@@ -166,7 +167,7 @@ pub fn to_python(
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
                 ToWrapVal::GetAsValue => format!(
-                    "_value_({} {op} {})",
+                    "value_({} {op} {})",
                     to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue),
                     to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
                 ),
@@ -180,22 +181,22 @@ pub fn to_python(
         AstNode::UnaryOp(op) => {
             match op {
                 OperatorType::MutPointer => {
-                    let p = format!("_pointer_({})",
+                    let p = format!("pointer_({})",
                         to_python(ast, children[0], indentation, ToWrapVal::GetName)
                     );
                     match add_val_wrapper {
                         ToWrapVal::Nothing => panic!(),
-                        ToWrapVal::GetAsValue => format!("_value_({p})"),
+                        ToWrapVal::GetAsValue => format!("value_({p})"),
                         ToWrapVal::GetName | ToWrapVal::GetInnerValue => p,
                     }
                 }
                 OperatorType::Pointer => {
-                    let p = format!("_pointer_({})",
+                    let p = format!("pointer_({})",
                              to_python(ast, children[0], indentation, ToWrapVal::GetName)
                     );
                     match add_val_wrapper {
                         ToWrapVal::Nothing => panic!(),
-                        ToWrapVal::GetAsValue => format!("_value_({p})"),
+                        ToWrapVal::GetAsValue => format!("value_({p})"),
                         ToWrapVal::GetName | ToWrapVal::GetInnerValue => p,
                     }
                 }
@@ -214,7 +215,7 @@ pub fn to_python(
                     match add_val_wrapper {
                         ToWrapVal::Nothing => panic!(),
                         ToWrapVal::GetAsValue =>
-                            format!("_value_({op}{})", to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue)),
+                            format!("value_({op}{})", to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue)),
                         ToWrapVal::GetName | ToWrapVal::GetInnerValue =>
                             format!("{op}{}", to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue)),
                     }
@@ -239,7 +240,7 @@ pub fn to_python(
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
                 ToWrapVal::GetAsValue => format!(
-                    "_value_({}[{}])",
+                    "value_({}[{}])",
                     to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue),
                     to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
                 ),
@@ -253,28 +254,28 @@ pub fn to_python(
         AstNode::Number(num) => {
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
-                ToWrapVal::GetAsValue => format!("_value_({})", NUM_TYP_RE.split(num).next().unwrap()),
+                ToWrapVal::GetAsValue => format!("value_({})", NUM_TYP_RE.split(num).next().unwrap()),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => NUM_TYP_RE.split(num).next().unwrap().to_string(),
             }
         },
         AstNode::String { val, .. } => {
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
-                ToWrapVal::GetAsValue => format!("_value_({val})"),
+                ToWrapVal::GetAsValue => format!("value_({val})"),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => val.clone(),
             }
         },
         AstNode::Char(chr) => {
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
-                ToWrapVal::GetAsValue => format!("_value_('{chr}')"),
+                ToWrapVal::GetAsValue => format!("value_('{chr}')"),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!("'{chr}'"),
             }
         },
         AstNode::Bool(b) => {
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
-                ToWrapVal::GetAsValue => String::from(if *b { "_value_(True)" } else { "_value_(False)" }),
+                ToWrapVal::GetAsValue => String::from(if *b { "value_(True)" } else { "value_(False)" }),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => String::from(if *b { "True" } else { "False" }),
             }
         },
@@ -282,7 +283,7 @@ pub fn to_python(
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
                 ToWrapVal::GetAsValue => {
-                    let mut res = String::from("_value_(_built_in_list_([");
+                    let mut res = String::from("value_(built_in_list_([");
                     for (i, child) in children.iter().enumerate() {
                         if i != 0 {
                             write!(res, ", ").unwrap();
@@ -293,7 +294,7 @@ pub fn to_python(
                     res
                 },
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => {
-                    let mut res = String::from("_built_in_list_([");
+                    let mut res = String::from("built_in_list_([");
                     for (i, child) in children.iter().enumerate() {
                         if i != 0 {
                             write!(res, ", ").unwrap();
@@ -309,7 +310,7 @@ pub fn to_python(
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
                 ToWrapVal::GetAsValue => {
-                    let mut res = String::from("_value_({");
+                    let mut res = String::from("value_({");
                     for (i, child) in children.iter().enumerate() {
                         if i != 0 {
                             write!(res, ", ").unwrap();
@@ -336,7 +337,7 @@ pub fn to_python(
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
                 ToWrapVal::GetAsValue => {
-                    let mut res = String::from("_value_({");
+                    let mut res = String::from("value_({");
                     for (i, child) in children.iter().enumerate() {
                         if i != 0 {
                             if i % 2 == 0 {
@@ -385,7 +386,7 @@ pub fn to_python(
             write!(res, ")").unwrap();
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
-                ToWrapVal::GetAsValue => format!("_value_({})", res),
+                ToWrapVal::GetAsValue => format!("value_({})", res),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => res,
             }
         },
@@ -454,7 +455,7 @@ pub fn to_python(
                     )
                 };
                 return if let ToWrapVal::GetAsValue = add_val_wrapper {
-                    format!("_value_({res})")
+                    format!("value_({res})")
                 } else {
                     res
                 }
@@ -464,7 +465,7 @@ pub fn to_python(
                 return match add_val_wrapper {
                     ToWrapVal::Nothing => panic!(),
                     ToWrapVal::GetAsValue => format!(
-                        "_value_({}.getattr('{}')({}))",
+                        "value_({}.getattr('{}')({}))",
                         base,
                         to_python(ast, ch[0], indentation, ToWrapVal::GetName),
                         to_python(ast, ch[1], indentation, ToWrapVal::GetAsValue)
@@ -480,7 +481,7 @@ pub fn to_python(
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
                 ToWrapVal::GetAsValue => format!(
-                    "_value_({}.getattr('{}'))",
+                    "value_({}.getattr('{}'))",
                     base,
                     to_python(ast, children[1], indentation, ToWrapVal::GetName)
                 ),
@@ -495,7 +496,7 @@ pub fn to_python(
             // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             let par = to_python(ast, children[0], indentation, ToWrapVal::Nothing);
             let vars = to_python(ast, unwrap_u(&ast[children[0]].children)[0], indentation, ToWrapVal::Nothing);
-            format!("for {par}\n{}({vars},)=map(_value_, ({vars},)){}",
+            format!("for {par}\n{}({vars},)=map(value_, ({vars},)){}",
                     "\t".repeat(indentation + 1),
                     to_python(ast, children[1], indentation + 1, ToWrapVal::Nothing),
 
@@ -532,7 +533,7 @@ pub fn to_python(
             write!(res, ")").unwrap();
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
-                ToWrapVal::GetAsValue => format!("_value_({res})"),
+                ToWrapVal::GetAsValue => format!("value_({res})"),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => res,
             }
         }
@@ -547,7 +548,6 @@ pub fn to_python(
         }
         AstNode::Continue => String::from("continue"),
         AstNode::Break => String::from("break"),
-        AstNode::GenericsDeclaration | AstNode::Trait { .. } => EMPTY_STR,
         AstNode::Enum(name) => {
             if unsafe { IGNORE_ENUMS.contains(name.as_str()) } {
                 return EMPTY_STR;
@@ -622,7 +622,7 @@ pub fn to_python(
                 /*loops*/loops.iter().map(|r#loop| {
                     let colon_par = ast[*r#loop].children.as_ref().unwrap()[0];
                     let loop_parts = ast[colon_par].children.as_ref().unwrap();
-                    format!(" for {} in map(_value_, {})",
+                    format!(" for {} in map(value_, {})",
                             to_python(ast, loop_parts[0], indentation, ToWrapVal::Nothing),
                             to_python(ast, loop_parts[1], indentation, ToWrapVal::Nothing)
                                 .strip_prefix(" in ").unwrap()
@@ -652,7 +652,39 @@ pub fn to_python(
                 to_python(ast, children[2], indentation, add_val_wrapper)
             )
         }
-
+        AstNode::Import => {
+            if let AstNode::From = ast[children[0]].value {
+                format!(
+                    "from {} import {}",
+                    join(
+                        ast[children[0]].children.as_ref().unwrap()
+                            .iter()
+                            .map(|i| to_python(
+                                ast, *i, indentation, ToWrapVal::GetName
+                            )),
+                        "."
+                    ),
+                    join(
+                        children.iter().skip(1).map(|i| to_python(
+                            ast, *i, indentation, ToWrapVal::GetName
+                        )),
+                        ", "
+                    )
+                )
+            } else {
+                format!(
+                    "import {}",
+                    join(
+                        children.iter().map(|i| to_python(
+                            ast, *i, indentation, ToWrapVal::GetName
+                        )),
+                        ", "
+                    )
+                )
+            }
+        }
+        AstNode::As => todo!(),
+        AstNode::GenericsDeclaration | AstNode::Trait { .. } | AstNode::Ignore => EMPTY_STR,
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }
@@ -682,16 +714,16 @@ fn add_value_to_named_args(ast: &[Ast], children: &[usize]) -> String {
         format!(
             "({},) = ({},)",
             join(named_args.iter(), ","),
-            join(named_args.iter().map(|x| format!("_value_({x})")), ",")
+            join(named_args.iter().map(|x| format!("value_({x})")), ",")
         )
     }
 }
 
 fn remove_unnecessary_val_creation(st: &str) -> &str {
-    if st.starts_with("_value_(") && st.ends_with(").v") {
+    if st.starts_with("value_(") && st.ends_with(").v") {
         panic!("just checking if this is ever useful, if so- remove this panic");
         // let end = st.len() - ").v".len();
-        // return &st["_value_(".len()..end]
+        // return &st["value_(".len()..end]
     }
     st
 }

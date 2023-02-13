@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use crate::construct_ast::get_typ::{try_get_arg_typ};
 use crate::mold_tokens::{OperatorType, SolidToken};
 use crate::{unwrap_enum};
@@ -65,7 +66,7 @@ pub fn get_struct_and_func_names(
     //3 NOT EFFICIENT
     while resolved_types.len() < types.len() {
         let prev_ln = resolved_types.len();
-        for (&typ, &pos) in &types {
+        for (&typ, pos) in &types {
             if resolved_types.contains_key(typ) {
                 continue
             }
@@ -80,6 +81,7 @@ pub fn get_struct_and_func_names(
                     types: &mut resolved_types,
                     generics: &mut vec![],
                     struct_inner_types: &mut HashSet::new(),
+                    cur_file_path: &mut PathBuf::new(),
                 }, false, true
             );
             if let Some(res) = res {

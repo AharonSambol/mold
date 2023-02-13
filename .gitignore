@@ -1,6 +1,7 @@
 /target
 /out
-/.idea
+.idea
 /.vscode
 src/todo.md
 src/pl
+venv

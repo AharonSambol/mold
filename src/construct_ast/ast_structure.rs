@@ -35,8 +35,10 @@ impl Ast {
 
 #[derive(Clone, Debug)]
 pub enum AstNode {
+    Arg { name: String, is_arg: bool, is_kwarg: bool },
     Args, // children = args
     ArgsDef,
+    As,
     Assignment, // children[0] = var, children[1] = val
     OpAssignment(OperatorType), // children[0] = var, children[1] = val
     Body,
@@ -51,12 +53,14 @@ pub enum AstNode {
     ForIter, // children[0] = iter
     ForStatement, // children[0] = colon_parentheses(ForVars, ForIter), children[1] = body
     ForVars, // children = vars
+    From, // children all the words (e.g. A.B => [Identifier(A), Identifier(B)])
     Function(String), // children[0] = args, children[1] = returnType, children[2] = body
     FunctionCall(bool), // bool = is_static, children[0] = func, children[1] = Args,
     GenericsDeclaration,
     Identifier(String),
-    Arg{ name: String, is_arg: bool, is_kwarg: bool },
     IfStatement,
+    Ignore,
+    Import,
     Index, // child[0] = item, child[1] = index
     ListComprehension, // children[0] = statement, children[1] = loops, children[2] = if (optional)
     ListLiteral, // children = elements
@@ -157,11 +161,15 @@ impl AstNode {
             | AstNode::DictLiteral
             | AstNode::Index => true,
             AstNode::FirstAssignment
+            | AstNode::Import
+            | AstNode::From
+            | AstNode::As
             | AstNode::Assignment
             | AstNode::OpAssignment(_)
             | AstNode::NamedArg(_)
             | AstNode::Arg { .. }
             | AstNode::Pass
+            | AstNode::Ignore
             | AstNode::Continue
             | AstNode::Break
             | AstNode::Body
@@ -192,6 +200,7 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            AstNode::Ignore => write!(f, "[IGNORE]"),
             AstNode::Ternary => write!(f, "[TERNARY]"),
             AstNode::Cast => write!(f, "[CAST]"),
             AstNode::DictComprehension => write!(f, "{{DICT-COMPREHENSION}}"),
@@ -246,6 +255,9 @@ impl Display for AstNode {
             AstNode::Enum(name) => write!(f, "ENUM({name})"),
             AstNode::Trait { name, strict } => write!(f, "TRAIT({name}, strict: {strict})"),
             AstNode::Bool(b) => write!(f, "{b}"),
+            AstNode::As => write!(f, "[AS]"),
+            AstNode::From => write!(f, "[FROM]"),
+            AstNode::Import => write!(f, "[IMPORT]"),
         }
     }
 }

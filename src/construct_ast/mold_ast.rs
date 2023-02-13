@@ -1,17 +1,24 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
+use std::fs;
+use std::path::{Path, PathBuf};
+use lazy_static::lazy_static;
 use pretty_print_tree::Color;
-use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
-use crate::{EMPTY_STR, IS_COMPILED, unwrap_enum};
+use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
+use crate::{EMPTY_STR, IS_COMPILED, parse_file, PARSED_FILES, run, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::{add_to_stack, get_from_stack};
+use crate::construct_ast::ast_structure::AstNode::As;
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{print_type_b, Type, TypeKind, unwrap, unwrap_u};
+use crate::types::{print_type_b, Type, TypeKind, UNKNOWN_TYPE, unwrap, unwrap_u};
 use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
 use crate::construct_ast::get_typ::{get_arg_typ, get_params};
 use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait, make_enum};
 use crate::construct_ast::tree_utils::{add_to_tree, extend_tree, get_last, insert_as_parent_of_prev, print_tree};
 
-
+lazy_static! {
+    static ref PY: String = String::from("py");
+}
 type TraitFuncs = HashMap<String, (usize, FuncType)>;
 
 pub type VarTypes = Vec<HashMap<String, usize>>;
@@ -76,7 +83,19 @@ pub struct Info<'a> {
     pub one_of_enums: &'a mut HashMap<String, String>,
     pub types: &'a mut TypeTypes,
     pub generics: &'a mut GenericTypes,
-    pub struct_inner_types: &'a mut HashSet<String>
+    pub struct_inner_types: &'a mut HashSet<String>,
+    pub cur_file_path: &'a mut PathBuf,
+}
+
+#[derive(Debug)]
+pub struct FileInfo {
+    pub funcs: FuncTypes,
+    pub types: TypeTypes,
+
+    pub structs: HashMap<String, (StructType, Vec<Ast>)>, //3 not very efficient...
+    pub traits: HashMap<String, (TraitType, Vec<Ast>)>,
+    pub enums: HashMap<String, (EnumType, Vec<Ast>)>,
+    // pub one_of_enums: &'a mut HashMap<String, String>,
 }
 
 
@@ -127,7 +146,9 @@ fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
     for strct in structs.values() {
         let strct_def = &ast[strct.pos];
         let strct_children = unwrap_u(&strct_def.children);
-
+        if strct_children.is_empty() {
+            continue // TODO !!!!!!!!!!!!!!!!!!!!!!! duck typing across files !!!!!!!!!!!!!!!!!!!!!!
+        }
         let strct_module_pos = strct_children[2];
         let strct_traits_pos = strct_children[3];
         let funcs = get_trt_strct_functions(ast, &ast[strct_module_pos]);
@@ -467,6 +488,89 @@ pub fn make_ast_statement(
             SolidToken::Enum => {
                 pos = make_enum(tokens, pos + 1, ast, parent, indent, info);
             }
+            SolidToken::From => {
+                let import_pos = add_to_tree(parent, ast, Ast::new(AstNode::Import));
+                let from_pos = add_to_tree(import_pos, ast, Ast::new(AstNode::From));
+                let mut module = vec![];
+                while module.is_empty() || matches!(tokens[pos], SolidToken::Period) {
+                    pos += 1;
+                    let word = unwrap_enum!(
+                        &tokens[pos], SolidToken::Word(word), word,
+                        "invalid import module, expected `word`"
+                    );
+                    module.push(word);
+                    add_to_tree(from_pos, ast, Ast::new(AstNode::Identifier(word.clone())));
+                    pos += 1;
+                }
+                let last = if unsafe { IS_COMPILED } {
+                    format!("{}.rs", module.pop().unwrap())
+                } else {
+                    format!("{}.py", module.pop().unwrap())
+                };
+                module.push(&last);
+                let module_name = join(module.iter(), ".");
+                let module = find_module(
+                    &module, info.cur_file_path.parent().unwrap()
+                ).unwrap_or_else(|| panic!("couldn't find module `{module_name}`"));
+                let file_info = if let Some(info) =  unsafe {
+                    PARSED_FILES.get(&module_name)
+                } {
+                    info
+                } else {
+                    let module_path = module.to_str().unwrap().to_string();
+                    parse_file(&module_path);
+                    unsafe { PARSED_FILES.get(&module_path).unwrap() }
+                };
+
+                unwrap_enum!(tokens[pos], SolidToken::Import, false, "expected `import`");
+
+                pos += 1;
+                loop {
+                    let word = unwrap_enum!(
+                        &tokens[pos], SolidToken::Word(word), word,
+                        "invalid import name, expected `word`"
+                    );
+                    add_to_tree(import_pos, ast, Ast::new(AstNode::Identifier(word.clone())));
+                    pos += 1;
+                    if let Some(val) = file_info.funcs.get(word) {
+                        info.funcs.insert(word.clone(), val.clone());
+                        // dbg!(val);
+                    } else if let Some(val) = file_info.structs.get(word) {
+                        let ignore = add_to_tree(0, ast, Ast::new(AstNode::Ignore));
+                        let index = ast.len();
+                        extend_tree(ast, ignore, val.clone().1);
+                        // print_tree(&val.clone().1, 0);
+                        info.structs.insert(word.clone(), StructType {
+                            generics: val.0.generics.clone(),
+                            pos: index,
+                        });
+                    } else if let Some(val) = file_info.traits.get(word) {
+                        let index = ast.len();
+                        extend_tree(ast, 0, val.clone().1);
+                        info.traits.insert(word.clone(), TraitType {
+                            generics: val.0.generics.clone(),
+                            pos: index,
+                        });
+                    } else if let Some(val) = file_info.enums.get(word) {
+                        let index = ast.len();
+                        extend_tree(ast, 0, val.clone().1);
+                        info.enums.insert(word.clone(), EnumType {
+                            generics: val.0.generics.clone(),
+                            pos: index,
+                        });
+                    } else if let Some(val) = file_info.types.get(word) {
+                        info.types.insert(word.clone(), val.clone());
+                    }
+                    // todo import that word
+                    match &tokens[pos] {
+                        SolidToken::Comma => pos += 1,
+                        SolidToken::As => todo!(),
+                        SolidToken::NewLine => break,
+                        _ => panic!("expected comma, found {:?}", tokens[pos])
+                    }
+                }
+            }
+            SolidToken::Import => todo!(),
             _ => panic!("unexpected token `{:?}`", token)
         }
         pos += 1;
@@ -1064,4 +1168,23 @@ fn get_for_loop_vars(
             _ => panic!("expected `in` or `,`")
         }
     }
+}
+
+
+fn find_module(module: &[&String], parent: &Path) -> Option<PathBuf> {
+    // println!("module: {module:?}");
+    // println!("parent: {parent:?}");
+
+    for path in fs::read_dir(parent).unwrap() {
+        let path = path.unwrap().path();
+        // println!("filename: {:?}", path.file_name());
+        if matches!(path.file_name(), Some(st) if st == module[0].as_str()){
+            // println!("ln: {}", module.len());
+            if module.len() == 1 {
+                return Some(path);
+            }
+            return find_module(&module[1..], path.as_path());
+        }
+    }
+    None
 }

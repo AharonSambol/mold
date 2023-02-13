@@ -130,6 +130,8 @@ pub fn add_types(
                 } else { //1 first assignment
                     add_to_stack(vars, name.clone(), children[0]);
                     ast[pos].value = AstNode::FirstAssignment;
+                    println!("expected:");
+                    print_tree(ast, pos);
                     ast[children[0]].typ = Some(check_for_boxes(
                         ast[children[1]].typ.clone().unwrap(), ast, children[1],
                         info, vars
@@ -380,7 +382,8 @@ pub fn add_types(
         }
         AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
         | AstNode::Trait { .. } | AstNode::Traits | AstNode::Type(_) | AstNode::Types
-        | AstNode::Arg { .. } | AstNode::Cast => {}
+        | AstNode::Arg { .. } | AstNode::Cast | AstNode::As | AstNode::From | AstNode::Import
+        | AstNode::Ignore => {}
     }
 }
 
@@ -644,7 +647,7 @@ fn add_type_func_call(
         &ast[children[0]].value, AstNode::Identifier(x), x.clone(),
         "function without identifier?"
     );
-    let input = if let Some(fnc) = info.funcs.get(&name) {
+    let expected_input = if let Some(fnc) = info.funcs.get(&name) {
         &fnc.input
     } else { panic!("unrecognized function `{name}`") };
 
@@ -666,7 +669,7 @@ fn add_type_func_call(
         }
         args
     }
-    let args = format_args(ast, children, input, &name);
+    let args = format_args(ast, children, expected_input, &name);
 
     #[inline] fn get_generics(input: &Option<Vec<Param>>, args: &[usize], ast: &mut [Ast]) -> HashMap<String, Type> {
         let mut generic_map = HashMap::new();
@@ -677,7 +680,7 @@ fn add_type_func_call(
         }
         generic_map
     }
-    let generic_map = get_generics(input, &args, ast);
+    let generic_map = get_generics(expected_input, &args, ast);
     #[inline] fn check_that_is_castable(
         expected_inputs: &Vec<Param>, args: &[usize], info: &Info, ast: &[Ast], is_built_in: bool
     ) -> Option<Vec<Type>> {
@@ -692,15 +695,14 @@ fn add_type_func_call(
             }
         ).collect())
     }
-    let expected_inputs = input.as_ref().unwrap();
     let args: Option<Vec<Type>> = {
         if args.is_empty() { None }
         else if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
             check_that_is_castable(
-                expected_inputs, &args, info, ast, true
+                expected_input.as_ref().unwrap(), &args, info, ast, true
             )
         } else {
-            Some(expected_inputs.clone().iter().zip(args.iter()).map(
+            Some(expected_input.as_ref().unwrap().clone().iter().zip(args.iter()).map(
                 |(exp, got)|
                     check_for_boxes(exp.typ.clone(), ast, *got, info, vars)
             ).collect())

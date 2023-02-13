@@ -136,7 +136,7 @@ pub fn print_type_b(typ: &Option<Type>, color: Color){
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            TypeKind::Unknown => write!(f, ""),
+            TypeKind::Unknown => write!(f, "UNKNOWN TYPE"),
             TypeKind::OneOf => {
                 let children = unwrap(&self.children);
                 write!(f, "{}", join(

@@ -550,7 +550,11 @@ pub fn check_for_boxes(
                 panic!("expected: `{expected}` got: `{typ}`");
             }
         }
-        _ => panic!("{:?}", expected),
+        _ => {
+            print_tree(ast, 0);
+
+            panic!("{:?}", expected)
+        },
     }
     expected
 }
