@@ -259,14 +259,14 @@ pub fn add_types(
                         match &typ.kind {
                             TypeKind::Pointer | TypeKind::MutPointer => {
                                 if let Type {
-                                    kind: TypeKind::Generic(GenericType::Of(_)), children
+                                    kind: TypeKind::Generic(GenericType::WithVal(_)), children
                                 } = &unwrap(&typ.children)[0] {
                                     Some(children.as_ref().unwrap()[0].clone())
                                 } else {
                                     Some(typ.children.as_ref().unwrap()[0].clone())
                                 }
                             },
-                            TypeKind::Generic(GenericType::Of(of)) => {
+                            TypeKind::Generic(GenericType::WithVal(of)) => {
                                 let children = unwrap_enum!(
                                     &typ.children, Some(c), c,
                                     "generic type `{of}` cannot be dereferenced"
@@ -297,7 +297,7 @@ pub fn add_types(
                 typ_with_child!{
                     TypeKind::GenericsMap,
                     typ_with_child!{
-                        TypeKind::Generic(GenericType::Of(String::from("T"))),
+                        TypeKind::Generic(GenericType::WithVal(String::from("T"))),
                         if let Some(x) = inner_types.first() {
                             ast[*x].typ.clone().unwrap()
                         } else { UNKNOWN_TYPE }
@@ -316,13 +316,13 @@ pub fn add_types(
                     kind: TypeKind::GenericsMap,
                     children: some_vec![
                         typ_with_child!{
-                            TypeKind::Generic(GenericType::Of(String::from("K"))),
+                            TypeKind::Generic(GenericType::WithVal(String::from("K"))),
                             if let Some(x) = inner_types.first() {
                                 ast[*x].typ.clone().unwrap()
                             } else { UNKNOWN_TYPE }
                         },
                         typ_with_child!{
-                            TypeKind::Generic(GenericType::Of(String::from("V"))),
+                            TypeKind::Generic(GenericType::WithVal(String::from("V"))),
                             if let Some(x) = inner_types.get(1) {
                                 ast[*x].typ.clone().unwrap()
                             } else { UNKNOWN_TYPE }
@@ -558,7 +558,7 @@ fn add_type_struct_innit(ast: &mut Vec<Ast>, pos: usize, vars: &mut VarTypes, in
                             |name| {
                                 if generics_map.contains_key(name) {
                                     Some(typ_with_child! {
-                                        TypeKind::Generic(GenericType::Of(name.clone())),
+                                        TypeKind::Generic(GenericType::WithVal(name.clone())),
                                         generics_map.remove(name).unwrap()
                                     })
                                 } else { None }
@@ -609,13 +609,13 @@ fn get_type_comprehension(
             let stmt_children = ast[stmt].children.as_ref().unwrap();
             ["K", "V"].iter().enumerate().map(|(i, name)|
                 typ_with_child! {
-                    TypeKind::Generic(GenericType::Of(String::from(*name))),
+                    TypeKind::Generic(GenericType::WithVal(String::from(*name))),
                     ast[stmt_children[i]].typ.clone().unwrap()
                 }
             ).collect()
         } else {
             vec![typ_with_child! {
-                TypeKind::Generic(GenericType::Of(String::from("T"))),
+                TypeKind::Generic(GenericType::WithVal(String::from("T"))),
                 ast[stmt].typ.clone().unwrap()
             }]
         }
@@ -645,6 +645,7 @@ fn add_type_func_call(
         &ast[children[0]].value, AstNode::Identifier(x), x.clone(),
         "function without identifier?"
     );
+    println!("FUNCTION: {name}");
     let expected_input = if let Some(fnc) = info.funcs.get(&name) {
         &fnc.input
     } else { panic!("unrecognized function `{name}`") };
@@ -668,17 +669,30 @@ fn add_type_func_call(
         args
     }
     let args = format_args(ast, children, expected_input, &name);
-
-    #[inline] fn get_generics(input: &Option<Vec<Param>>, args: &[usize], ast: &mut [Ast]) -> HashMap<String, Type> {
+    println!("ARGS:");
+    for arg in &args {
+        print_tree(ast, *arg);
+    }
+    println!("</END_ARGS>");
+    #[inline] fn get_generics(expected_input: &Option<Vec<Param>>, args: &[usize], ast: &mut [Ast]) -> HashMap<String, Type> {
         let mut generic_map = HashMap::new();
-        if let Some(input) = input {
-            for (exp, got) in input.iter().zip(args.iter()) {
+        if let Some(expected_input) = expected_input {
+            for (exp, got) in expected_input.iter().zip(args.iter()) {
+                print_type_b(&Some(exp.typ.clone()), Color::Black);
+                print_type_b(&ast[*got].typ, Color::Black);
+
                 map_generic_types(&exp.typ, ast[*got].typ.as_ref().unwrap(), &mut generic_map);
             }
         }
         generic_map
     }
     let generic_map = get_generics(expected_input, &args, ast);
+    println!("GENERIC MAP:");
+    for (name, typ) in generic_map.iter() {
+        println!("{name}:");
+        print_type(&Some(typ.clone()));
+    }
+    println!("</GENERIC MAP>");
     #[inline] fn check_that_is_castable(
         expected_inputs: &Vec<Param>, args: &[usize], info: &Info, ast: &[Ast], is_built_in: bool
     ) -> Option<Vec<Type>> {
@@ -711,12 +725,13 @@ fn add_type_func_call(
         &info.funcs[&name].input,
         &args
     );
-    ast[pos].typ = typ.map(|typ| apply_map_to_generic_typ(&typ, &generic_map, true));
+    ast[pos].typ = typ.map(|typ| apply_map_to_generic_typ(&typ, &generic_map));
 }
 
 fn is_castable(exp: &Type, got: &Type, ast: &[Ast], info: &Info, is_built_in: bool) -> bool {
     match &exp.kind {
-        TypeKind::Generic(GenericType::Of(_)) => true,
+        // TypeKind::Generic(GenericType::Of(_)) => true,
+        TypeKind::Generic(_) => panic!("huh? (not sure why I wrote this...)"),
         TypeKind::OneOf => {
             exp.children.as_ref().unwrap().iter().any(|opt|
                 is_castable(opt, got, ast, info, is_built_in)
@@ -750,7 +765,7 @@ fn add_types_to_for_vars_and_iters(
     }
     let for_var_pos = unwrap_u(&for_vars.children)[0];
     let mut typ = get_into_iter_return_typ(ast, info, iter);
-    if let Some(Type { kind: TypeKind::Generic(GenericType::Of(_)), children }) = &typ {
+    if let Some(Type { kind: TypeKind::Generic(GenericType::WithVal(_)), children }) = &typ {
         typ = Some(children.as_ref().unwrap()[0].clone());
     }
     ast[for_var_pos].typ = typ;
@@ -805,20 +820,32 @@ fn put_args_in_vec(
     let args_kwargs_pos = expected_args.iter().enumerate()
         .find(|(_, par)| par.is_args || par.is_kwargs);
     if let Some((pos_in_args, _)) = args_kwargs_pos {
+        let vec_children: Vec<_> = unwrap_u(&ast[children[1]].children)
+            .iter()
+            .skip(pos_in_args)
+            .take_while(|x| !matches!(ast[**x].value, AstNode::NamedArg(_))) //1 while isn't named
+            .cloned().collect();
+        let inner_typ = ast[vec_children[0]].typ.clone().unwrap();
         let vec_pos = add_to_tree(
             children[1],
             ast,
             Ast {
                 value: AstNode::ListLiteral,
-                children: Some(
-                    unwrap_u(&ast[children[1]].children)
-                        .iter()
-                        .skip(pos_in_args)
-                        .take_while(|x| !matches!(ast[**x].value, AstNode::NamedArg(_))) //1 while isn't named
-                        .cloned().collect()
-                ),
+                children: Some(vec_children),
                 parent: None,
-                typ: Some(expected_args[pos_in_args].typ.clone()),
+                typ: Some(
+                    typ_with_child! {
+                        TypeKind::Struct(TypName::Static("Vec")),
+                        typ_with_child!{
+                            TypeKind::GenericsMap,
+                            typ_with_child!{
+                                TypeKind::Generic(GenericType::WithVal(String::from("T"))),
+                                inner_typ
+                            }
+                        }
+                    }
+                ),
+                // typ: Some(expected_args[pos_in_args].typ.clone()),
                 is_mut: false,
             }
         );
@@ -860,7 +887,7 @@ pub fn get_enum_property_typ(
             for (generic, arg) in zip {
                 let typ = ast[arg].typ.as_ref().unwrap();
                 map_generic_types(&Type {
-                    kind: TypeKind::Generic(GenericType::Of(generic.clone())),
+                    kind: TypeKind::Generic(GenericType::NoVal(generic.clone())),
                     children: None
                 }, typ, &mut generics_map);
             }
@@ -873,7 +900,7 @@ pub fn get_enum_property_typ(
                 children: Some(
                     generics_map.iter().map(|(name, t)|
                         typ_with_child! {
-                            TypeKind::Generic(GenericType::Of(name.clone())),
+                            TypeKind::Generic(GenericType::WithVal(name.clone())),
                             t.clone()
                         }
                     ).collect()

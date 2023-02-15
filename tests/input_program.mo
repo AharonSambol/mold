@@ -28,8 +28,10 @@ trait It:
 # type i = int
 # type IList = List[i]
 
-def a(*arg: T) -> T:
+def a<T>(*arg: T) -> T:
     return arg[0]
+# def a<T>(arg: List[T]) -> T:
+#     return arg[0]
 
 def main():
-    print(a(1, 2, 3))
+    x = a(1, 2, 3)

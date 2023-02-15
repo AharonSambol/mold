@@ -976,7 +976,7 @@ fn format_generics(generics_ast: &Ast) -> String {
 }
 
 pub fn implements_trait(mut typ: &Type, expected_trait: &str, ast: &[Ast], info: &Info) -> bool {
-    if let TypeKind::Generic(GenericType::Of(_)) = &typ.kind {
+    if let TypeKind::Generic(GenericType::WithVal(_)) = &typ.kind {
         typ = &unwrap(&typ.children)[0];
     }
     match &typ.kind {

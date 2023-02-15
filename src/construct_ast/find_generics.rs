@@ -8,7 +8,7 @@ pub fn is_generic(typ: &Type, generics_hs: &HashSet<String>) -> Type {
     if let Type { kind: TypeKind::Struct(TypName::Str(name)), children: None } = &typ {
         if generics_hs.contains(name) {
             return Type {
-                kind: TypeKind::Generic(GenericType::Of(name.clone())),
+                kind: TypeKind::Generic(GenericType::NoVal(name.clone())),
                 children: None,
             }
         }

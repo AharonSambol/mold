@@ -23,7 +23,9 @@ pub const CHAR_TYPE: TypeKind = TypeKind::Struct(TypName::Static("char"));
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GenericType {
     Declaration(String),
-    Of(String),
+    // Of(String),
+    NoVal(String),
+    WithVal(String)
 }
 
 #[derive(Debug, Clone)]
@@ -149,14 +151,11 @@ impl Display for Type {
                 write!(f, "({})", join(unwrap(&self.children).iter(), ","))
             },
             TypeKind::Generic(c) => {
-                if let GenericType::Of(name) = c {
-                    if let Some(v) = &self.children {
-                        write!(f, "{}", v[0])
-                    } else {
-                        write!(f, "{name}")
-                    }
-                } else {
-                    write!(f, "GENERIC({c:?})")
+                match c {
+                    GenericType::WithVal(_) =>
+                        write!(f, "{}", self.children.as_ref().unwrap()[0]),
+                    GenericType::NoVal(name) => write!(f, "{name}"),
+                    GenericType::Declaration(_) => write!(f, "GENERIC({c:?})")
                 }
             },
             TypeKind::GenericsMap => write!(

@@ -156,9 +156,9 @@ fn make_func_signature(
                     children: if struct_generics_names.is_empty() { None } else {
                         Some(struct_generics_names.iter().map(
                             |name| typ_with_child! {
-                                TypeKind::Generic(GenericType::Of(name.clone())),
+                                TypeKind::Generic(GenericType::WithVal(name.clone())),
                                 Type {
-                                    kind: TypeKind::Generic(GenericType::Of(name.clone())),
+                                    kind: TypeKind::Generic(GenericType::NoVal(name.clone())),
                                     children: None
                                 }
                             }

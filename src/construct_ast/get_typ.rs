@@ -33,7 +33,7 @@ pub fn get_params(
                             typ_with_child!{
                                 TypeKind::GenericsMap,
                                 typ_with_child!{
-                                    TypeKind::Generic(GenericType::Of(String::from("T"))),
+                                    TypeKind::Generic(GenericType::WithVal(String::from("T"))),
                                     typ
                                 }
                             }
@@ -182,7 +182,7 @@ pub fn try_get_arg_typ(
                     Some(info.types[&wrd].clone())
                 } else if info.generics.iter().any(|hs| hs.contains(&wrd)) {
                     Some(Type {
-                        kind: TypeKind::Generic(GenericType::Of(wrd.clone())),
+                        kind: TypeKind::Generic(GenericType::NoVal(wrd.clone())),
                         children: None
                     })
                 } else if info.struct_inner_types.contains(&wrd) {
@@ -253,7 +253,7 @@ fn get_inside_bracket_types(
             panic!("too many generics passed, expected only `{}`", generics.len())
         }
         let res = typ_with_child! {
-            TypeKind::Generic(GenericType::Of(generics[*i].clone())),
+            TypeKind::Generic(GenericType::WithVal(generics[*i].clone())),
             t
         };
         *i += 1;

@@ -44,9 +44,9 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leave
         TypeKind::Struct(TypName::Static("Box")),
         typ_with_child! {
             TypeKind::GenericsMap,
-            Type {
-                kind: TypeKind::Generic(GenericType::Of(String::from("T"))),
-                children: some_vec![inner_val.typ.clone().unwrap()]
+            typ_with_child! {
+                TypeKind::Generic(GenericType::WithVal(String::from("T"))),
+                inner_val.typ.clone().unwrap()
             }
         }
     });
@@ -71,7 +71,7 @@ pub fn make_enums(typ: &Type, enums: &mut HashMap<String, String>) {
                 if let TypeKind::InnerType(_) = &generic.kind {
                     generic = &generic.children.as_ref().unwrap()[0];
                 }
-                if let TypeKind::Generic(GenericType::Of(name)) = &generic.kind {
+                if let TypeKind::Generic(GenericType::NoVal(name)) = &generic.kind {
                     if !generics.contains(name) {
                         generics.push(name.clone());
                     }
@@ -213,8 +213,8 @@ pub fn check_for_boxes(
         if !supplied_box(got, vars, ast, info, pos) {
             if let Some(expected_trait) = expected_trait {
                 let mut got_typ = got.typ.as_ref().unwrap();
-                if let TypeKind::Generic(GenericType::Of(_)) = &got_typ.kind {
-                    got_typ = &unwrap(&got_typ.children)[0];
+                if let TypeKind::Generic(GenericType::WithVal(_)) = &got_typ.kind {
+                    got_typ = &got_typ.children.as_ref().unwrap()[0];
                 }
 
                 if let TypeKind::Struct(struct_name) = &got_typ.kind {
@@ -293,7 +293,7 @@ pub fn check_for_boxes(
                     } = &expected_children[0] {
                         if c.len() != 1 { panic!() }
                         if let Type{
-                            kind: TypeKind::Generic(GenericType::Of(_)),
+                            kind: TypeKind::Generic(GenericType::WithVal(_)),
                             children: Some(c)
                         } = &c[0] {
                             if c.len() != 1 { panic!() }
@@ -320,7 +320,7 @@ pub fn check_for_boxes(
                         if c.len() != 2 { panic!() }
                         let mut iter = c.iter().map(|t| {
                             if let Type {
-                                kind: TypeKind::Generic(GenericType::Of(_)),
+                                kind: TypeKind::Generic(GenericType::WithVal(_)),
                                 children: Some(c)
                             } = &t {
                                 if c.len() != 1 { panic!() }
@@ -361,7 +361,7 @@ pub fn check_for_boxes(
                             if let Type { kind: TypeKind::GenericsMap, children: Some(children) } = &generics[0] {
                                 for child in children {
                                     if let Type {
-                                        kind: TypeKind::Generic(GenericType::Of(name)),
+                                        kind: TypeKind::Generic(GenericType::WithVal(name)),
                                         children: Some(c)
                                     } = child {
                                         generics_map.insert(name.clone(), c[0].clone());
@@ -374,7 +374,7 @@ pub fn check_for_boxes(
                         let args_def = &ast[unwrap_u(&ast[struct_pos].children)[1]];
 
                         let expected_args: Vec<_> = unwrap_u(&args_def.children).iter().map(|x|
-                            if let Some(Type { kind: TypeKind::Generic(GenericType::Of(name)), .. }) = &ast[*x].typ {
+                            if let Some(Type { kind: TypeKind::Generic(GenericType::NoVal(name)), .. }) = &ast[*x].typ {
                                 generics_map[name].clone()
                             } else {
                                 ast[*x].typ.clone().unwrap()
@@ -467,7 +467,7 @@ pub fn check_for_boxes(
                         let new_expected = typ_with_child! {
                             ast[got_children[0]].typ.as_ref().unwrap().kind.clone(), //1 either pointer or mut pointer
                             typ_with_child! {
-                                TypeKind::Generic(GenericType::Of(String::from("T"))),
+                                TypeKind::Generic(GenericType::WithVal(String::from("T"))),
                                 expected.clone()
                             }
                         };
