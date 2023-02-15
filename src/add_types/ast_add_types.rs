@@ -645,7 +645,6 @@ fn add_type_func_call(
         &ast[children[0]].value, AstNode::Identifier(x), x.clone(),
         "function without identifier?"
     );
-    println!("FUNCTION: {name}");
     let expected_input = if let Some(fnc) = info.funcs.get(&name) {
         &fnc.input
     } else { panic!("unrecognized function `{name}`") };
@@ -669,34 +668,18 @@ fn add_type_func_call(
         args
     }
     let args = format_args(ast, children, expected_input, &name);
-    println!("ARGS:");
-    for arg in &args {
-        print_tree(ast, *arg);
-    }
-    println!("</END_ARGS>");
     #[inline] fn get_generics(expected_input: &Option<Vec<Param>>, args: &[usize], ast: &mut [Ast]) -> HashMap<String, Type> {
         let mut generic_map = HashMap::new();
         if let Some(expected_input) = expected_input {
             for (exp, got) in expected_input.iter().zip(args.iter()) {
-                print_type_b(&Some(exp.typ.clone()), Color::Black);
-                print_type_b(&ast[*got].typ, Color::Black);
-
                 map_generic_types(&exp.typ, ast[*got].typ.as_ref().unwrap(), &mut generic_map);
             }
         }
         generic_map
     }
     let generic_map = get_generics(expected_input, &args, ast);
-    println!("GENERIC MAP:");
-    for (name, typ) in generic_map.iter() {
-        println!("{name}:");
-        print_type(&Some(typ.clone()));
-    }
-    println!("</GENERIC MAP>");
-    #[inline] fn check_that_is_castable(
-        expected_inputs: &Vec<Param>, args: &[usize], info: &Info, ast: &[Ast], is_built_in: bool
-    ) -> Option<Vec<Type>> {
-        Some(expected_inputs.clone().iter().zip(args.iter()).map(
+    #[inline] fn check_that_is_castable(expected_inputs: &[Param], args: &[usize], info: &Info, ast: &[Ast], is_built_in: bool) -> Option<Vec<Type>> {
+        Some(expected_inputs.iter().zip(args.iter()).map(
             |(exp, got)| {
                 if !is_castable(
                     &exp.typ, ast[*got].typ.as_ref().unwrap(), ast, info, is_built_in
@@ -845,7 +828,6 @@ fn put_args_in_vec(
                         }
                     }
                 ),
-                // typ: Some(expected_args[pos_in_args].typ.clone()),
                 is_mut: false,
             }
         );

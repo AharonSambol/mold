@@ -28,10 +28,9 @@ trait It:
 # type i = int
 # type IList = List[i]
 
-def a<T>(*arg: T) -> T:
-    return arg[0]
-# def a<T>(arg: List[T]) -> T:
-#     return arg[0]
 
 def main():
-    x = a(1, 2, 3)
+    x = [
+        1, 3
+        4, 5
+    ]

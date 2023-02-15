@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::fmt::Write;
+use std::hint::unreachable_unchecked;
 use crate::IS_COMPILED;
 use crate::mold_tokens::Token::{
     Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char
@@ -301,6 +302,7 @@ pub fn tokenize(input_code: &str) -> Vec<SolidToken> {
 fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
     let mut res = Vec::with_capacity(tokens.len());
     let mut is_empty_line = true;
+    let mut open = 0;
     for (i, token) in tokens.iter().enumerate() {
         if !matches!(token, Tab | NewLine) {
             is_empty_line = false;
@@ -310,9 +312,15 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
             continue
         }
         let st = match token {
-            Brace(is_open) =>        SolidToken::Brace(is_open.clone()),
-            Bracket(is_open) =>      SolidToken::Bracket(is_open.clone()),
-            Parenthesis(is_open) =>  SolidToken::Parenthesis(is_open.clone()),
+            Parenthesis(is_open) | Bracket(is_open) | Brace(is_open) => {
+                open += if let IsOpen::True = is_open { 1 } else { -1 };
+                match token {
+                    Parenthesis(_) => SolidToken::Parenthesis(is_open.clone()),
+                    Bracket(_) => SolidToken::Bracket(is_open.clone()),
+                    Brace(_) => SolidToken::Brace(is_open.clone()),
+                    _ => unsafe { unreachable_unchecked() }
+                }
+            }
             Char(chr) => SolidToken::Char(clean_char(*chr)),
             Word { start, end, .. } => {
                 let st = &input_code[*start..*end];
@@ -382,10 +390,11 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                 String::from(&input_code[*start..*end])
             ),
             Colon => SolidToken::Colon, Comma => SolidToken::Comma, Period => SolidToken::Period,
-            Tab => SolidToken::Tab,
+            Tab => if open == 0 { SolidToken::Tab } else { continue },
             NewLine => {
+                if open != 0 { continue }
                 if is_empty_line {
-                    while let SolidToken::Tab = res.last().unwrap_or(&SolidToken::Colon) {
+                    while let Some(SolidToken::Tab) = res.last() {
                         res.pop();
                     }
                     continue
