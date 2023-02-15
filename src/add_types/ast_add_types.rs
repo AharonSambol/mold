@@ -8,7 +8,7 @@ use regex::Regex;
 use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS};
 use crate::add_types::generics::{apply_generics_from_base, apply_map_to_generic_typ, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::check_for_boxes;
-use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_inner};
+use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_inner, is_float};
 use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of_prev, print_tree};
 use crate::mold_tokens::OperatorType;
 use crate::to_rust::implements_trait;
@@ -163,8 +163,8 @@ pub fn add_types(
             let op = op.clone();
             add_types(ast, children[0], vars, info, parent_struct);
             add_types(ast, children[1], vars, info, parent_struct);
-            let t1 = &ast[children[0]].typ.as_ref().unwrap();
-            let t2 = &ast[children[1]].typ.as_ref().unwrap();
+            let t1 = ast[children[0]].typ.as_ref().unwrap();
+            let t2 = ast[children[1]].typ.as_ref().unwrap();
             if t1 != t2 {
                 panic!(
                     "Can't {}",
@@ -180,7 +180,12 @@ pub fn add_types(
                     }
                 )
             }
-            ast[pos].typ = Some((*t1).clone());
+            if let OperatorType::Div = op {
+                if !is_float(&t1.kind) {
+                    panic!("can't div `{}`s only `f32` or `f64`, did you mean floor div `//`?", t1)
+                }
+            }
+            ast[pos].typ = Some(t1.clone());
         }
         AstNode::FunctionCall(_) => {
             add_type_func_call(ast, pos, vars, info, parent_struct, &children);
@@ -380,7 +385,7 @@ pub fn add_types(
         }
         AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
         | AstNode::Trait { .. } | AstNode::Traits | AstNode::Type(_) | AstNode::Types
-        | AstNode::Arg { .. } | AstNode::Cast | AstNode::As | AstNode::From | AstNode::Import
+        | AstNode::Arg { .. } | AstNode::Cast | AstNode::As(_) | AstNode::From | AstNode::Import
         | AstNode::Ignore => {}
     }
 }
@@ -419,9 +424,8 @@ fn add_type_operator(
                 children: None
             }
         }),
-        _ if matches!(&op, OperatorType::Div)
-            || matches!(&op, OperatorType::OpEq(op) if OperatorType::Div == **op)
-        => Some(typ_with_child! {
+        OperatorType::Div => {
+            Some(typ_with_child! {
             TypeKind::Struct(TypName::Static(
                 if matches!(&t1.kind, TypeKind::Struct(name) if name == "f64") { "f64" }
                 else { "f32" }
@@ -430,10 +434,9 @@ fn add_type_operator(
                 kind: TypeKind::GenericsMap,
                 children: None
             }
-        }),
-        _ if matches!(&op, OperatorType::FloorDiv)
-            || matches!(&op, OperatorType::OpEq(op) if OperatorType::FloorDiv == **op)
-        => Some(typ_with_child! {
+        })
+        },
+        OperatorType::FloorDiv => Some(typ_with_child! {
             TypeKind::Struct(
                 if matches!(
                     &t1.kind,

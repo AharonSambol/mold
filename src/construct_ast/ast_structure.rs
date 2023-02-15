@@ -38,7 +38,7 @@ pub enum AstNode {
     Arg { name: String, is_arg: bool, is_kwarg: bool },
     Args, // children = args
     ArgsDef,
-    As,
+    As(String),
     Assignment, // children[0] = var, children[1] = val
     OpAssignment(OperatorType), // children[0] = var, children[1] = val
     Body,
@@ -87,55 +87,6 @@ pub enum AstNode {
     WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
     NamedArg(String), // children[0] = value
 }
-#[derive(Clone, Debug)]
-struct CleanStr {
-    str: String
-}
-// impl CleanStr {
-//     fn new(s: String) -> CleanStr {
-//         if unsafe { IS_COMPILED } {
-//             CleanStr { str: s }
-//         } else {
-//             CleanStr {
-//                 str: if s == "None" { NONE.clone() } else { s }
-//             }
-//         }
-//     }
-// }
-// impl Deref for CleanStr {
-//     type Target = String;
-//     fn deref(&self) -> &Self::Target {
-//         &self.str
-//     }
-// }
-// use std::str::FromStr;
-// impl FromStr for CleanStr {
-//     type Err = Box<dyn std::error::Error>;
-//     fn from_str(s: &str) -> Result<Self, Self::Err> {
-//         Ok(CleanStr { str: s.to_string() })
-//     }
-// }
-// impl Display for CleanStr {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-//         self.str.fmt(f)
-//     }
-// }
-// impl PartialEq for CleanStr {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.str.eq(&other.str)
-//     }
-// }
-// impl PartialEq<String> for CleanStr {
-//     fn eq(&self, other: &String) -> bool {
-//         self.str.eq(other)
-//     }
-// }
-// impl PartialEq<&str> for CleanStr {
-//     fn eq(&self, other: &&str) -> bool {
-//         self.str.eq(other)
-//     }
-// }
-
 
 impl AstNode {
     pub fn is_expression(&self) -> bool {
@@ -163,7 +114,7 @@ impl AstNode {
             AstNode::FirstAssignment
             | AstNode::Import
             | AstNode::From
-            | AstNode::As
+            | AstNode::As(_)
             | AstNode::Assignment
             | AstNode::OpAssignment(_)
             | AstNode::NamedArg(_)
@@ -255,7 +206,7 @@ impl Display for AstNode {
             AstNode::Enum(name) => write!(f, "ENUM({name})"),
             AstNode::Trait { name, strict } => write!(f, "TRAIT({name}, strict: {strict})"),
             AstNode::Bool(b) => write!(f, "{b}"),
-            AstNode::As => write!(f, "[AS]"),
+            AstNode::As(name) => write!(f, "[AS: {name}]"),
             AstNode::From => write!(f, "[FROM]"),
             AstNode::Import => write!(f, "[IMPORT]"),
         }

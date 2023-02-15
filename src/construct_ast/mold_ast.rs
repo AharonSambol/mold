@@ -8,13 +8,15 @@ use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
 use crate::{EMPTY_STR, IS_COMPILED, parse_file, PARSED_FILES, run, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::{add_to_stack, get_from_stack};
-use crate::construct_ast::ast_structure::AstNode::As;
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
 use crate::types::{print_type_b, Type, TypeKind, UNKNOWN_TYPE, unwrap, unwrap_u};
 use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
 use crate::construct_ast::get_typ::{get_arg_typ, get_params};
 use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait, make_enum};
 use crate::construct_ast::tree_utils::{add_to_tree, extend_tree, get_last, insert_as_parent_of_prev, print_tree};
+
+// todo this shouldn't work: a = [1 2 3 4]
+//  (it works cuz add_expression for a num just adds it to parent and then continues to the next token)
 
 lazy_static! {
     static ref PY: String = String::from("py");
@@ -532,39 +534,56 @@ pub fn make_ast_statement(
                     );
                     add_to_tree(import_pos, ast, Ast::new(AstNode::Identifier(word.clone())));
                     pos += 1;
+                    let name = if let SolidToken::As = tokens[pos] {
+                        Some(unwrap_enum!(&tokens[pos + 1], SolidToken::Word(word), word.clone()))
+                    } else {
+                        None
+                    };
+
                     if let Some(val) = file_info.funcs.get(word) {
-                        info.funcs.insert(word.clone(), val.clone());
-                        // dbg!(val);
+                        info.funcs.insert(name.unwrap_or_else(|| word.clone()), val.clone());
                     } else if let Some(val) = file_info.structs.get(word) {
                         let ignore = add_to_tree(0, ast, Ast::new(AstNode::Ignore));
                         let index = ast.len();
                         extend_tree(ast, ignore, val.clone().1);
-                        // print_tree(&val.clone().1, 0);
-                        info.structs.insert(word.clone(), StructType {
+                        // if let Some(name) = &name {
+                        //     ast[index].value = AstNode::Struct(name);
+                        // }
+                        info.structs.insert(name.unwrap_or_else(|| word.clone()), StructType {
                             generics: val.0.generics.clone(),
                             pos: index,
                         });
                     } else if let Some(val) = file_info.traits.get(word) {
                         let index = ast.len();
                         extend_tree(ast, 0, val.clone().1);
-                        info.traits.insert(word.clone(), TraitType {
+                        info.traits.insert(name.unwrap_or_else(|| word.clone()), TraitType {
                             generics: val.0.generics.clone(),
                             pos: index,
                         });
                     } else if let Some(val) = file_info.enums.get(word) {
                         let index = ast.len();
                         extend_tree(ast, 0, val.clone().1);
-                        info.enums.insert(word.clone(), EnumType {
+                        info.enums.insert(name.unwrap_or_else(|| word.clone()), EnumType {
                             generics: val.0.generics.clone(),
                             pos: index,
                         });
                     } else if let Some(val) = file_info.types.get(word) {
-                        info.types.insert(word.clone(), val.clone());
+                        info.types.insert(name.unwrap_or_else(|| word.clone()), val.clone());
                     }
-                    // todo import that word
                     match &tokens[pos] {
                         SolidToken::Comma => pos += 1,
-                        SolidToken::As => todo!(),
+                        SolidToken::As => {
+                            pos += 1; //1 the new name
+                            insert_as_parent_of_prev(ast, import_pos, AstNode::As(
+                                unwrap_enum!(&tokens[pos], SolidToken::Word(w), w.clone())
+                            ));
+                            pos += 1;
+                            match tokens[pos] {
+                                SolidToken::Comma => pos += 1,
+                                SolidToken::NewLine => break,
+                                _ => panic!("expected comma or end of line but found `{:?}`", tokens[pos])
+                            }
+                        },
                         SolidToken::NewLine => break,
                         _ => panic!("expected comma, found {:?}", tokens[pos])
                     }
@@ -752,7 +771,6 @@ pub fn make_ast_expression(
                 }
                 let index = insert_as_parent_of_prev(ast, parent, AstNode::Ternary);
                 let mut amount_of_open = 0;
-                // let mut new_tokens = vec![]; //todo this can be a slice instead (find end index)
                 for (i, tok) in tokens.iter().enumerate().skip(pos) {
                     match tok {
                         SolidToken::Brace(IsOpen::True) | SolidToken::Bracket(IsOpen::True)
@@ -992,7 +1010,7 @@ fn word_tok(
                 //     turn_len_func_to_method(tokens, &mut pos, ast, parent, vars, info, word);
                 //     continue
                 // }
-                let index = if info.structs.contains_key(word) && word != "str" { // TODO !!!!!!!!!!!!!!1
+                let index = if info.structs.contains_key(word) && word != "str" {
                     let prop_pos = insert_as_parent_of_prev(
                         ast, parent, AstNode::Property
                     );

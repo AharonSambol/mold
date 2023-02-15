@@ -223,7 +223,6 @@ pub fn to_python(
             }
         },
         AstNode::Parentheses => {
-            // todo this sometimes causes unneeded _value_() calls
             format!("({})",
                 to_python(ast, children[0], indentation, add_val_wrapper)
             )
@@ -370,7 +369,6 @@ pub fn to_python(
         },
         AstNode::Pass => String::from("pass"),
         AstNode::FunctionCall(_) => {
-            // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             if let AstNode::Identifier(name) = &ast[children[0]].value {
                 if let Some(res) = built_in_funcs(ast, name, indentation, children, false) {
                     return res;
@@ -430,7 +428,6 @@ pub fn to_python(
             }
         },
         AstNode::Property => {
-            // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             if let Some(res) = built_in_methods(ast, indentation, children, false) {
                 return res;
             }
@@ -493,7 +490,6 @@ pub fn to_python(
             }
         },
         AstNode::ForStatement => {
-            // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             let par = to_python(ast, children[0], indentation, ToWrapVal::Nothing);
             let vars = to_python(ast, unwrap_u(&ast[children[0]].children)[0], indentation, ToWrapVal::Nothing);
             format!("for {par}\n{}({vars},)=map(value_, ({vars},)){}",
@@ -683,7 +679,12 @@ pub fn to_python(
                 )
             }
         }
-        AstNode::As => todo!(),
+        AstNode::As(new_name) => {
+            format!(
+                "{} as {new_name}",
+                to_python(ast, children[0], indentation, add_val_wrapper)
+            )
+        },
         AstNode::GenericsDeclaration | AstNode::Trait { .. } | AstNode::Ignore => EMPTY_STR,
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }

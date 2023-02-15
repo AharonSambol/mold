@@ -221,7 +221,10 @@ pub fn tokenize(input_code: &str) -> Vec<SolidToken> {
             },
             ' ' => {
                 space_prev_token(&mut tokens);
-                if is_tab(&chars, i) {  skip = 3;   Tab   } else { continue }
+                if is_tab(&chars, i) {
+                    skip = 3;
+                    Tab
+                } else { continue }
             },
             '\t' => Tab,   '\n' => NewLine,
             ':' => Colon,   ',' => Comma,   '.' => Period,
@@ -495,7 +498,7 @@ fn make_char(tokens: &mut Vec<Token>, skip: &mut i32, chars: &[char], i: usize) 
 }
 
 fn join_num(tokens: &mut [Token], new_end: usize) -> bool {
-    if let Some(Num { end, .. }) = tokens.last_mut() {
+    if let Some(Num { end, is_spaced: false, .. }) = tokens.last_mut() {
         *end = new_end;
         true
     } else { false }

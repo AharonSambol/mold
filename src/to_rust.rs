@@ -6,7 +6,7 @@ use std::iter::zip;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
 use crate::add_types::ast_add_types::{get_inner_type, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::apply_generics_from_base;
-use crate::add_types::utils::get_pointer_inner;
+use crate::add_types::utils::{get_pointer_inner, is_float};
 use crate::construct_ast::mold_ast::Info;
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap};
@@ -25,7 +25,7 @@ pub fn to_rust(
                 children.iter().map(|child|
                     format!(
                         "\n{indent}{}",
-                        to_rust(ast, *child, indentation,info)
+                        to_rust(ast, *child, indentation, info)
                     )
                 ).collect::<Vec<_>>().concat()
             )
@@ -35,7 +35,7 @@ pub fn to_rust(
             format!(
                 " {{{}\n{}\n}}",
                 children.iter().map(|child|
-                    format!("\n{indent}{};", to_rust(ast, *child, indentation,info))
+                    format!("\n{indent}{};", to_rust(ast, *child, indentation, info))
                 ).collect::<Vec<_>>().concat(),
                 "\t".repeat(indentation - 1)
             )
@@ -44,13 +44,13 @@ pub fn to_rust(
             if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
                 return EMPTY_STR
             }
-            function_to_rust_str(name, ast, indentation,children, info)
+            function_to_rust_str(name, ast, indentation, children, info)
         },
         AstNode::IfStatement => {
             let mut res = format!(
                 "if {}{}",
-                to_rust(ast, children[0], indentation,info),
-                to_rust(ast, children[1], indentation + 1,info)
+                to_rust(ast, children[0], indentation, info),
+                to_rust(ast, children[1], indentation + 1, info)
             );
             for child in children.iter().skip(2) {
                 match &ast[*child].value {
@@ -59,15 +59,15 @@ pub fn to_rust(
                         write!(
                             res, "\n{}else if {}{}",
                             "\t".repeat(indentation),
-                            to_rust(ast, c_children[0], indentation,info),
-                            to_rust(ast, c_children[1], indentation + 1,info),
+                            to_rust(ast, c_children[0], indentation, info),
+                            to_rust(ast, c_children[1], indentation + 1, info),
                         ).unwrap();
                     },
                     AstNode::Body => {
                         write!(
                             res, "\n{}else {}",
                             "\t".repeat(indentation),
-                            to_rust(ast, *child, indentation + 1,info)
+                            to_rust(ast, *child, indentation + 1, info)
                         ).unwrap();
                     },
                     _ => panic!()
@@ -78,33 +78,42 @@ pub fn to_rust(
         AstNode::WhileStatement => {
             format!(
                 "while {}{}",
-                to_rust(ast, children[0], indentation,info),
-                to_rust(ast, children[1], indentation + 1,info)
+                to_rust(ast, children[0], indentation, info),
+                to_rust(ast, children[1], indentation + 1, info)
             )
         },
         AstNode::Assignment => {
             format!(
                 "{} = {}",
-                to_rust(ast, children[0], indentation,info),
-                to_rust(ast, children[1], indentation,info)
+                to_rust(ast, children[0], indentation, info),
+                to_rust(ast, children[1], indentation, info)
             )
         },
         AstNode::FirstAssignment => {
             format!(
                 "let {}{}{} = {}",
                 if ast[pos].is_mut { "mut " } else { "" },
-                to_rust(ast, children[0], indentation,info),
+                to_rust(ast, children[0], indentation, info),
                 if let Some(c) = &ast[children[0]].typ {
                     format!(": {c}")
                 } else { EMPTY_STR },
-                to_rust(ast, children[1], indentation,info)
+                to_rust(ast, children[1], indentation, info)
             )
         }
         AstNode::OpAssignment(op) => {
+            if let OperatorType::FloorDiv = op {
+                if is_float(&ast[children[0]].typ.as_ref().unwrap().kind) {
+                    let first = to_rust(ast, children[0], indentation, info);
+                    return format!(
+                        "{first} = ({first} / {}).floor()",
+                        to_rust(ast, children[1], indentation, info)
+                    )
+                }
+            }
             format!(
                 "{} {op}= {}",
-                to_rust(ast, children[0], indentation,info),
-                to_rust(ast, children[1], indentation,info)
+                to_rust(ast, children[0], indentation, info),
+                to_rust(ast, children[1], indentation, info)
             )
         }
         AstNode::Identifier(name) => { name.clone() },
@@ -112,69 +121,57 @@ pub fn to_rust(
             match op {
                 OperatorType::FloorDiv => {
                     #[inline] fn div(
-                        ast: &[Ast], children: &Vec<usize>, indentation: usize,
+                        ast: &[Ast], children: &[usize], indentation: usize,
                         info: &Info
                     ) -> String {
                         format!(
                             "{} / {}",
-                            to_rust(ast, children[0], indentation,info),
-                            to_rust(ast, children[1], indentation,info)
+                            to_rust(ast, children[0], indentation, info),
+                            to_rust(ast, children[1], indentation, info)
                         )
                     }
-                    if matches!(
-                        &ast[children[0]].typ.as_ref().unwrap().kind,
-                        TypeKind::Struct(name) if name == "f32" || name == "f64"
-                    ) {
-                        format!("({}).floor()", div(ast, children, indentation,info))
+                    if is_float(&ast[children[0]].typ.as_ref().unwrap().kind) {
+                        format!("({}).floor()", div(ast, children, indentation, info))
                     } else {
-                        div(ast, children, indentation,info)
+                        div(ast, children, indentation, info)
                     }
                 }
-                // OperatorType::FloorDivEq => {
-                //     todo!()
-                // }
                 OperatorType::Div => {
                     //1 casts both nums to f32 unless their f32/64 and joins with `/`
                     join(
-                        children.iter().enumerate().map(|(i, child)|
-                            if matches!(
-                                &ast[*child].typ.as_ref().unwrap().kind,
-                                TypeKind::Struct(name) if name == "f32" || name == "f64"
-                            ) {
-                                to_rust(ast, *child, indentation,info)
+                        children.iter().map(|child|
+                            if is_float(&ast[*child].typ.as_ref().unwrap().kind) {
+                                to_rust(ast, *child, indentation, info)
                             } else {
                                 format!(
                                     "({} as f32)",
-                                    to_rust(ast, *child, indentation,info)
+                                    to_rust(ast, *child, indentation, info)
                                 )
                             }
                         ),
                         " / "
                     )
                 }
-                // OperatorType::DivEq => {
-                //     todo!()
-                // }
                 OperatorType::Pow => {
                     format!(
                         "{}.pow({})",
-                        to_rust(ast, children[0], indentation,info),
-                        to_rust(ast, children[1], indentation,info)
+                        to_rust(ast, children[0], indentation, info),
+                        to_rust(ast, children[1], indentation, info)
                     )
                 }
                 OperatorType::Is =>
-                    is_to_rust(ast, indentation,info, children),
+                    is_to_rust(ast, indentation, info, children),
                 OperatorType::IsNot =>
-                    format!("!{}", is_to_rust(ast, indentation,info, children)),
+                    format!("!{}", is_to_rust(ast, indentation, info, children)),
                 OperatorType::In =>
-                    in_to_rust(ast, indentation,info, children),
+                    in_to_rust(ast, indentation, info, children),
                 OperatorType::NotIn =>
-                    format!("!{}", in_to_rust(ast, indentation,info, children)),
+                    format!("!{}", in_to_rust(ast, indentation, info, children)),
                 _ if is_string_addition(ast, pos, op) => {
                     let res = format!(
                         "{} {op} {}",
-                        to_rust(ast, children[0], indentation,info),
-                        to_rust(ast, children[1], indentation,info),
+                        to_rust(ast, children[0], indentation, info),
+                        to_rust(ast, children[1], indentation, info),
                     );
                     if let Some(Type { kind: TypeKind::Struct(t_name), .. }) = &ast[children[1]].typ {
                         if *t_name == TypName::Static("String") {
@@ -186,19 +183,19 @@ pub fn to_rust(
                 _ => {
                     format!(
                         "{} {op} {}",
-                        to_rust(ast, children[0], indentation,info),
-                        to_rust(ast, children[1], indentation,info),
+                        to_rust(ast, children[0], indentation, info),
+                        to_rust(ast, children[1], indentation, info),
                     )
                 }
             }
         },
         AstNode::UnaryOp(op) =>
-            format!("{op}{}", to_rust(ast, children[0], indentation,info)),
+            format!("{op}{}", to_rust(ast, children[0], indentation, info)),
         AstNode::Parentheses =>
-            format!("({})", to_rust(ast, children[0], indentation,info)),
+            format!("({})", to_rust(ast, children[0], indentation, info)),
         AstNode::ColonParentheses => {
             children.iter().map(|child|
-                to_rust(ast, *child, indentation,info)
+                to_rust(ast, *child, indentation, info)
             ).collect::<Vec<_>>().concat()
         },
         AstNode::Index => {
@@ -210,13 +207,13 @@ pub fn to_rust(
                     _ if ast[pos].is_mut => "*_index_mut(&mut ",
                     _ => "*_index(&"
                 },
-                to_rust(ast, children[0], indentation,info),
-                to_rust(ast, children[1], indentation,info)
+                to_rust(ast, children[0], indentation, info),
+                to_rust(ast, children[1], indentation, info)
             )
             /*
-            to_rust(ast, children[0], indentation,info);
+            to_rust(ast, children[0], indentation, info);
             write!(res, "[(").unwrap();
-            to_rust(ast, children[1], indentation,info);
+            to_rust(ast, children[1], indentation, info);
             write!(res, ") as usize]").unwrap();
             */
         },
@@ -228,27 +225,27 @@ pub fn to_rust(
         AstNode::ListLiteral => {
             format!(
                 "vec![{}]",
-                join(children.iter().enumerate().map(|(i, child)|
-                    to_rust(ast, *child, indentation + 1,info)
+                join(children.iter().map(|child|
+                    to_rust(ast, *child, indentation + 1, info)
                 ), ", ")
             )
         },
         AstNode::SetLiteral => {
             format!(
                 "HashSet::from([{}])",
-                join(children.iter().enumerate().map(|(i, child)|
-                    to_rust(ast, *child, indentation + 1,info)
+                join(children.iter().map(|child|
+                    to_rust(ast, *child, indentation + 1, info)
                 ), ", ")
             )
         },
         AstNode::DictLiteral => {
             format!(
                 "HashMap::from([{}])",
-                join(children.windows(2).step_by(2).enumerate().map(
-                    |(i, child)| format!(
+                join(children.windows(2).step_by(2).map(
+                    |children| format!(
                         "({}, {})",
-                        to_rust(ast, children[0], indentation + 1,info),
-                        to_rust(ast, children[1], indentation + 1,info)
+                        to_rust(ast, children[0], indentation + 1, info),
+                        to_rust(ast, children[1], indentation + 1, info)
                     )
                 ), ", ")
             )
@@ -256,15 +253,15 @@ pub fn to_rust(
         AstNode::Pass => String::from("()"),
         AstNode::FunctionCall(_) => {
             if let AstNode::Identifier(name) = &ast[children[0]].value {
-                if let Some(res) = built_in_funcs(ast, name, indentation,children, info) {
+                if let Some(res) = built_in_funcs(ast, name, indentation, children, info) {
                     return res
                 }
             }
             format!(
                 "{}({})",
-                to_rust(ast, children[0], indentation,info),
+                to_rust(ast, children[0], indentation, info),
                 if children.len() > 1 {
-                    to_rust(ast, children[1], indentation,info)
+                    to_rust(ast, children[1], indentation, info)
                 } else { EMPTY_STR }
             )
         },
@@ -272,7 +269,7 @@ pub fn to_rust(
             if children.is_empty() { return EMPTY_STR }
             join(
                 children.iter().map(|child|
-                    to_rust(ast, *child, indentation,info)
+                    to_rust(ast, *child, indentation, info)
                 ),", "
             )
         },
@@ -280,7 +277,7 @@ pub fn to_rust(
             format!(
                 "return {}",
                 if children.is_empty() { EMPTY_STR } else {
-                    to_rust(ast, children[0], indentation,info)
+                    to_rust(ast, children[0], indentation, info)
                 }
             )
         },
@@ -291,7 +288,7 @@ pub fn to_rust(
         AstNode::Char(chr) => format!("'{chr}'"),
         AstNode::Property => {
             if let AstNode::FunctionCall(_) = ast[children[1]].value {
-                if let Some(res) = built_in_methods(ast, indentation,children, info){
+                if let Some(res) = built_in_methods(ast, indentation, children, info){
                     return res
                 }
             }
@@ -301,31 +298,31 @@ pub fn to_rust(
             {
                 format!(
                     "{}::{}",
-                    to_rust(ast, children[0], indentation,info),
-                    to_rust(ast, children[1], indentation,info)
+                    to_rust(ast, children[0], indentation, info),
+                    to_rust(ast, children[1], indentation, info)
                 )
             } else {
                 format!(
                     "{}.{}",
-                    to_rust(ast, children[0], indentation,info),
-                    to_rust(ast, children[1], indentation,info)
+                    to_rust(ast, children[0], indentation, info),
+                    to_rust(ast, children[1], indentation, info)
                 )
             }
         },
         AstNode::ForStatement => {
             format!(
                 "for {} {}",
-                to_rust(ast, children[0], indentation,info),
-                to_rust(ast, children[1], indentation + 1,info)
+                to_rust(ast, children[0], indentation, info),
+                to_rust(ast, children[1], indentation + 1, info)
             )
         },
         AstNode::ForVars => {
             join(children.iter().map(|child|
-                format!("mut {}", to_rust(ast, *child, indentation,info))
+                format!("mut {}", to_rust(ast, *child, indentation, info))
             ), ", ")
         },
         AstNode::ForIter => {
-            format!(" in {}", to_rust(ast, children[0], indentation,info))
+            format!(" in {}", to_rust(ast, children[0], indentation, info))
         },
         AstNode::Struct(name) => { //3 warning long code...
             if unsafe { IGNORE_STRUCTS.contains(name.as_str()) } {
@@ -362,7 +359,7 @@ pub fn to_rust(
                     &mut res,
                     "\n{}{}",
                     "\t".repeat(indentation + 1),
-                    to_rust(ast, *func, indentation + 1,info)
+                    to_rust(ast, *func, indentation + 1, info)
                 ).unwrap();
             }
             let indent = "\t".repeat(indentation);
@@ -396,7 +393,7 @@ pub fn to_rust(
 
                     }
                     write!(&mut res, "{}", function_to_rust_str(
-                        func_name, ast, indentation + 1,func_children, info
+                        func_name, ast, indentation + 1, func_children, info
                     )).unwrap();
                 }
                 for (name, typ) in type_defs {
@@ -416,8 +413,8 @@ pub fn to_rust(
                     zip(arg_vals, arg_names).map(|(val, name)|
                         format!(
                             "{}: {}",
-                            to_rust(ast, *name, indentation,info),
-                            to_rust(ast, *val, indentation,info)
+                            to_rust(ast, *name, indentation, info),
+                            to_rust(ast, *val, indentation, info)
                         )
                     ),
                     ", "
@@ -447,7 +444,7 @@ pub fn to_rust(
                         .iter()
                         .map(|x| {
                             let arg = &ast[*x];
-                            let name = unwrap_enum!(&arg.value, AstNode::Arg { name, is_arg, is_kwarg }, name);
+                            let name = unwrap_enum!(&arg.value, AstNode::Arg { name, .. }, name);
                             // TODO if is_arg \ is_kwarg
                             let typ = arg.typ.as_ref().unwrap();
                             format!("{name}: {typ}")
@@ -493,7 +490,7 @@ pub fn to_rust(
             )
         }
         AstNode::NamedArg(_) => {
-            to_rust(ast, unwrap_u(&ast[pos].children)[0], indentation,info)
+            to_rust(ast, unwrap_u(&ast[pos].children)[0], indentation, info)
         }
         AstNode::ListComprehension | AstNode::SetComprehension | AstNode::DictComprehension => {
             let loops = ast[children[1]].children.clone().unwrap();
@@ -507,21 +504,21 @@ pub fn to_rust(
                 },
                 /*1 loops*/ loops.iter().map(|r#loop| {
                     let colon_par = ast[*r#loop].children.as_ref().unwrap()[0];
-                    format!("for {} {{", to_rust(ast, colon_par, indentation,info))
+                    format!("for {} {{", to_rust(ast, colon_par, indentation, info))
                 }).collect::<Vec<_>>().concat(),
                 /*1 condition*/ if let Some(condition) = &ast[children[2]].children {
-                    format!("if {} {{", to_rust(ast, condition[0], indentation,info))
+                    format!("if {} {{", to_rust(ast, condition[0], indentation, info))
                 } else { EMPTY_STR },
                 /*1 add method*/ if let AstNode::ListComprehension = &ast[pos].value { "res.push" } else { "res.insert" },
                 /*1 add element*/ if let AstNode::DictComprehension = &ast[pos].value {
                     let parts = ast[children[0]].children.as_ref().unwrap();
                     format!(
                         "{},{}",
-                        to_rust(ast, parts[0], indentation,info),
-                        to_rust(ast, parts[1], indentation,info)
+                        to_rust(ast, parts[0], indentation, info),
+                        to_rust(ast, parts[1], indentation, info)
                     )
                 } else {
-                    to_rust(ast, ast[children[0]].children.as_ref().unwrap()[0], indentation,info)
+                    to_rust(ast, ast[children[0]].children.as_ref().unwrap()[0], indentation, info)
                 },
                 /*1 close braces*/ "}".repeat(loops.len() + (ast[children[2]].children.is_some() as usize))
             )
@@ -529,7 +526,7 @@ pub fn to_rust(
         AstNode::Cast => {
             format!(
                 "{} as {}",
-                to_rust(ast, children[0], indentation,info),
+                to_rust(ast, children[0], indentation, info),
                 ast[pos].typ.as_ref().unwrap()
             )
         }
@@ -537,9 +534,9 @@ pub fn to_rust(
         AstNode::Ternary => {
             format!(
                 "if {} {{ {} }} else {{ {} }}",
-                to_rust(ast, children[1], indentation,info),
-                to_rust(ast, children[0], indentation,info),
-                to_rust(ast, children[2], indentation,info),
+                to_rust(ast, children[1], indentation, info),
+                to_rust(ast, children[0], indentation, info),
+                to_rust(ast, children[2], indentation, info),
             )
         }
         AstNode::Import => {
@@ -550,13 +547,13 @@ pub fn to_rust(
                         ast[children[0]].children.as_ref().unwrap()
                             .iter()
                             .map(|i| to_rust(
-                                ast, *i, indentation,info
+                                ast, *i, indentation, info
                             )),
                         "::"
                     ),
                     join(
                         children.iter().skip(1).map(|i| to_rust(
-                            ast, *i, indentation,info
+                            ast, *i, indentation, info
                         )),
                         ", "
                     )
@@ -566,14 +563,19 @@ pub fn to_rust(
                     "use super::{{ {} }};",
                     join(
                         children.iter().map(|i| to_rust(
-                            ast, *i, indentation,info
+                            ast, *i, indentation, info
                         )),
                         ", "
                     )
                 )
             }
         }
-        AstNode::As => todo!(),
+        AstNode::As(new_name) => {
+            format!(
+                "{} as {new_name}",
+                to_rust(ast, children[0], indentation, info)
+            )
+        },
         AstNode::Ignore => EMPTY_STR,
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
@@ -594,12 +596,12 @@ fn in_to_rust(
     }
     format!(
         "{}.{}({}{})",
-        to_rust(ast, children[1], indentation,info),
+        to_rust(ast, children[1], indentation, info),
         if is_hm(&ast[children[1]]) { "contains_key" } else { "contains" },
         if let TypeKind::Pointer | TypeKind::MutPointer = ast[children[0]].typ.as_ref().unwrap().kind {
             ""
         } else { "&" },
-        to_rust(ast, children[0], indentation,info)
+        to_rust(ast, children[0], indentation, info)
     )
 }
 
@@ -610,18 +612,18 @@ fn is_to_rust(
         ast: &[Ast], pos: usize, indentation: usize, info: &Info
     ) -> String {
         if let TypeKind::Pointer | TypeKind::MutPointer = ast[pos].typ.as_ref().unwrap().kind {
-            to_rust(ast, pos, indentation,info)
+            to_rust(ast, pos, indentation, info)
         } else {
             format!(
                 "&({}) as *const _",
-                to_rust(ast, pos, indentation,info)
+                to_rust(ast, pos, indentation, info)
             )
         }
     }
     format!(
         "ptr::eq({}, {})",
-        as_ptr(ast, children[0], indentation,info),
-        as_ptr(ast, children[1], indentation,info)
+        as_ptr(ast, children[0], indentation, info),
+        as_ptr(ast, children[1], indentation, info)
     )
 }
 
@@ -650,7 +652,7 @@ fn function_to_rust_str(
     };
     format!(
         "{res}{}",
-        to_rust(ast, children[3], indentation + 1,info)
+        to_rust(ast, children[3], indentation + 1, info)
     )
 }
 
@@ -664,13 +666,13 @@ fn built_in_methods(
                 if !unwrap_u(&ast[arg_pos].children).is_empty() {
                     format!(
                         "{}.split({})",
-                        to_rust(ast, children[0], indentation,info),
-                        to_rust(ast, arg_pos, indentation,info)
+                        to_rust(ast, children[0], indentation, info),
+                        to_rust(ast, arg_pos, indentation, info)
                     )
                 } else {
                     format!(
                         "{}.split_whitespace()",
-                        to_rust(ast, children[0], indentation,info)
+                        to_rust(ast, children[0], indentation, info)
                     )
                 }
             }
@@ -683,66 +685,66 @@ fn built_in_methods(
                 };
                 format!(
                     "{}.{trim}{}",
-                    to_rust(ast, children[0], indentation,info),
+                    to_rust(ast, children[0], indentation, info),
                     if !unwrap_u(&ast[arg_pos].children).is_empty() {
                         format!(
                             "_matches({})",
-                            to_rust(ast, arg_pos, indentation,info)
+                            to_rust(ast, arg_pos, indentation, info)
                         )
                     } else {
-                        format!("()")
+                        String::from("()")
                     }
                 )
             }
             ("String", "startswith" | "endswith") => {
                 format!(
                     "{}.{}_with({})",
-                    to_rust(ast, children[0], indentation,info),
+                    to_rust(ast, children[0], indentation, info),
                     func_name.strip_suffix("with").unwrap(),
-                    to_rust(ast, arg_pos, indentation,info)
+                    to_rust(ast, arg_pos, indentation, info)
                 )
             }
             ("String", "find") => {
                 format!(
                     "if let Some(__res__) = {}.find({}) {{ __res__ as i32 }} else {{ -1 }}",
-                    to_rust(ast, children[0], indentation,info),
-                    to_rust(ast, arg_pos, indentation,info),
+                    to_rust(ast, children[0], indentation, info),
+                    to_rust(ast, arg_pos, indentation, info),
                 )
             }
             ("String", "count") => {
                 format!(
                     "{}.matches({}).count()",
-                    to_rust(ast, children[0], indentation,info),
-                    to_rust(ast, arg_pos, indentation,info),
+                    to_rust(ast, children[0], indentation, info),
+                    to_rust(ast, arg_pos, indentation, info),
                 )
             }
             ("String", "removeprefix" | "removesuffix") => {
                 format!(
                     "{}.strip_{}({}).unwrap_or(&{})",
-                    to_rust(ast, children[0], indentation,info),
+                    to_rust(ast, children[0], indentation, info),
                     func_name.strip_prefix("remove").unwrap(),
-                    to_rust(ast, arg_pos, indentation,info),
-                    to_rust(ast, children[0], indentation,info),
+                    to_rust(ast, arg_pos, indentation, info),
+                    to_rust(ast, children[0], indentation, info),
                 )
             }
             ("String", "lower" | "upper") => {
                 format!(
                     "{{ {}.make_ascii_{func_name}case(); {} }}",
-                    to_rust(ast, children[0], indentation,info),
-                    to_rust(ast, children[0], indentation,info)
+                    to_rust(ast, children[0], indentation, info),
+                    to_rust(ast, children[0], indentation, info)
                 )
             }
             ("Vec", "append") => {
                 format!(
                     "{}.push({})",
-                    to_rust(ast, children[0], indentation,info),
-                    to_rust(ast, arg_pos, indentation,info)
+                    to_rust(ast, children[0], indentation, info),
+                    to_rust(ast, arg_pos, indentation, info)
                 )
             }
             // (_, "len") => {
             //     format!(
             //         "({}.len() as i32)",
-            //         to_rust(ast, children[0], indentation,info)
+            //         to_rust(ast, children[0], indentation, info)
             //     )
             // }
             _ => { return None }
@@ -772,7 +774,7 @@ fn built_in_funcs(
         "reversed" => {
             format!(
                 "Box::new({}{}.rev())",
-                to_rust(ast, args[0], indentation,info),
+                to_rust(ast, args[0], indentation, info),
                 into_iter(ast, args[0])
             )
         }
@@ -813,20 +815,20 @@ fn built_in_funcs(
                 "{}{}{}",
                 if !is_in_for { "Box::new(" } else { "" },
                 match optional_args.len() {
-                    0 => format!("(0..{})", to_rust(ast, args[0], 0,info)),
+                    0 => format!("(0..{})", to_rust(ast, args[0], 0, info)),
                     1 => {
                         format!(
                             "({}..{})",
-                            to_rust(ast, args[0], 0,info),
-                            to_rust(ast, optional_args[0], 0,info)
+                            to_rust(ast, args[0], 0, info),
+                            to_rust(ast, optional_args[0], 0, info)
                         )
                     }
                     2 => {
                         format!(
                             "({}..{}).step_by(({}) as usize)",
-                            to_rust(ast, args[0], 0,info),
-                            to_rust(ast, optional_args[0], 0,info),
-                            to_rust(ast, optional_args[1], 0,info)
+                            to_rust(ast, args[0], 0, info),
+                            to_rust(ast, optional_args[0], 0, info),
+                            to_rust(ast, optional_args[1], 0, info)
                         )
                     }
                     _ => panic!("too many args passed to `range` expected <=3 found {}", args.len())
@@ -860,7 +862,7 @@ fn built_in_funcs(
                 "println!(\"{}\", {})",
                 formats.trim_end(),
                 join(args.iter().map(|arg|
-                    to_rust(ast, *arg, 0,info)
+                    to_rust(ast, *arg, 0, info)
                 ), ", ")
             )
         }
@@ -868,7 +870,7 @@ fn built_in_funcs(
             if args.len() == 1 {
                 format!(
                     "{}{}.{name}().expect(\"{name} on empty iter\")",
-                    to_rust(ast, args[0], 0,info),
+                    to_rust(ast, args[0], 0, info),
                     into_iter(ast, args[0])
                 )
             } else {
@@ -878,17 +880,17 @@ fn built_in_funcs(
         "iter" | "iter_imut" => { // TODO this doesn't need to be boxed
             format!(
                 "Box::new({}.{}())",
-                to_rust(ast, args[0], 0,info),
+                to_rust(ast, args[0], 0, info),
                 if is_hm(ast, args[0]) { "keys" }
                 else if name == "iter" { "iter_mut" }
                 else { "iter" }
             )
         }
         "len" => {
-            format!("({}.len() as i32)", to_rust(ast, args[0], 0,info))
+            format!("({}.len() as i32)", to_rust(ast, args[0], 0, info))
         }
         "abs" => {
-            format!("({}).abs()", to_rust(ast, args[0], 0,info))
+            format!("({}).abs()", to_rust(ast, args[0], 0, info))
         }
         "sum" => {
             let inner_typ = get_inner_type(
@@ -905,7 +907,7 @@ fn built_in_funcs(
             ).unwrap();
             format!(
                 "{}{}.sum::<{inner_typ}>()",
-                to_rust(ast, args[0], 0,info),
+                to_rust(ast, args[0], 0, info),
                 into_iter(ast, args[0]),
             )
         }
@@ -929,11 +931,11 @@ fn built_in_funcs(
 
             format!(
                 "({}).{}({}{})",
-                to_rust(ast, args[0], 0,info),
+                to_rust(ast, args[0], 0, info),
                 if is_float { "powf" } else { "pow" },
-                to_rust(ast, args[1], 0,info),
+                to_rust(ast, args[1], 0, info),
                 if !matches!(ast[args[2]].value, AstNode::UnaryOp(OperatorType::Minus)) {
-                    format!(" % ({})", to_rust(ast, args[2], 0,info))
+                    format!(" % ({})", to_rust(ast, args[2], 0, info))
                 } else { EMPTY_STR }
             )
         }

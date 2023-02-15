@@ -78,3 +78,8 @@ pub fn get_pointer_inner(mut typ: &Type) -> &Type {
     }
     typ
 }
+
+#[inline]
+pub fn is_float(typ: &TypeKind) -> bool {
+    matches!(typ, TypeKind::Struct(name) if name == "f32" || name == "f64")
+}

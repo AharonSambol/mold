@@ -38,7 +38,7 @@ pub fn map_generic_types(generic: &Type, t: &Type, res: &mut HashMap<String, Typ
     }
 }
 
-pub fn apply_generics_from_base(return_typ: &Option<Type>, mut base: &Type) -> Option<Type> {
+pub fn apply_generics_from_base(return_typ: &Option<Type>, base: &Type) -> Option<Type> {
     if let Some(rt) = return_typ {
         let base = get_pointer_inner(base);
 

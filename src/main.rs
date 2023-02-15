@@ -41,11 +41,11 @@ const EMPTY_STR: String = String::new();
 // 2 optimizations:
 // lto = "fat"
 // codegen-units = 1
-// TODO some things dont necessarily need to be made into a box (e.g. lst.len())
+// todo some things dont necessarily need to be made into a box (e.g. lst.len())
 fn main() {
     // todo remove
     unsafe {
-        IS_COMPILED = true;
+        // IS_COMPILED = true;
     }
     let mut path = None;
     for argument in env::args() {
@@ -56,7 +56,7 @@ fn main() {
     let path = path.unwrap_or_else(|| String::from("."));
 
     let mut path = String::from("tests/input_program.mo");
-    // let path = String::from("tests/import_package/imports.mo");
+    let path = String::from("tests/import_package/imports.mo");
     // let mut path = String::from("tests/built_ins.mo");
     // let mut path = String::from("tests/enums.mo");
     // let mut path = String::from("tests/pointers.mo");

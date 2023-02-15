@@ -126,7 +126,7 @@ pub fn try_get_arg_typ(
                 *pos -= 1;
                 if let Some(t) = t {
                     res = Some(typ.add_option(t));
-                    make_enums(&res.as_ref().unwrap(), info.one_of_enums);
+                    make_enums(res.as_ref().unwrap(), info.one_of_enums);
                 } else if panic { panic!() } else { return None };
             }
             SolidToken::Word(wrd) => {
@@ -143,7 +143,6 @@ pub fn try_get_arg_typ(
                             { t } else if panic { panic!() } else { return None }
                         }],
                     });
-                    //todo? *pos += 1;
                     break
                 }
                 res = if wrd == "str" {
