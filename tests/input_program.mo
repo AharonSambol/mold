@@ -34,3 +34,7 @@ def main():
     a = 10.1
     a //= 2.1
     v = {1: 2, 3 : 4}
+    print(&1)
+    a := 1
+    for i in range(10):
+        a *= 1

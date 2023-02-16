@@ -649,15 +649,16 @@ fn add_type_func_call(
         "function without identifier?"
     );
     let expected_input = if let Some(fnc) = info.funcs.get(&name) {
-        &fnc.input
+        fnc.input.clone()
     } else { panic!("unrecognized function `{name}`") };
 
     #[inline] fn format_args(
-        ast: &mut Vec<Ast>, children: &[usize], input: &Option<Vec<Param>>, name: &str
+        ast: &mut Vec<Ast>, children: &[usize], input: &Option<Vec<Param>>, name: &str,
+        info: &mut Info, vars: &VarTypes
     ) -> Vec<usize> {
         let mut args = unwrap_u(&ast[children[1]].children).clone();
         if let Some(expected_args) = input {
-            put_args_in_vec(ast, children, &mut args, expected_args);
+            put_args_in_vec(ast, children, &mut args, expected_args, info, vars);
             add_optional_args(ast, children, &mut args, expected_args);
             if args.len() != expected_args.len() {
                 panic!(
@@ -670,17 +671,17 @@ fn add_type_func_call(
         }
         args
     }
-    let args = format_args(ast, children, expected_input, &name);
+    let args = format_args(ast, children, &expected_input, &name, info, vars);
     #[inline] fn get_generics(expected_input: &Option<Vec<Param>>, args: &[usize], ast: &mut [Ast]) -> HashMap<String, Type> {
         let mut generic_map = HashMap::new();
-        if let Some(expected_input) = expected_input {
+        if let Some(expected_input) = &expected_input {
             for (exp, got) in expected_input.iter().zip(args.iter()) {
                 map_generic_types(&exp.typ, ast[*got].typ.as_ref().unwrap(), &mut generic_map);
             }
         }
         generic_map
     }
-    let generic_map = get_generics(expected_input, &args, ast);
+    let generic_map = get_generics(&expected_input, &args, ast);
     #[inline] fn check_that_is_castable(expected_inputs: &[Param], args: &[usize], info: &Info, ast: &[Ast], is_built_in: bool) -> Option<Vec<Type>> {
         Some(expected_inputs.iter().zip(args.iter()).map(
             |(exp, got)| {
@@ -801,7 +802,8 @@ fn add_optional_args( //3 not optimized // todo can't use name for positional ar
 }
 
 fn put_args_in_vec(
-    ast: &mut Vec<Ast>, children: &[usize], args: &mut Vec<usize>, expected_args: &[Param]
+    ast: &mut Vec<Ast>, children: &[usize], args: &mut Vec<usize>, expected_args: &[Param],
+    info: &mut Info, vars: &VarTypes
 ) {
     let args_kwargs_pos = expected_args.iter().enumerate()
         .find(|(_, par)| par.is_args || par.is_kwargs);
@@ -811,7 +813,26 @@ fn put_args_in_vec(
             .skip(pos_in_args)
             .take_while(|x| !matches!(ast[**x].value, AstNode::NamedArg(_))) //1 while isn't named
             .cloned().collect();
-        let inner_typ = ast[vec_children[0]].typ.clone().unwrap();
+        let expected_typ = &expected_args[pos_in_args].typ //1 vec
+            .children.as_ref().unwrap()[0] //1 generic map
+            .children.as_ref().unwrap()[0] //1 generic(withVal(t))
+            .children.as_ref().unwrap()[0]; //1 the actual type
+
+        let inner_typ = /*if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
+            if !is_castable(
+                expected_typ, ast[vec_children[0]].typ.as_ref().unwrap(), ast, info, true
+            ) {
+                panic!("expected `{}` got `{}`", expected_typ, ast[vec_children[0]].typ.as_ref().unwrap())
+            }
+            ast[vec_children[0]].typ.as_ref().unwrap().clone()
+        } else {*/
+            check_for_boxes(expected_typ.clone(), ast, vec_children[0], info, vars)
+        /*}*/; //check_for_boxes(expected_typ.clone(), ast, vec_children[0], info, vars);
+        println!("{}", inner_typ);
+        for pos in vec_children.iter().skip(1) {
+            check_for_boxes(expected_typ.clone(), ast, *pos, info, vars);
+        }
+
         let vec_pos = add_to_tree(
             children[1],
             ast,

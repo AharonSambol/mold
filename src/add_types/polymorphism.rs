@@ -3,10 +3,11 @@ use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use crate::{typ_with_child, unwrap_enum, some_vec, EMPTY_STR};
 use crate::add_types::ast_add_types::{find_index_typ, get_enum_property_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::{apply_generics_from_base, get_function_return_type};
-use crate::add_types::utils::get_from_stack;
+use crate::add_types::utils::{get_from_stack, get_pointer_inner};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
 use crate::mold_tokens::OperatorType;
+use crate::to_rust::implements_trait;
 use crate::types::{GenericType, print_type, Type, TypeKind, TypName, unwrap, unwrap_u};
 
 // TODO also cast: `as Box<dyn P>`
@@ -35,14 +36,16 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leave
             }
         }
     });
-    for x in [AstNode::Identifier(String::from("Box")), AstNode::FunctionCall(true)] {
-        add_to_tree(property, ast, Ast::new(x));
-    }
-    let func_call = ast.len() - 1;
-    for x in [AstNode::Identifier(String::from("new")), AstNode::Args] {
-        add_to_tree(func_call, ast, Ast::new(x));
-    }
-    let args_pos = ast.len() - 1;
+    add_to_tree(
+        property, ast, Ast::new(AstNode::Identifier(String::from("Box")))
+    );
+    let func_call = add_to_tree(
+        property, ast, Ast::new(AstNode::FunctionCall(true))
+    );
+    add_to_tree(
+        func_call, ast, Ast::new(AstNode::Identifier(String::from("new")))
+    );
+    let args_pos = add_to_tree(func_call, ast, Ast::new(AstNode::Args));
     add_to_tree(args_pos, ast, inner_val);
     property
 }
@@ -217,13 +220,14 @@ pub fn check_for_boxes(
                                 TypeKind::Trait(expected_trait.clone()),
                                 Type {
                                     kind: TypeKind::GenericsMap,
-                                    children: Some(types.map(|(name, typ)|
-                                        typ_with_child! {
-                                            TypeKind::InnerType(name),
-                                            typ.unwrap()
-                                        }
-                                    ).collect())
-
+                                    children: if types.len() == 0 { None } else {
+                                        Some(types.map(|(name, typ)|
+                                            typ_with_child! {
+                                                TypeKind::InnerType(name),
+                                                typ.unwrap()
+                                            }
+                                        ).collect())
+                                    }
                                 }
                             };
                             let pos = add_box(ast, pos);
@@ -232,6 +236,11 @@ pub fn check_for_boxes(
                         }
                     }
                     panic!("`{struct_name}` doesn't implement trait `{expected_trait}`")
+                } else if expected_trait == "__str__" && matches!(&got_typ.kind, TypeKind::Pointer | TypeKind::MutPointer) {
+                    if implements_trait(get_pointer_inner(got_typ), expected_trait.get_str(), ast, info) {
+                        return expected
+                    }
+                    panic!("expected: `{expected_trait}` got: `{got_typ}`")
                 } else {
                     print_type(&Some(expected.clone()));
                     print_type(&Some(got_typ.clone()));
