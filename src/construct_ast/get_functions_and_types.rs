@@ -8,7 +8,7 @@ use crate::construct_ast::mold_ast::{FuncType, FuncTypes, StructType, StructType
 const UNKNOWN_FUNC_TYPE: FuncType = FuncType{ input: None, output: None };
 
 pub fn get_struct_and_func_names(
-    tokens: &[SolidToken]
+    tokens: &[SolidToken], file_name: &str
 ) -> (StructTypes, FuncTypes, TraitTypes, TypeTypes, EnumTypes){
     let mut funcs = HashMap::new();
     let mut structs = HashMap::new();
@@ -34,24 +34,48 @@ pub fn get_struct_and_func_names(
                 if let SolidToken::Word(name) = &tokens[i + 1] {
                     if let SolidToken::Operator(OperatorType::Smaller) = &tokens[i + 2] {
                         let mut pos = i + 3;
-                        let mut generics = vec![unwrap_enum!(&tokens[pos], SolidToken::Word(w), w.clone())];
+                        let mut generics = vec![unwrap_enum!(&tokens[pos], (SolidToken::Word(w) | SolidToken::LifeTime(w)), w.clone())];
                         while let SolidToken::Comma = &tokens[pos + 1] {
                             pos += 2;
-                            generics.push(unwrap_enum!(&tokens[pos], SolidToken::Word(w), w.clone()))
+                            generics.push(unwrap_enum!(&tokens[pos], (SolidToken::Word(w) | SolidToken::LifeTime(w)), w.clone()))
                         }
                         if let SolidToken::Struct = tok {
-                            structs.insert(name.clone(), StructType { generics: Some(generics), pos: 0 });
+                            structs.insert(name.clone(), StructType {
+                                generics: Some(generics),
+                                pos: 0,
+                                parent_file: String::from(file_name)
+                            });
                         } else if let SolidToken::Enum = tok {
-                            enums.insert(name.clone(), EnumType { generics: Some(generics), pos: 0 });
+                            enums.insert(name.clone(), EnumType {
+                                generics: Some(generics),
+                                pos: 0,
+                                parent_file: String::from(file_name)
+                            });
                         } else {
-                            traits.insert(name.clone(), TraitType { generics: Some(generics), pos: 0 });
+                            traits.insert(name.clone(), TraitType {
+                                generics: Some(generics),
+                                pos: 0,
+                                parent_file: String::from(file_name)
+                            });
                         }
                     } else if let SolidToken::Struct = tok {
-                        structs.insert(name.clone(), StructType { generics: None, pos: 0 });
+                        structs.insert(name.clone(), StructType {
+                            generics: None,
+                            pos: 0,
+                            parent_file: String::from(file_name)
+                        });
                     } else if let SolidToken::Enum = tok {
-                        enums.insert(name.clone(), EnumType { generics: None, pos: 0 });
+                        enums.insert(name.clone(), EnumType {
+                            generics: None,
+                            pos: 0,
+                            parent_file: String::from(file_name)
+                        });
                     } else {
-                        traits.insert(name.clone(), TraitType { generics: None, pos: 0 });
+                        traits.insert(name.clone(), TraitType {
+                            generics: None,
+                            pos: 0,
+                            parent_file: String::from(file_name)
+                        });
                     }
                 },
             SolidToken::Type => {

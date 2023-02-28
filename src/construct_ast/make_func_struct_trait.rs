@@ -9,7 +9,7 @@ use crate::construct_ast::mold_ast::{FuncType, StructType, TraitType, Info, make
 use crate::construct_ast::tree_utils::{add_to_tree};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
 use crate::types::{GenericType, print_type, print_type_b, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
-use crate::{IS_COMPILED, some_vec, typ_with_child, unwrap_enum};
+use crate::{IMPL_TRAITS, ImplTraitsKey, ImplTraitsVal, IS_COMPILED, some_vec, typ_with_child, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::add_to_stack;
 
@@ -49,14 +49,34 @@ fn make_func_signature(
         pos += 1; //1 skip the next word
         let trait_name = name.split("::").next().unwrap();
         let parent_struct = ast[parent].parent.unwrap();
-        let traits = unwrap_u(&ast[parent_struct].children)[3];
-        if !unwrap_u(&ast[traits].children).iter().any(|x|
-            unwrap_enum!(&ast[*x].value, AstNode::Identifier(n), n) == trait_name
-        ) {
-            add_to_tree(traits, ast, Ast::new(
-                AstNode::Identifier(String::from(trait_name))
-            ));
+        let parent_struct_name = unwrap_enum!(&ast[parent_struct].value, AstNode::Struct(n), n);
+        // let traits = unwrap_u(&ast[parent_struct].children)[3];
+        unsafe {
+            let key = ImplTraitsKey {
+                name: parent_struct_name.clone(),
+                path: info.cur_file_path.to_str().unwrap().to_string(),
+            };
+            let val = ImplTraitsVal{
+                trt_name: trait_name.to_string(),
+                implementation: None,
+                types: None,
+            };
+            if let Some(vc) = IMPL_TRAITS.get_mut(&key) {
+                if !vc.iter().any(|x| x.trt_name == trait_name) {
+                    vc.push(val);
+                }
+            } else {
+                IMPL_TRAITS.insert(key, vec![val]);
+            }
         }
+
+        // if !unwrap_u(&ast[traits].children).iter().any(|x|
+        //     unwrap_enum!(&ast[*x].value, AstNode::Identifier(n), n) == trait_name
+        // ) {
+        //     add_to_tree(traits, ast, Ast::new(
+        //         AstNode::Identifier(String::from(trait_name))
+        //     ));
+        // }
     }
     let index = add_to_tree(parent, ast, Ast::new(
         AstNode::StaticFunction(name.clone())
@@ -198,7 +218,11 @@ pub fn make_struct(
     let generics_names = get_generics(&mut pos, tokens, index, ast);
     info.generics.push(HashSet::from_iter(generics_names.clone()));
     // let generics_hs = HashSet::from_iter(generics_names.iter().cloned());
-    *info.structs.get_mut(&name).unwrap() = StructType { generics: Some(generics_names), pos: index };
+    *info.structs.get_mut(&name).unwrap() = StructType {
+        generics: Some(generics_names),
+        pos: index,
+        parent_file: info.cur_file_path.to_str().unwrap().to_string()
+    };
     info.structs.insert(String::from("Self"), info.structs[&name].clone());
     //1 part1 of: traits in parentheses in struct declaration, e.g. struct A(*trait*):
     let mut trait_names = vec![];
@@ -219,16 +243,16 @@ pub fn make_struct(
 
     let args_pos = add_to_tree(index, ast, Ast::new(AstNode::ArgsDef));
     let body_pos = add_to_tree(index, ast, Ast::new(AstNode::Module));
-    let traits_pos = add_to_tree(index, ast, Ast::new(AstNode::Traits));
+    // let traits_pos = add_to_tree(index, ast, Ast::new(AstNode::Traits));
     // let types_pos = add_to_tree(index, ast, Ast::new(AstNode::Types));
 
     //1 part2 of: traits in parentheses in struct declaration, e.g. struct A(*trait*):
 
     for (t, generics_names) in trait_names {
-        let trait_pos = add_to_tree(
-            traits_pos, ast,
-            Ast::new(AstNode::Identifier(t.clone()))
-        );
+        // let trait_pos = add_to_tree(
+        //     traits_pos, ast,
+        //     Ast::new(AstNode::Identifier(t.clone()))
+        // );
         // add_to_tree(trait_pos, ast, Ast::new_w_typ(
         //     AstNode::GenericsDeclaration,
         //     Some(Type {
@@ -245,7 +269,6 @@ pub fn make_struct(
         //     })
         // ));
     }
-
     unwrap_enum!(tokens[pos], SolidToken::Colon, None::<bool>, "expected colon");
     pos += 2 + indent;
     if pos < tokens.len() && matches!(&tokens[pos], SolidToken::Tab) { //todo what is this?
@@ -271,20 +294,52 @@ pub fn make_struct(
                 unwrap_enum!(&tokens[pos+4], SolidToken::Operator(OperatorType::Eq));
                 pos += 5;
                 let typ = get_arg_typ(tokens, &mut pos, info);
+
+                let key = ImplTraitsKey{
+                    name: name.clone(),
+                    path: info.cur_file_path.to_str().unwrap().to_string(),
+                };
+                if let Some(entry) = unsafe { IMPL_TRAITS.get_mut(&key) } {
+                    if let Some(trt) = entry.iter_mut().find(|x| *trait_name == x.trt_name) {
+                        if let Some(hm) = &mut trt.types {
+                            hm.insert(type_name.clone(), typ);
+                        } else {
+                            trt.types = Some(HashMap::from([(type_name.clone(), typ)]));
+                        }
+                    } else {
+                        entry.push(ImplTraitsVal {
+                            types: Some(HashMap::from([(type_name.clone(), typ)])),
+                            trt_name: trait_name.clone(),
+                            implementation: None
+                        })
+                    }
+                } else {
+                    unsafe {
+                        IMPL_TRAITS.insert(
+                            key,
+                            vec![ImplTraitsVal {
+                                types: Some(HashMap::from([(type_name.clone(), typ)])),
+                                trt_name: trait_name.clone(),
+                                implementation: None
+                            }]
+                        );
+                    }
+                }
+
                 // let trait_impl_pos = unwrap_u(&ast[traits_pos].children).iter().find(
                 //     |&i| unwrap_enum!(&ast[*i].value, AstNode::Identifier(i), i) == trait_name
                 // );
-                let pos =/* if let Some(pos) = trait_impl_pos { *pos } else {*/
-                    add_to_tree(traits_pos, ast, Ast::new(
-                        AstNode::Identifier(trait_name.clone())
-                    ));
-                add_to_tree(pos, ast, Ast {
-                    value: AstNode::Type(type_name.clone()),
-                    children: None,
-                    parent: None,
-                    typ: Some(typ),
-                    is_mut: false,
-                });
+                // let pos =/* if let Some(pos) = trait_impl_pos { *pos } else {*/
+                //     add_to_tree(traits_pos, ast, Ast::new(
+                //         AstNode::Identifier(trait_name.clone())
+                //     ));
+                // add_to_tree(pos, ast, Ast {
+                //     value: AstNode::Type(type_name.clone()),
+                //     children: None,
+                //     parent: None,
+                //     typ: Some(typ),
+                //     is_mut: false,
+                // });
                 // panic!("!");
             }
             _ => (),
@@ -419,7 +474,11 @@ pub fn make_enum(
     let generics_names = get_generics(&mut pos, tokens, index, ast);
     info.generics.push(HashSet::from_iter(generics_names.clone()));
     // let generics_hs = HashSet::from_iter(generics_names.iter().cloned());
-    *info.enums.get_mut(&name).unwrap() = EnumType { generics: Some(generics_names), pos: index };
+    *info.enums.get_mut(&name).unwrap() = EnumType {
+        generics: Some(generics_names),
+        pos: index,
+        parent_file: info.cur_file_path.to_str().unwrap().to_string()
+    };
 
     let body_pos = add_to_tree(index, ast, Ast::new(AstNode::Module));
 
@@ -489,10 +548,15 @@ pub fn make_trait(
     let generics_hs = HashSet::from_iter(generics_names.iter().cloned());
     info.generics.push(generics_hs.clone());
 
-    *info.traits.get_mut(&name).unwrap() = TraitType { generics: Some(generics_names), pos: index};
+    *info.traits.get_mut(&name).unwrap() = TraitType {
+        generics: Some(generics_names),
+        pos: index,
+        parent_file: info.cur_file_path.to_str().unwrap().to_string()
+    };
     info.structs.insert(String::from("Self"), StructType {
         generics: info.traits[&name].generics.clone(),
         pos: info.traits[&name].pos,
+        parent_file: info.cur_file_path.to_str().unwrap().to_string()
     });
 
     let body_pos = add_to_tree(index, ast, Ast::new(AstNode::Module));

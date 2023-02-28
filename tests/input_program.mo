@@ -29,12 +29,22 @@ trait It:
 # type IList = List[i]
 
 
+
+def f(x: Display | Debug):
+    pass
+
 def main():
-    x = [1, 3 4, 5]
-    a = 10.1
-    a //= 2.1
-    v = {1: 2, 3 : 4}
-    print(&1)
-    a := 1
-    for i in range(10):
-        a *= 1
+    a: List[int | bool | str] = [1, False]
+    # a.append("woooow")
+    for i in &a:
+        # f(i)
+        print(i)
+
+
+def bin_search(elem: int):
+    pass
+
+
+def dmain():
+    for num in iter_imut([1, 2, 3]):
+        bin_search(*num)

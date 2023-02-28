@@ -1,14 +1,14 @@
 use std::collections::HashMap;
+use pretty_print_tree::Color;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
-use crate::{typ_with_child, unwrap_enum, some_vec, EMPTY_STR};
-use crate::add_types::ast_add_types::{find_index_typ, get_enum_property_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
+use crate::{typ_with_child, unwrap_enum, some_vec, EMPTY_STR, OneOfEnums, OneOfEnumTypes, IMPL_TRAITS, ImplTraitsKey, get_traits};
+use crate::add_types::ast_add_types::{find_index_typ, get_enum_property_typ, get_inner_type, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::{apply_generics_from_base, get_function_return_type};
 use crate::add_types::utils::{get_from_stack, get_pointer_inner};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
-use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
+use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of, insert_as_parent_of_prev, print_tree};
 use crate::mold_tokens::OperatorType;
-use crate::to_rust::implements_trait;
-use crate::types::{GenericType, print_type, Type, TypeKind, TypName, unwrap, unwrap_u};
+use crate::types::{GenericType, implements_trait, print_type, print_type_b, Type, TypeKind, TypName, unwrap, unwrap_u};
 
 // TODO also cast: `as Box<dyn P>`
 fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leaves ast[pos] without anything pointing at it
@@ -50,7 +50,7 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leave
     property
 }
 
-pub fn make_enums(typ: &Type, enums: &mut HashMap<String, String>) {
+pub fn make_enums(typ: &Type, enums: &mut OneOfEnums) {
     let types = unwrap(&typ.children);
     let mut generics = vec![];
     types.iter().for_each(|x| if let Some(ch) = &x.children {
@@ -75,11 +75,24 @@ pub fn make_enums(typ: &Type, enums: &mut HashMap<String, String>) {
     };
     let enm_name = escape_typ_chars(&typ.to_string());
     enums.entry(enm_name.clone()).or_insert_with(|| {
-        let elems = types
-            .iter()
-            .map(|x| format!("_{}({x})", escape_typ_chars(&x.to_string())));
-        let res = format!("pub enum {enm_name} {generics} {{ {} }}", join(elems, ","));
-        res
+        OneOfEnumTypes {
+            generics,
+            options: types.clone(),
+            traits: HashMap::new(),
+        }
+        // let elems = types
+        //     .iter()
+        //     .map(|x| format!("_{}({x})", escape_typ_chars(&x.to_string())));
+        // // let mut impls = vec![];
+        // for typ in types {
+        //
+        // }
+        // let res = format!(
+        //     "pub enum {enm_name} {generics} {{ {} }} {}",
+        //     join(elems, ","),
+        //     todo!() //1 impls
+        // );
+        // res
     });
 }
 
@@ -180,13 +193,26 @@ pub fn check_for_boxes(
         return check_for_boxes(expected, ast, unwrap_u(&got.children)[0], info, vars);
     }
     if let TypeKind::OneOf = expected.kind {
-        for typ in unwrap(&expected.children){
-            if matches!(&got.typ, Some(t) if t == typ) {
-                add_one_of_enum(
-                    ast, pos, &expected.to_string(),
-                    &format!("_{}", escape_typ_chars(&typ.to_string())), info
-                );
-                return got.typ.clone().unwrap()
+        for typ in unwrap(&expected.children) {
+            if let Some(t) = &got.typ {
+                if t == typ {
+                    add_one_of_enum(
+                        ast, pos, &expected.to_string(),
+                        &format!("_{}", escape_typ_chars(&typ.to_string())), info
+                    );
+                    return got.typ.clone().unwrap()
+                }
+                if matches!(
+                    &typ.kind, TypeKind::Trait(trt) if implements_trait(t, trt.get_str(), ast, info)
+                ) {
+                    // print_tree(ast, pos);
+                    let new_pos = add_box(ast, pos);
+                    add_one_of_enum(
+                        ast, new_pos, &expected.to_string(),
+                        &format!("_{}", escape_typ_chars(&typ.to_string())), info
+                    );
+                    return expected
+                }
             }
         }
         panic!(
@@ -195,47 +221,115 @@ pub fn check_for_boxes(
             got.typ.clone().unwrap()
         );
     }
+    if let Some(Type { kind: TypeKind::OneOf, children: Some(types) }) = &got.typ {
+        #[inline(always)] fn can_cast(types: &Vec<Type>, expected: &Type, ast: &mut Vec<Ast>, pos: usize) -> bool {
+            for typ in types {
+                if !can_soft_cast(typ, expected) {
+                    return false
+                }
+            }
+            insert_as_parent_of(ast, pos, AstNode::As(expected.to_string()));
+            true
+        }
+
+        if can_cast(types, &expected, ast, pos) {
+            return expected
+        }
+        if let TypeKind::Trait(expected_trait) = &expected.kind {
+            if implements_trait(got.typ.as_ref().unwrap(), expected_trait.get_str(), ast, info) {
+                add_box(ast, pos);
+                return expected
+            }
+        }
+        panic!("can't cast `{}` to `{expected}`", got.typ.as_ref().unwrap())
+    }
     if is_box_typ(&expected) {
         let expected_trait =
             if let TypeKind::Trait(name) = &expected.kind { Some(name) } else { None };
         if !supplied_box(got, vars, ast, info, pos) {
             if let Some(expected_trait) = expected_trait {
+
                 let mut got_typ = got.typ.as_ref().unwrap();
                 if let TypeKind::Generic(GenericType::WithVal(_)) = &got_typ.kind {
                     got_typ = &got_typ.children.as_ref().unwrap()[0];
                 }
-
-                if let TypeKind::Struct(struct_name) = &got_typ.kind {
-                    let struct_def = &ast[info.structs[struct_name.get_str()].pos];
-                    let traits = &ast[unwrap_u(&struct_def.children)[3]];
-                    for trt in unwrap_u(&traits.children) {
-                        if matches!(&ast[*trt].value, AstNode::Identifier(name) if expected_trait == name) {
-                            let types = unwrap_u(&ast[*trt].children)
-                                .iter()
-                                .map(|i| (
-                                    unwrap_enum!(&ast[*i].value, AstNode::Type(name), name.clone()),
-                                    apply_generics_from_base(&ast[*i].typ, got_typ)
-                                ));
-                            let res = typ_with_child! {
-                                TypeKind::Trait(expected_trait.clone()),
-                                Type {
-                                    kind: TypeKind::GenericsMap,
-                                    children: if types.len() == 0 { None } else {
-                                        Some(types.map(|(name, typ)|
-                                            typ_with_child! {
-                                                TypeKind::InnerType(name),
-                                                typ.unwrap()
-                                            }
-                                        ).collect())
-                                    }
-                                }
-                            };
-                            let pos = add_box(ast, pos);
-                            ast[pos].typ = Some(res.clone());
-                            return res
+                if implements_trait(got_typ, expected_trait.get_str(), ast, info) {
+                    let res = typ_with_child! {
+                        TypeKind::Trait(expected_trait.clone()),
+                        Type {
+                            kind: TypeKind::GenericsMap,
+                            children: None,
+                            // TODO
+                            //  if let Some(types) = &info.traits[expected_trait].types {
+                            //      Some(types.iter().map(|(name, typ)|
+                            //          typ_with_child! {
+                            //              TypeKind::InnerType(name.clone()),
+                            //              typ.clone()
+                            //          }
+                            //      ).collect())
+                            //  } else { None }
                         }
-                    }
-                    panic!("`{struct_name}` doesn't implement trait `{expected_trait}`")
+                    };
+                    let pos = add_box(ast, pos);
+                    ast[pos].typ = Some(res.clone());
+                    return res
+                // }
+
+                // if let TypeKind::Struct(struct_name) = &got_typ.kind {
+                //     let traits = get_traits!(struct_name, info);
+                //     if let Some(traits) = traits {
+                //         if let Some(trt) = traits.iter().find(
+                //             |x| *expected_trait == x.trt_name
+                //         ) {
+                //             let res = typ_with_child! {
+                //                 TypeKind::Trait(expected_trait.clone()),
+                //                 Type {
+                //                     kind: TypeKind::GenericsMap,
+                //                     children: if let Some(types) = &trt.types {
+                //                         Some(types.iter().map(|(name, typ)|
+                //                             typ_with_child! {
+                //                                 TypeKind::InnerType(name.clone()),
+                //                                 typ.clone()
+                //                             }
+                //                         ).collect())
+                //                     } else { None }
+                //                 }
+                //             };
+                //             let pos = add_box(ast, pos);
+                //             ast[pos].typ = Some(res.clone());
+                //             return res
+                //         }
+                //     }
+                    // let struct_def = &ast[info.structs[struct_name.get_str()].pos];
+                    // // let traits = &ast[unwrap_u(&struct_def.children)[3]];
+                    // for trt in unwrap_u(&traits.children) {
+                    //     if matches!(&ast[*trt].value, AstNode::Identifier(name) if expected_trait == name) {
+                    //         let types = unwrap_u(&ast[*trt].children)
+                    //             .iter()
+                    //             .map(|i| (
+                    //                 unwrap_enum!(&ast[*i].value, AstNode::Type(name), name.clone()),
+                    //                 apply_generics_from_base(&ast[*i].typ, got_typ)
+                    //             ));
+                    //         let res = typ_with_child! {
+                    //             TypeKind::Trait(expected_trait.clone()),
+                    //             Type {
+                    //                 kind: TypeKind::GenericsMap,
+                    //                 children: if types.len() == 0 { None } else {
+                    //                     Some(types.map(|(name, typ)|
+                    //                         typ_with_child! {
+                    //                             TypeKind::InnerType(name),
+                    //                             typ.unwrap()
+                    //                         }
+                    //                     ).collect())
+                    //                 }
+                    //             }
+                    //         };
+                    //         let pos = add_box(ast, pos);
+                    //         ast[pos].typ = Some(res.clone());
+                    //         return res
+                    //     }
+                    // }
+                    // panic!("`{struct_name}` doesn't implement trait `{expected_trait}`")
                 } else if expected_trait == "__str__" && matches!(&got_typ.kind, TypeKind::Pointer | TypeKind::MutPointer) {
                     if implements_trait(get_pointer_inner(got_typ), expected_trait.get_str(), ast, info) {
                         return expected
@@ -334,15 +428,19 @@ pub fn check_for_boxes(
                 AstNode::StructInit => {
                     if let TypeKind::Trait(_) = expected.kind {
                         let struct_name = unwrap_enum!(
-                            &ast[unwrap_u(&got.children)[0]].value, AstNode::Identifier(x), x.clone()
+                            &ast[unwrap_u(&got.children)[0]].value, AstNode::Identifier(x), x
                         );
-                        let struct_pos = info.structs[&struct_name].pos;
-                        let traits = &ast[unwrap_u(&ast[struct_pos].children)[3]];
-                        if !unwrap_u(&traits.children).iter().any(|x|
-                            unwrap_enum!(&ast[*x].value, AstNode::Identifier(trt), trt) == ex_name.get_str()
-                        ) {
+                        let traits = get_traits!(TypName::Str(struct_name.clone()), info);
+                        if traits.is_none() || traits.unwrap().iter().all(|x| ex_name != x.trt_name) {
                             panic!("the struct `{struct_name}` doesn't implement the trait `{}`", ex_name.get_str())
                         }
+                        // let struct_pos = info.structs[&struct_name].pos;
+                        // let traits = &ast[unwrap_u(&ast[struct_pos].children)[3]];
+                        // if !unwrap_u(&traits.children).iter().any(|x|
+                        //     unwrap_enum!(&ast[*x].value, AstNode::Identifier(trt), trt) == ex_name.get_str()
+                        // ) {
+                        //     panic!("the struct `{struct_name}` doesn't implement the trait `{}`", ex_name.get_str())
+                        // }
                     } else {
                         let struct_name = unwrap_enum!(&ast[got_children[0]].value, AstNode::Identifier(s), s);
                         if struct_name != ex_name.get_str() {
@@ -553,7 +651,6 @@ pub fn check_for_boxes(
     }
     expected
 }
-
 
 fn get_property_typ(
     got: &Ast, ast: &[Ast], info: &Info, pos: usize

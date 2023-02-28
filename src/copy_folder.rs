@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use crate::construct_ast::ast_structure::join;
-use crate::{IS_COMPILED, PARSED_FILES, PARSING_FILES};
+use crate::{IS_COMPILED, PARSED_FILES};
 
 pub struct CopyFolder {
     pub temp_path: String,
@@ -49,6 +49,7 @@ impl CopyFolder {
                 .arg(format!("{}/.", self.module_path))
                 .arg(format!("{}/", self.temp_path))
                 .output().expect("cp command failed to start");
+
             let src = self.temp_path.rsplit_once('/').unwrap().0;
             /*1 make main */ Command::new("touch")
                 .arg("main.rs")
@@ -58,8 +59,6 @@ impl CopyFolder {
             let main = File::create(format!("{src}/main.rs")).unwrap(); // todo windows is \
             Some(main)
         } else {
-            println!("module_path: {:?}", self.module_path);
-            println!("temp_path: {:?}", self.temp_path);
             /*1 mkdir */ Command::new("mkdir")
                 .arg(&self.temp_path)
                 .spawn().expect("ls command failed to start")

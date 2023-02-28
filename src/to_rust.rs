@@ -1,15 +1,15 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use crate::construct_ast::ast_structure::{Ast, AstNode, join};
+use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
 use std::fmt::Write;
 use std::iter::zip;
-use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
+use crate::{EMPTY_STR, get_traits, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, IMPL_TRAITS, ImplTraitsKey, ImplTraitsVal, unwrap_enum};
 use crate::add_types::ast_add_types::{get_inner_type, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::apply_generics_from_base;
 use crate::add_types::utils::{get_pointer_inner, is_float};
-use crate::construct_ast::mold_ast::Info;
+use crate::construct_ast::mold_ast::{get_trt_strct_functions, Info, TraitFuncs};
 use crate::mold_tokens::OperatorType;
-use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap};
+use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap, UNKNOWN_TYPE, implements_trait};
 
 //4 probably using a string builder would be much more efficient (but less readable IMO)
 pub fn to_rust(
@@ -342,7 +342,7 @@ pub fn to_rust(
                 ", "
             );
             let mut res = format!(
-                "#[derive(Debug, Clone, PartialEq)]\npub struct {name}{generic} {{ {param} }}\n\
+                "/*#[derive(Clone, PartialEq)]*/\npub struct {name}{generic} {{ {param} }}\n\
                 impl{generic} {name}{generic} {{"
             );
             let mut trait_functions = vec![];
@@ -471,7 +471,7 @@ pub fn to_rust(
             let generic = format_generics(generics_ast);
             let module = unwrap_u(&ast[children[1]].children);
             format!(
-                "pub enum {name}{generic}{{ {} }}",
+                "/*#[derive(Clone, PartialEq)]*/\npub enum {name}{generic}{{ {} }}",
                 join(module.iter().map(|option| {
                     let name = unwrap_enum!(&ast[*option].value, AstNode::Identifier(n), n);
                     let types = unwrap_u(&ast[*option].children);
@@ -895,13 +895,8 @@ fn built_in_funcs(
         "sum" => {
             let inner_typ = get_inner_type(
                 ast, ast[args[0]].typ.as_ref().unwrap(),
-                "IntoIterator", "Item", info
-            ).unwrap_or_else(||
-                get_inner_type(
-                    ast, ast[args[0]].typ.as_ref().unwrap(),
-                    "Iterator", "Item", info
-                ).expect("`sum` on non `Iterator | IntoIterator`")
-            );
+                vec!["IntoIterator", "Iterator"], "Item", info
+            ).expect("`sum` on non `Iterator | IntoIterator`");
             let inner_typ = apply_generics_from_base(
                 &Some(inner_typ), ast[args[0]].typ.as_ref().unwrap()
             ).unwrap();
@@ -977,23 +972,6 @@ fn format_generics(generics_ast: &Ast) -> String {
     }
 }
 
-pub fn implements_trait(mut typ: &Type, expected_trait: &str, ast: &[Ast], info: &Info) -> bool {
-    if let TypeKind::Generic(GenericType::WithVal(_)) = &typ.kind {
-        typ = &unwrap(&typ.children)[0];
-    }
-    match &typ.kind {
-        TypeKind::Trait(name) => name == expected_trait,
-        TypeKind::Struct(struct_name) => {
-            let struct_def = &ast[info.structs[struct_name.get_str()].pos];
-            let traits = &ast[unwrap_u(&struct_def.children)[3]];
-
-            unwrap_u(&traits.children).iter().any(|trt|
-                matches!(&ast[*trt].value, AstNode::Identifier(name) if expected_trait == name)
-            )
-        }
-        _ => false
-    }
-}
 
 // enum IndexTyp {
 //     Mut, Ref, Val

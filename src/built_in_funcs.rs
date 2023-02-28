@@ -47,6 +47,7 @@ pub fn put_at_start(input: &str) -> String {
             generics: None,
             types: None,
             methods: vec![
+                "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]",
                 "clone(self) -> str", // todo do automatically?
                 "split(self, s: str) -> List[str]", //todo (optional) s: str | char    if rust: -> Iter[str]
                 "strip(self) -> str",        //todo (optional) c: char
@@ -127,6 +128,7 @@ pub fn put_at_start(input: &str) -> String {
                 "into_iter(self) -> IntoIterator[Item=T]",
                 "append(self, t: T)",
                 "index(self, pos: usize) -> T",
+                "Debug::fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]",
             ],
             traits: Some(vec!["Debug"]),
         }),
@@ -160,6 +162,24 @@ pub fn put_at_start(input: &str) -> String {
                 "into_iter(self) -> IntoIterator[Item=K]",
             ], // todo
             traits: Some(vec!["Debug"]),
+        }),
+        //1 Formatter
+        BuiltIn::Struct(BuiltInStruct{
+            name: "Formatter",
+            generics: Some(vec!["'_"]),
+            types: None,
+            methods: vec![
+                "__init__(self)",
+            ],
+            traits: None,
+        }),
+        //1 Error
+        BuiltIn::Struct(BuiltInStruct{
+            name: "Error",
+            generics: None,
+            types: None,
+            methods: vec!["__init__(self)"],
+            traits: None,
         }),
         //2 __len__
         BuiltIn::Trait(BuiltInTrait {
@@ -200,16 +220,20 @@ pub fn put_at_start(input: &str) -> String {
             name: "Display",
             duck: false,
             generics: None,
-            methods: vec![],
+            methods: vec![
+                "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]"
+            ],
             types: None,
             ignore: true,
         }),
         //2 Debug
         BuiltIn::Trait(BuiltInTrait {
             name: "Debug",
-            duck: false,
+            duck: true,
             generics: None,
-            methods: vec![],
+            methods: vec![
+                "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]"
+            ],
             types: None,
             ignore: true,
         }),
@@ -229,6 +253,13 @@ pub fn put_at_start(input: &str) -> String {
             name: "Option",
             generics: Some(vec!["T"]),
             args: vec!["Some(T)", "None"],
+            ignore: true,
+        }),
+        //3 Result
+        BuiltIn::Enum(BuiltInEnum {
+            name: "Result",
+            generics: Some(vec!["T", "E"]),
+            args: vec!["Ok(T)", "Err(E)"],
             ignore: true,
         }),
         //4 len
@@ -285,7 +316,7 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "print",
             generics: None,
-            args: vec!["*a: __str__"], //1 the type (Display) is ignored, anything is accepted
+            args: vec!["*a: Display | Debug"], //1 the type (Display) is ignored, anything is accepted
             return_typ: None,
         }),
         //4 reversed
@@ -409,226 +440,3 @@ pub fn put_at_start(input: &str) -> String {
     data
 }
 
-
-/*
-pub fn make_built_ins() -> HashMap<&'static str, Box<dyn BuiltIn>> {
-    let mut res: HashMap<&'static str, Box<dyn BuiltIn>> = HashMap::new();
-
-    let int_type = typ_with_child! {
-        INT_TYPE,
-        Type {
-            kind: TypeKind::GenericsMap,
-            children: None
-        }
-    };
-    let mut_str_type = typ_with_child! {
-        MUT_STR_TYPE,
-        Type {
-            kind: TypeKind::GenericsMap,
-            children: None
-        }
-    };
-    let str_type = typ_with_child! {
-        STR_TYPE,
-        Type {
-            kind: TypeKind::GenericsMap,
-            children: None
-        }
-    };
-    let bool_type = typ_with_child! {
-        BOOL_TYPE,
-        Type {
-            kind: TypeKind::GenericsMap,
-            children: None
-        }
-    };
-    let char_type = typ_with_child! {
-        CHAR_TYPE,
-        Type {
-            kind: TypeKind::GenericsMap,
-            children: None
-        }
-    };
-    let float_type = typ_with_child! {
-        FLOAT_TYPE,
-        Type {
-            kind: TypeKind::GenericsMap,
-            children: None
-        }
-    };
-    let generic_iter = typ_with_child! {
-        ITER_TYPE,
-        Type {
-            kind: TypeKind::Generic(GenericType::Declaration(String::from("T"))),
-            children: None,
-        }
-    };
-    
-    /*1 enumerate */{
-        res.insert(
-            "enumerate",
-            Box::new(Enumerate {
-                input_types: some_vec![generic_iter],
-                output_types: Some(Type {
-                    kind: ITER_TYPE,
-                    children: some_vec![
-                        Type {
-                            kind: TypeKind::Tuple,
-                            children: some_vec![
-                                Type::new(String::from("u32")),
-                                Type {
-                                    kind: TypeKind::Generic(GenericType::Of(String::from("T"))),
-                                    children: None,
-                                }
-                            ],
-                        },
-                    ],
-                }),
-                for_strct: None,
-            }),
-        );
-    }
-    /*1 str */{
-        res.insert(
-            "str",
-            Box::new(Str {
-                input_types: some_vec![
-                    Type{
-                        kind: TypeKind::Trait(TypName::Static("Display")),
-                        children: None
-                    }
-                ],
-                output_types: Some(mut_str_type.clone()),
-                for_strct: None,
-            }),
-        );
-    }
-    /*1 int */{
-        res.insert(
-            "int",
-            Box::new(Int {
-                input_types: some_vec![
-                    Type{
-                        kind: TypeKind::_OneOf,
-                        children: some_vec![mut_str_type.clone(), str_type.clone(), char_type.clone(), bool_type.clone(), float_type.clone()]
-                    }
-                ],
-                output_types: Some(int_type.clone()),
-                for_strct: None,
-            }),
-        );
-    }
-    /*1 float */{
-        res.insert(
-            "float",
-            Box::new(Float {
-                input_types: some_vec![
-                    Type{
-                        kind: TypeKind::_OneOf,
-                        children: some_vec![
-                            mut_str_type.clone(), str_type.clone(), char_type.clone(),
-                            bool_type.clone(), int_type.clone()
-                        ]
-                    }
-                ],
-                output_types: Some(float_type.clone()),
-                for_strct: None,
-            }),
-        );
-    }
-
-    res
-}
-
-struct Enumerate {
-    input_types: Option<Vec<Type>>,
-    output_types: Option<Type>,
-    for_strct: Option<String>,
-}
-impl BuiltIn for Enumerate {
-    get_types!();
-
-    fn to_str_rust(
-        &self,
-        ast: &[Ast],
-        res: &mut String,
-        children: &[usize],
-        built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-        enums: &mut HashMap<String, String>,
-    ) {
-        to_rust(ast, children[1], 0, res, built_ins, enums);
-        write!(res, ".enumerate()").unwrap();
-    }
-
-    to_py!("enumerate({}");
-}
-
-struct Str {
-    input_types: Option<Vec<Type>>,
-    output_types: Option<Type>,
-    for_strct: Option<String>,
-}
-impl BuiltIn for Str {
-    get_types!();
-
-    fn to_str_rust(
-        &self,
-        ast: &[Ast],
-        res: &mut String,
-        children: &[usize],
-        built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-        enums: &mut HashMap<String, String>,
-    ) {
-        to_rust(ast, children[1], 0, res, built_ins, enums);
-        write!(res, ".to_string()").unwrap();
-    }
-
-    to_py!("str({}");
-}
-
-struct Int {
-    input_types: Option<Vec<Type>>,
-    output_types: Option<Type>,
-    for_strct: Option<String>,
-}
-impl BuiltIn for Int {
-    get_types!();
-
-    fn to_str_rust(
-        &self,
-        ast: &[Ast],
-        res: &mut String,
-        children: &[usize],
-        built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-        enums: &mut HashMap<String, String>,
-    ) {
-        to_rust(ast, children[1], 0, res, built_ins, enums);
-        write!(res, ".parse::<i32>().unwrap()").unwrap();
-    }
-
-    to_py!("int({}");
-}
-
-struct Float {
-    input_types: Option<Vec<Type>>,
-    output_types: Option<Type>,
-    for_strct: Option<String>,
-}
-impl BuiltIn for Float {
-    get_types!();
-
-    fn to_str_rust(
-        &self,
-        ast: &[Ast],
-        res: &mut String,
-        children: &[usize],
-        built_ins: &HashMap<&str, Box<dyn BuiltIn>>,
-        enums: &mut HashMap<String, String>,
-    ) {
-        to_rust(ast, children[1], 0, res, built_ins, enums);
-        write!(res, ".parse::<f32>().unwrap()").unwrap();
-    }
-
-    to_py!("float({}");
-}
-*/

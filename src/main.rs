@@ -13,11 +13,13 @@ mod copy_folder;
 use construct_ast::ast_structure::{Ast, join};
 use std::collections::{HashMap, HashSet};
 use std::{env, fs};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::Write;
+use std::fmt::{Display, Write as w};
 use std::path::PathBuf;
 use std::process::Command;
 use once_cell::sync::Lazy;
+use crate::add_types::polymorphism::escape_typ_chars;
 use crate::built_in_funcs::put_at_start;
 use crate::construct_ast::mold_ast;
 use crate::construct_ast::mold_ast::{FileInfo, Info};
@@ -25,7 +27,17 @@ use crate::construct_ast::tree_utils::clone_sub_tree;
 use crate::copy_folder::{change_file_extensions, CopyFolder, delete_unused_files};
 use crate::mold_tokens::SolidToken;
 use crate::to_python::ToWrapVal;
+use crate::types::{get_type_traits, Type, TypeKind};
 
+const RUST_IMPORTS: &str = "pub use std::{{\
+slice::{{Iter, IterMut}}, \
+iter::Rev, \
+collections::{{HashMap, HashSet}}, \
+ptr, \
+fmt::{{Debug, Display, Formatter, Error}} }};
+pub use list_comprehension_macro::comp;";
+
+//3 I know this isn't exactly good practice...
 static mut IS_COMPILED: bool = false;
 static mut IGNORE_TRAITS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 static mut IGNORE_STRUCTS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
@@ -34,10 +46,30 @@ static mut IGNORE_ENUMS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 static mut PARSED_FILES: Lazy<HashMap<String, FileInfo>> = Lazy::new(HashMap::new);
 static mut PARSING_FILES: Lazy<HashSet<String>> = Lazy::new(HashSet::new);
 static mut MODULE_PATH: Option<PathBuf> = None;
+#[derive(Eq, PartialEq, Hash, Debug)]
+struct ImplTraitsKey {
+    name: String,
+    path: String
+}
+#[derive(Clone, Debug)]
+struct ImplTraitsVal {
+    trt_name: String,
+    implementation: Option<String>,
+    types: Option<HashMap<String, Type>>
+}
+static mut IMPL_TRAITS: Lazy<HashMap<ImplTraitsKey, Vec<ImplTraitsVal>>> = Lazy::new(HashMap::new);
+
 
 const EMPTY_STR: String = String::new();
 
+type OneOfEnums = HashMap<String, OneOfEnumTypes>;
 
+#[derive(Debug, Clone)]
+pub struct OneOfEnumTypes {
+    options: Vec<Type>,
+    generics: String,
+    traits: HashMap<String, String>,
+}
 // 2 optimizations:
 // lto = "fat"
 // codegen-units = 1
@@ -47,6 +79,7 @@ fn main() {
     unsafe {
         IS_COMPILED = true;
     }
+
     let mut path = None;
     for argument in env::args() {
         if argument == "compile"    { unsafe { IS_COMPILED = true; } }
@@ -174,12 +207,11 @@ class pointer_:
         one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
             "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
         );
-
-        main.unwrap().write_all({ format!("
-#![allow(unused, non_camel_case_types)]
+        let mut rust_main_code = { format!(
+            "#![allow(unused, non_camel_case_types)]
 mod {module_name};
 
-{}
+{RUST_IMPORTS}
 
 #[inline] fn _index_mut<T>(vc: &mut Vec<T>, pos: i32) -> &mut T {{
     if pos >= 0 {{
@@ -198,8 +230,44 @@ mod {module_name};
 
 fn main() {{ {module_name}::{file_name}::main(); }}
 ",
-            join(one_of_enums.values(), "\n")
-        )}.as_ref()).unwrap();
+            // join(one_of_enums.values(), "\n")
+        )};
+        for (enm_name, enm_types) in one_of_enums {
+            let elems = enm_types.options
+                .iter()
+                .map(|x| format!("_{}({x})", escape_typ_chars(&x.to_string())));
+            // let mut impls = get_type_traits(&Type {
+            //     kind: TypeKind::OneOf,
+            //     children: Some(types),
+            // }, ast, info);
+            let res = format!(
+                "/*#[derive(Clone, PartialEq)]*/\npub enum {enm_name} {} {{ {} }}",
+                enm_types.generics,
+                join(elems, ","),
+                // todo!() //1 impls
+            );
+            writeln!(&mut rust_main_code, "{}", res).unwrap();
+        }
+        main.unwrap().write_all(rust_main_code.as_ref()).unwrap();
+
+        unsafe {
+            for (key, val) in IMPL_TRAITS.iter() {
+                if IGNORE_STRUCTS.contains(&*key.name) || IGNORE_ENUMS.contains(&*key.name) {
+                    continue
+                }
+                let path = &key.path;
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open(path)
+                    .unwrap();
+                for imp_trt in val {
+                    if let Some(implementation) = &imp_trt.implementation {
+                        writeln!(file, "{}", implementation).unwrap();
+                    }
+                }
+            }
+        }
 
         let path = PathBuf::from(&copy_folder.temp_path);
         delete_unused_files(&path);
@@ -210,8 +278,7 @@ fn main() {{ {module_name}::{file_name}::main(); }}
     drop(copy_folder);
 }
 
-fn parse_file(path: &String, one_of_enums: &mut HashMap<String, String>) {
-    println!("parsing: {path}");
+fn parse_file(path: &String, one_of_enums: &mut OneOfEnums) {
     unsafe {
         if PARSING_FILES.contains(path) {
             panic!("circular import")
@@ -240,9 +307,9 @@ fn parse_file(path: &String, one_of_enums: &mut HashMap<String, String>) {
         let (enums, code) = compile(&ast, &info);
         let mut file = File::create(path).unwrap();
         file.write_all(format!("
-use std::{{slice::{{Iter, IterMut}}, iter::Rev, collections::{{HashMap, HashSet}}, ptr}};
-use list_comprehension_macro::comp;
+{RUST_IMPORTS}
 use crate::{{ _index_mut, _index, {} }};
+
 {code}",
             join(enums.keys(), ",")
         ).as_ref()).unwrap();
@@ -253,7 +320,6 @@ use crate::{{ _index_mut, _index, {} }};
     unsafe {
         PARSED_FILES.insert(path.clone(), FileInfo {
             funcs: info.funcs.clone(), types: info.types.clone(),
-
             structs:
                 info.structs.iter().map(|(name, typ)|
                     (name.clone(), (typ.clone(), clone_sub_tree(
@@ -330,7 +396,7 @@ if __name__ == '__main__':
     py
 }
 
-fn compile(ast: &[Ast], info: &Info) -> (HashMap<String, String>, String) {
+fn compile(ast: &[Ast], info: &Info) -> (OneOfEnums, String) {
     let rs = to_rust::to_rust(ast, 0, 0, info);
     let rs = rs.trim();
     // TODO something about this... v
@@ -338,8 +404,9 @@ fn compile(ast: &[Ast], info: &Info) -> (HashMap<String, String>, String) {
     one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
         "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
     );
-    let one_of_enums_st = join(one_of_enums.values(), "\n\n");
-    println!("\n{one_of_enums_st}\n{rs}");
+    // let one_of_enums_st = join(one_of_enums.values(), "\n\n");
+    // println!("\n{one_of_enums_st}\n{rs}");
+    println!("{rs}");
     /*
     if !Path::new("/out").exists() {
         Command::new("cargo")

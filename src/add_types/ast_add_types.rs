@@ -1,17 +1,16 @@
 use std::collections::{HashMap, HashSet};
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
-use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, print_type_b, print_type};
+use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, print_type_b, print_type, implements_trait};
 use lazy_static::lazy_static;
 use pretty_print_tree::Color;
 use regex::Regex;
-use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS};
+use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS, IMPL_TRAITS, ImplTraitsKey, get_traits};
 use crate::add_types::generics::{apply_generics_from_base, apply_map_to_generic_typ, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::check_for_boxes;
 use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_inner, is_float};
 use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of_prev, print_tree};
 use crate::mold_tokens::OperatorType;
-use crate::to_rust::implements_trait;
 
 lazy_static! {
     pub static ref SPECIFIED_NUM_TYPE_RE: Regex = Regex::new(r"(?:[iu](?:8|16|32|64|128|size)|f32|f64)$").unwrap();
@@ -384,7 +383,7 @@ pub fn add_types(
             ast[pos].typ = ast[children[0]].typ.clone();
         }
         AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
-        | AstNode::Trait { .. } | AstNode::Traits | AstNode::Type(_) | AstNode::Types
+        | AstNode::Trait { .. } /*| AstNode::Traits*/ | AstNode::Type(_) | AstNode::Types
         | AstNode::Arg { .. } | AstNode::Cast | AstNode::As(_) | AstNode::From | AstNode::Import
         | AstNode::Ignore => {}
     }
@@ -645,9 +644,9 @@ fn add_type_func_call(
     add_types(ast, children[1], vars, info, parent_struct);
 
     let name = unwrap_enum!(
-        &ast[children[0]].value, AstNode::Identifier(x), x.clone(),
-        "function without identifier?"
+        &ast[children[0]].value, AstNode::Identifier(x), x.clone(), "function without identifier?"
     );
+
     let expected_input = if let Some(fnc) = info.funcs.get(&name) {
         fnc.input.clone()
     } else { panic!("unrecognized function `{name}`") };
@@ -729,11 +728,11 @@ fn is_castable(exp: &Type, got: &Type, ast: &[Ast], info: &Info, is_built_in: bo
         }
         _ if is_built_in && matches!(exp.kind, TypeKind::Pointer | TypeKind::MutPointer) => {
             if got.kind == exp.kind || matches!((&exp.kind, &got.kind), (TypeKind::Pointer, TypeKind::MutPointer)) {
-                let got = &got.children.as_ref().unwrap()[0];
-                let exp = &exp.children.as_ref().unwrap()[0];
+                let got = get_pointer_inner(got);
+                let exp = get_pointer_inner(exp);
                 is_castable(exp, got, ast, info, is_built_in)
             } else {
-                let exp = &exp.children.as_ref().unwrap()[0];
+                let exp = get_pointer_inner(exp);
                 is_castable(exp, got, ast, info, is_built_in)
             }
         }
@@ -818,17 +817,9 @@ fn put_args_in_vec(
             .children.as_ref().unwrap()[0] //1 generic(withVal(t))
             .children.as_ref().unwrap()[0]; //1 the actual type
 
-        let inner_typ = /*if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
-            if !is_castable(
-                expected_typ, ast[vec_children[0]].typ.as_ref().unwrap(), ast, info, true
-            ) {
-                panic!("expected `{}` got `{}`", expected_typ, ast[vec_children[0]].typ.as_ref().unwrap())
-            }
-            ast[vec_children[0]].typ.as_ref().unwrap().clone()
-        } else {*/
-            check_for_boxes(expected_typ.clone(), ast, vec_children[0], info, vars)
-        /*}*/; //check_for_boxes(expected_typ.clone(), ast, vec_children[0], info, vars);
-        println!("{}", inner_typ);
+        let inner_typ = check_for_boxes(
+            expected_typ.clone(), ast, vec_children[0], info, vars
+        );
         for pos in vec_children.iter().skip(1) {
             check_for_boxes(expected_typ.clone(), ast, *pos, info, vars);
         }
@@ -935,22 +926,49 @@ fn get_into_iter_return_typ(ast: &[Ast], info: &Info, iter: &Ast) -> Option<Type
     fn match_kind(ast: &[Ast], info: &Info, typ: &Type) -> Option<Type> {
         match &typ.kind {
             TypeKind::Struct(struct_name) => {
-                let strct_def = &ast[info.structs[struct_name.get_str()].pos];
-                let strct_traits = &ast[unwrap_u(&strct_def.children)[3]];
-                for trt_pos in unwrap_u(&strct_traits.children) {
-                    let trt = &ast[*trt_pos];
-                    if matches!(&trt.value, AstNode::Identifier(name) if name == "IntoIterator" || name == "Iterator") {
-                        let typs = unwrap_u(&trt.children);
-                        for i in typs {
-                            if matches!(&ast[*i].value, AstNode::Type(t) if t == "Item") {
-                                return apply_generics_from_base(
-                                    &ast[*i].typ, typ
-                                );
-                            } else { panic!() }
-                        }
-                    }
-                }
-                panic!("`{struct_name}` doesn't implement `IntoIterator` or `Iterator`")
+                let inner_typ = get_inner_type(
+                    ast, typ,
+                    vec!["IntoIterator", "Iterator"], "Item", info
+                ).unwrap_or_else(|| panic!("`{struct_name}` doesn't implement `IntoIterator` or `Iterator`"));
+                apply_generics_from_base(&Some(inner_typ), typ)
+
+                // let traits = unsafe {
+                //     IMPL_TRAITS.get(
+                //         &ImplTraitsKey {
+                //             name: struct_name.to_string(),
+                //             path: info.structs[struct_name.get_str()].parent_file.clone(),
+                //         }
+                //     )
+                // };
+                //
+                // let traits = if let Some(vc) = traits { vc.clone() }
+                // else { vec![] };
+                // let iter_trt = traits.iter().find(
+                //     |x| x.trt_name == "IntoIterator" || x.trt_name == "Iterator"
+                // );
+                // if let Some(iter_trt) = iter_trt {
+                //     apply_generics_from_base(
+                //         &Some(iter_trt.types.unwrap().get("Item").unwrap().clone()),
+                //         typ
+                //     );
+                // }
+                //
+                // let strct_def = &ast[info.structs[struct_name.get_str()].pos];
+                // // let strct_traits = &ast[unwrap_u(&strct_def.children)[3]];
+                // for trt_pos in unwrap_u(&strct_traits.children) {
+                //     let trt = &ast[*trt_pos];
+                //     if matches!(&trt.value, AstNode::Identifier(name) if name == "IntoIterator" || name == "Iterator") {
+                //         let typs = unwrap_u(&trt.children);
+                //         for i in typs {
+                //             if matches!(&ast[*i].value, AstNode::Type(t) if t == "Item") {
+                //                 return apply_generics_from_base(
+                //                     &ast[*i].typ, typ
+                //                 );
+                //             } else { panic!() }
+                //         }
+                //     }
+                // }
+                // panic!("`{struct_name}` doesn't implement `IntoIterator` or `Iterator`")
             },
             TypeKind::Trait(trait_name) => {
                 if trait_name != "IntoIterator" && trait_name != "Iterator" {
@@ -970,11 +988,9 @@ fn get_into_iter_return_typ(ast: &[Ast], info: &Info, iter: &Ast) -> Option<Type
                 panic!("couldn't find `Item` type in `{trait_name}`")
             },
             TypeKind::Pointer | TypeKind::MutPointer => {
-                let generic = &unwrap(&typ.children)[0];
-                let inner_typ = &unwrap(&generic.children)[0];
                 Some(typ_with_child! {
                     typ.kind.clone(),
-                    match_kind(ast, info, inner_typ).unwrap()
+                    match_kind(ast, info, get_pointer_inner(typ)).unwrap()
                 })
             }
             _ => panic!("kind: {:?}", typ.kind)
@@ -1069,8 +1085,8 @@ pub fn find_index_typ(ast: &[Ast], info: &Info, base: usize, pos: usize) -> Opti
                 find_function_in_trait(
                     ast, info.traits, trait_name.get_str(), "index"
                 ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", trait_name)),
-            Some(Type { kind: TypeKind::Pointer | TypeKind::MutPointer, children: chs, .. }) =>
-                return find_index_func(&Some(unwrap(chs)[0].clone()), ast, info, pos), // todo pos here might not be correct in the case of &Self
+            Some(Type { kind: TypeKind::Pointer | TypeKind::MutPointer, .. }) =>
+                return find_index_func(&Some(get_pointer_inner(typ.as_ref().unwrap()).clone()), ast, info, pos), // todo pos here might not be correct in the case of &Self
             _ => panic!("{typ:?}")
         }
     }
@@ -1080,24 +1096,41 @@ pub fn find_index_typ(ast: &[Ast], info: &Info, base: usize, pos: usize) -> Opti
     apply_generics_from_base(typ, ast[base].typ.as_ref().unwrap())
 }
 
-pub fn get_inner_type(ast: &[Ast], typ: &Type, trait_name: &str, inner_type_name: &str, info: &Info) -> Option<Type> {
+pub fn get_inner_type(ast: &[Ast], typ: &Type, trait_names: Vec<&str>, inner_type_name: &str, info: &Info) -> Option<Type> {
     match &typ.kind {
         TypeKind::Struct(struct_name) => {
-            let struct_pos = info.structs[struct_name.get_str()].pos;
-            let traits_pos = ast[struct_pos].children.as_ref().unwrap()[3];
-            for trt in unwrap_u(&ast[traits_pos].children) {
-                if matches!(&ast[*trt].value, AstNode::Identifier(idf) if idf == trait_name) {
-                    for typ in unwrap_u(&ast[*trt].children) {
-                        if matches!(&ast[*typ].value, AstNode::Type(name) if name == inner_type_name) {
-                            return ast[*typ].typ.clone();
-                        }
-                    }
+            let traits = get_traits!(struct_name, info);
+            let traits = if let Some(vc) = traits { vc.clone() }
+            else { vec![] };
+
+            let trt = traits.iter().find(
+                |x| {
+                    trait_names.contains(&&*x.trt_name)
                 }
-            }
-            None
+            );
+            if let Some(trt) = trt {
+                apply_generics_from_base(
+                    &Some(trt.types.as_ref().unwrap().get("Item").unwrap().clone()),
+                    typ
+                )
+            } else { None }
+
+
+            // let struct_pos = info.structs[struct_name.get_str()].pos;
+            // // let traits_pos = ast[struct_pos].children.as_ref().unwrap()[3];
+            // for trt in unwrap_u(&ast[traits_pos].children) {
+            //     if matches!(&ast[*trt].value, AstNode::Identifier(idf) if idf == trait_name) {
+            //         for typ in unwrap_u(&ast[*trt].children) {
+            //             if matches!(&ast[*typ].value, AstNode::Type(name) if name == inner_type_name) {
+            //                 return ast[*typ].typ.clone();
+            //             }
+            //         }
+            //     }
+            // }
+            // None
         }
         TypeKind::Trait(trt_name) => {
-            if trt_name != trait_name { return None }
+            if !trait_names.contains(&trt_name.get_str()) { return None }
             let generic_map = &typ.children.as_ref().unwrap()[0];
             for child in unwrap(&generic_map.children) {
                 if matches!(&child.kind, TypeKind::InnerType(name) if name == inner_type_name) {

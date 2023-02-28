@@ -20,7 +20,7 @@ pub fn get_generic_names(pos: &mut usize, tokens: &[SolidToken]) -> Vec<String> 
     let mut generics_names = vec![];
     if let SolidToken::Operator(OperatorType::Smaller) = tokens[*pos] { //1 generics
         *pos += 1;
-        while let SolidToken::Word(name) = &tokens[*pos] {
+        while let SolidToken::Word(name) | SolidToken::LifeTime(name) = &tokens[*pos] {
             generics_names.push(name.clone());
             *pos += 2;
         }

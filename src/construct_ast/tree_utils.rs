@@ -39,6 +39,22 @@ pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNod
     index
 }
 
+pub fn insert_as_parent_of(ast: &mut Vec<Ast>, node: usize, value: AstNode) -> usize {
+    let parent = ast[node].parent.unwrap();
+    let index_in_parent = ast[parent].children.as_ref().unwrap().iter()
+        .position(|x| *x == node).unwrap();
+    ast[parent].children.as_mut().unwrap()[index_in_parent] = ast.len();
+    
+    ast.push(Ast {
+        value,
+        children: some_vec![node],
+        parent: Some(parent),
+        typ: None,
+        is_mut: true
+    });
+    ast.len() - 1
+}
+
 pub fn add_to_tree(parent: usize, ast: &mut Vec<Ast>, mut new_node: Ast) -> usize {
     new_node.parent = Some(parent);
     ast.push(new_node);
@@ -124,7 +140,7 @@ pub fn print_tree(ast: &[Ast], pos: usize){
                         match &vc[*x].value {
                             AstNode::StaticFunction(name)
                             | AstNode::Function(name) =>    !unsafe { IGNORE_FUNCS  .contains(name.as_str()) },
-                            AstNode::Struct(name) =>        !unsafe { IGNORE_STRUCTS.contains(name.as_str()) },
+                            // AstNode::Struct(name) =>        !unsafe { IGNORE_STRUCTS.contains(name.as_str()) },
                             AstNode::Trait{name, .. } =>    !unsafe { IGNORE_TRAITS .contains(name.as_str()) },
                             AstNode::Enum(name) =>          !unsafe { IGNORE_ENUMS  .contains(name.as_str()) },
                             _ => true

@@ -37,6 +37,7 @@
                 concat!("clone() -> ", stringify!($val)),
                 "__init__(self)",
                 "__str__(self: &Self) -> str",
+                "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]"
             ],
             types: None,
             traits: Some(vec![
@@ -44,4 +45,17 @@
             ]),
         })
     };
+}
+
+#[macro_export] macro_rules! get_traits {
+    ($struct_name: expr, $info: expr) => {
+        unsafe {
+            IMPL_TRAITS.get(
+                &ImplTraitsKey {
+                    name: $struct_name.to_string(),
+                    path: $info.structs[$struct_name.get_str()].parent_file.clone(),
+                }
+            )
+        }
+    }
 }

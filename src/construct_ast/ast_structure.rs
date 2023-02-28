@@ -76,11 +76,11 @@ pub enum AstNode {
     SetLiteral, // children = elements
     StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
     String { val: String, mutable: bool, },
-    Struct(String), // children[0] = args, children[1] = functions, children[2] = body, children[3] = traits
+    Struct(String), // children[0] = generics, children[1] = args, children[2] = body, children[3] = traits
     StructInit, // children[0] = struct, children[1] = Args, // TODO dont think this is right...
     Ternary, // children[0] = val if true, children[1] = condition, children[2] = val if false
     Trait { name: String, strict: bool },  // children[0] = Module (functions)
-    Traits,
+    // Traits,
     Type(String), // e.g.  struct A: \n type Inner
     Types,
     UnaryOp(OperatorType),  // children[0] = elem
@@ -130,7 +130,7 @@ impl AstNode {
             | AstNode::Struct(_)
             | AstNode::Enum(_)
             | AstNode::Trait { .. }
-            | AstNode::Traits
+            // | AstNode::Traits
             | AstNode::Type(_)
             | AstNode::Types
             | AstNode::ColonParentheses
@@ -162,7 +162,7 @@ impl Display for AstNode {
                 write!(f, "{name}\n[{is_arg}, {is_kwarg}]"),
             AstNode::Types => write!(f, "TYPES"),
             AstNode::Type(name) => write!(f, "TYPE({name})"),
-            AstNode::Traits => write!(f, "TRAITS"),
+            // AstNode::Traits => write!(f, "TRAITS"),
             AstNode::Body => write!(f, "BODY"),
             AstNode::Module => write!(f, "MODULE"),
             AstNode::Function(func) => write!(f, "FUNC({func})"),

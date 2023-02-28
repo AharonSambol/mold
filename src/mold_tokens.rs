@@ -1,10 +1,8 @@
 use std::fmt::{Display, Formatter};
 use std::fmt::Write;
 use std::hint::unreachable_unchecked;
-use crate::IS_COMPILED;
-use crate::mold_tokens::Token::{
-    Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char
-};
+use crate::{EMPTY_STR, IS_COMPILED};
+use crate::mold_tokens::Token::{Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char, LifeTime};
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +18,7 @@ enum Token {
         mutable: bool
     },
     Char(char),
+    LifeTime,
     Num {
         start: usize,
         end: usize,
@@ -42,7 +41,7 @@ enum Token {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SolidToken {
     Brace(IsOpen), Bracket(IsOpen), Parenthesis(IsOpen),
-    Word(String),
+    Word(String), LifeTime(String),
     Str{
         val: String,
         mutable: bool
@@ -265,8 +264,12 @@ pub fn tokenize(input_code: &str) -> Vec<SolidToken> {
             // </editor-fold>
             // <editor-fold desc="''">
             '\'' => {
-                make_char(&mut tokens, &mut skip, &chars, i);
-                continue
+                if chars[i + 2] == '\'' {
+                    make_char(&mut tokens, &mut skip, &chars, i);
+                    continue
+                } else {
+                    LifeTime
+                }
             },
             '"' => {
                 is_str = true;
@@ -315,6 +318,12 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
             continue
         }
         let st = match token {
+            LifeTime => {
+                let Word { .. } = tokens[i + 1] else {
+                    panic!("expected identifier after `'`")
+                };
+                SolidToken::LifeTime(EMPTY_STR)
+            }
             Parenthesis(is_open) | Bracket(is_open) | Brace(is_open) => {
                 open += if let IsOpen::True = is_open { 1 } else { -1 };
                 match token {
@@ -362,7 +371,13 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                     "imut" => SolidToken::IMut, "cast" => SolidToken::Cast,
                     "from" => SolidToken::From, "import" => SolidToken::Import,
                     "as" => SolidToken::As,
-                    _ => SolidToken::Word(clean(st))
+                    _ => {
+                        if let Some(SolidToken::LifeTime(lf)) = res.last_mut() {
+                            *lf = format!("'{st}");
+                            continue
+                        }
+                        SolidToken::Word(clean(st))
+                    }
                 }
             },
             Str { start, end, mutable: m } => SolidToken::Str {

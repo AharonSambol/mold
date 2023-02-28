@@ -1,5 +1,6 @@
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::construct_ast::mold_ast::{VarTypes, StructTypes, TraitTypes};
+use crate::{IMPL_TRAITS, ImplTraitsKey, ImplTraitsVal};
 use crate::types::{GenericType, Type, TypeKind, unwrap, unwrap_u};
 
 pub fn find_function_in_struct(

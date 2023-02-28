@@ -153,7 +153,7 @@ pub fn try_get_arg_typ(
                             children: None
                         }
                     })
-                } else if info.structs.contains_key(&wrd) || wrd == "Self" {
+                } else if info.structs.contains_key(&wrd) || wrd == "Self" { // TODO !!! Formatter !!!
                     Some(typ_with_child! {
                         TypeKind::Struct(TypName::Str(wrd)),
                         Type{
@@ -193,22 +193,48 @@ pub fn try_get_arg_typ(
             },
             SolidToken::UnaryOperator(op_type @ (OperatorType::Pointer | OperatorType::MutPointer)) => {
                 *pos += 1;
-                res = Some(Type {
-                    kind: match op_type {
+                res = Some(typ_with_child! {
+                    match op_type {
                         OperatorType::Pointer => TypeKind::Pointer,
                         OperatorType::MutPointer => TypeKind::MutPointer,
                         _ => unreachable!()
                     },
-                    children: some_vec![{
-                        let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call);
-                        if let Some(t) = t { t }
-                        else if panic { panic!() }
-                        else { return None }
-                    }]
+                    typ_with_child!{
+                        TypeKind::Generic(GenericType::WithVal(String::from("T"))),
+                        {
+                            let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call);
+                            if let Some(t) = t { t }
+                            else if panic { panic!() }
+                            else { return None }
+                        }
+                    }
                 });
                 *pos -= 1;
             }
-            _ => panic!("unexpected token {:?}, at {}", tokens[*pos], *pos)
+            SolidToken::LifeTime(life_time) => {
+                if res.is_some() {
+                    panic!("unexpected type, found life time: `{life_time}`")
+                }
+                res = Some(Type {
+                    kind: TypeKind::Generic(GenericType::NoVal(life_time.clone())),
+                    children: None
+                });
+            }
+            SolidToken::Parenthesis(IsOpen::True) => {
+                if res.is_some() {
+                    panic!("unexpected parenthesis, at {pos}")
+                }
+                if let SolidToken::Parenthesis(IsOpen::False) = tokens[*pos + 1] {
+                    *pos += 1;
+                    res = Some(Type{
+                        kind: TypeKind::EmptyType,
+                        children: None
+                    })
+                } else {
+                    panic!("unexpected parenthesis, at {pos}")
+                }
+            }
+            _ => panic!("unexpected token `{:?}`, at {}", tokens[*pos], *pos)
         }
         *pos += 1;
     }
