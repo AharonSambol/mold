@@ -11,8 +11,8 @@
 #     def rng(a: int, b: int) -> Iterator[Item=I]:
 #         return [a].into_iter()
 #
-trait It:
-    type Inner
+# trait It:
+#    type Inner
 #     def next(self) -> Inner
 #
 # trait AAAA:
@@ -28,23 +28,16 @@ trait It:
 # type i = int
 # type IList = List[i]
 
-
-
-def f(x: Display | Debug):
+def f(a: int | bool):
     pass
+
+# def f(x: Display | Debug):
+    # pass
 
 def main():
     a: List[int | bool | str] = [1, False]
-    # a.append("woooow")
-    for i in &a:
+    a.append("woooow")
+    # for i in &a:
         # f(i)
-        print(i)
+      #  print(i)
 
-
-def bin_search(elem: int):
-    pass
-
-
-def dmain():
-    for num in iter_imut([1, 2, 3]):
-        bin_search(*num)

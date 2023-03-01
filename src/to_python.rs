@@ -428,7 +428,7 @@ pub fn to_python(
             }
         },
         AstNode::Property => {
-            if let Some(res) = built_in_methods(ast, indentation, children, false) {
+            if let Some(res) = built_in_methods(ast, children, false) {
                 return res;
             }
             if let AstNode::FunctionCall(true) = ast[children[1]].value {
@@ -730,7 +730,7 @@ fn remove_unnecessary_val_creation(st: &str) -> &str {
 }
 
 fn built_in_methods(
-    ast: &[Ast], indentation: usize, children: &[usize], _add_index: bool
+    ast: &[Ast], children: &[usize], _add_index: bool
 ) -> Option<String> {
     let AstNode::FunctionCall(_) = ast[children[1]].value else {
         return None

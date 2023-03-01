@@ -38,7 +38,7 @@ impl Drop for CopyFolder {
     }
 }
 impl CopyFolder {
-    pub fn start(&self, file_path: &str) -> Option<File> {
+    pub fn start(&self) -> Option<File> {
         if unsafe { IS_COMPILED } {
             /*1 mkdir */ Command::new("mkdir")
                 .arg(&self.temp_path)

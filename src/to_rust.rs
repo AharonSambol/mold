@@ -1,15 +1,15 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
+use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
-use crate::{EMPTY_STR, get_traits, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, IMPL_TRAITS, ImplTraitsKey, ImplTraitsVal, unwrap_enum};
+use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
 use crate::add_types::ast_add_types::{get_inner_type, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::apply_generics_from_base;
 use crate::add_types::utils::{get_pointer_inner, is_float};
-use crate::construct_ast::mold_ast::{get_trt_strct_functions, Info, TraitFuncs};
+use crate::construct_ast::mold_ast::{Info};
 use crate::mold_tokens::OperatorType;
-use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, unwrap, UNKNOWN_TYPE, implements_trait};
+use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, implements_trait};
 
 //4 probably using a string builder would be much more efficient (but less readable IMO)
 pub fn to_rust(
@@ -894,7 +894,7 @@ fn built_in_funcs(
         }
         "sum" => {
             let inner_typ = get_inner_type(
-                ast, ast[args[0]].typ.as_ref().unwrap(),
+                ast[args[0]].typ.as_ref().unwrap(),
                 vec!["IntoIterator", "Iterator"], "Item", info
             ).expect("`sum` on non `Iterator | IntoIterator`");
             let inner_typ = apply_generics_from_base(
@@ -921,7 +921,7 @@ fn built_in_funcs(
                 TypeKind::Struct(name), name.get_str()
             );
             let is_float = ["f32", "f64"].contains(&base_typ);
-            let cast_to = if is_float { base_typ } else { "u32" };
+            // let cast_to = if is_float { base_typ } else { "u32" };
             // panic!("{:?}", ast[args[2]].value);
 
             format!(

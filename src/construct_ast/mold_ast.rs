@@ -1,17 +1,15 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write;
 use std::fs;
 use std::path::{Path, PathBuf};
 use lazy_static::lazy_static;
-use pretty_print_tree::Color;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
-use crate::{EMPTY_STR, IS_COMPILED, OneOfEnums, parse_file, PARSED_FILES, run, unwrap_enum};
+use crate::{EMPTY_STR, IS_COMPILED, OneOfEnums, parse_file, PARSED_FILES, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::{add_to_stack, get_from_stack};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{print_type_b, Type, TypeKind, UNKNOWN_TYPE, unwrap, unwrap_u};
+use crate::types::{Type, unwrap_u};
 use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
-use crate::construct_ast::get_typ::{get_arg_typ, get_params};
+use crate::construct_ast::get_typ::{get_arg_typ};
 use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait, make_enum};
 use crate::construct_ast::tree_utils::{add_to_tree, extend_tree, get_last, insert_as_parent_of_prev, print_tree};
 use crate::to_rust::to_rust;
@@ -132,131 +130,6 @@ pub fn construct_ast(tokens: &[SolidToken], pos: usize, info: &mut Info) -> Vec<
     ast
 }
 
-fn duck_type(ast: &mut Vec<Ast>, traits: &TraitTypes, structs: &StructTypes) {
-    // let all_traits: Vec<_> = traits.iter().map(
-    //     |(trt_name, trt)| {
-    //         let trt_def = &ast[trt.pos];
-    //         let trt_module = &ast[unwrap_u(&trt_def.children)[1]];
-    //         (
-    //             unwrap_enum!(&trt_def.value, AstNode::Trait { strict, .. }, *strict),
-    //             trt_name.clone(),
-    //             get_trt_strct_functions(ast, trt_module)
-    //         )
-    //     }
-    // ).collect();
-    // let duck_traits: Vec<_> = all_traits.iter()
-    //     .filter_map(|(strict, name, funcs)|
-    //         if *strict { None } else { Some((name.clone(), funcs.clone())) } //3 prob expensive clone
-    //     ).collect();
-
-    // for strct in structs.values() {
-    //     let strct_def = &ast[strct.pos];
-    //     let strct_children = unwrap_u(&strct_def.children);
-    //     if strct_children.is_empty() {
-    //         continue // TODO !!!!!!!!!!!!!!!!!!!!!!! duck typing across files !!!!!!!!!!!!!!!!!!!!!!
-    //     }
-    //     let strct_module_pos = strct_children[2];
-    //     // let strct_traits_pos = strct_children[3];
-    //     let funcs = get_all_strct_functions(ast, &ast[strct_module_pos]);
-    //     let strct_traits: HashMap<String, usize> = HashMap::from_iter(
-    //         unwrap_u(&ast[strct_traits_pos].children).iter().map(|trt| {
-    //             (unwrap_enum!(&ast[*trt].value, AstNode::Identifier(name), name.clone()), *trt)
-    //         })
-    //     );
-        #[inline] fn struct_matches_trait(
-            trt_funcs: &TraitFuncs, funcs: &TraitFuncs
-        ) -> Option<HashMap<String, Type>> {
-            let mut hm = HashMap::new();
-            'trait_func_loop: for (trt_f_name, (_, trt_f_types)) in trt_funcs {
-                if let Some((_, func_types)) = funcs.get(trt_f_name) {
-                    if func_types == trt_f_types {
-                        continue 'trait_func_loop
-                    }
-                    if func_types.output.is_some() != trt_f_types.output.is_some()
-                        || func_types.input.is_some() != trt_f_types.input.is_some()
-                    { return None }
-                    let mut func_all_types =
-                        if let Some(v) = &func_types.input { v.clone() }
-                        else { vec![] };
-                    let mut trt_f_all_types =
-                        if let Some(v) = &trt_f_types.input { v.clone() }
-                        else { vec![] };
-                    if let Some(x) = &func_types.output {
-                        func_all_types.push(Param {
-                            typ: x.clone(),
-                            name: EMPTY_STR,
-                            is_mut: false,
-                            is_args: false,
-                            is_kwargs: false,
-                            pos: 99999
-                        });
-                        unsafe { //1 safe cuz already checked that they both have or both dont have a return typ
-                            trt_f_all_types.push(Param {
-                                typ: trt_f_types.output.clone().unwrap_unchecked(),
-                                name: EMPTY_STR,
-                                is_mut: false,
-                                is_args: false,
-                                is_kwargs: false,
-                                pos: usize::MAX
-                            })
-                        }
-                    }
-
-                    for (trt_fnc, fnc) in trt_f_all_types.iter().zip(func_all_types) {
-                        if trt_fnc.name == fnc.name && trt_fnc.typ == fnc.typ {
-                            continue
-                        }
-                        if let TypeKind::InnerType(typ_name) = &trt_fnc.typ.kind {
-                            if let Some(expected_typ) = hm.get(typ_name) {
-                                if fnc.typ == *expected_typ {
-                                    continue
-                                }
-                            } else {
-                                hm.insert(typ_name.clone(), fnc.typ);
-                                continue
-                            }
-                        }
-                        return None
-                    }
-                    continue 'trait_func_loop
-                }
-                return None
-            }
-            Some(hm)
-        }
-        //5 this part isn't duck typing:
-//         for (trt_name, trt_pos) in &strct_traits {
-//             let trt_funcs = all_traits.iter().find(
-//                 |(_, name, _)| name == trt_name
-//             ).unwrap().2.clone();
-//             let types_hm = HashMap::from_iter(
-//                 unwrap_u(&ast[*trt_pos].children).iter().map(
-//                     |c| (
-//                         unwrap_enum!(&ast[*c].value, AstNode::Type(n), n.clone()),
-//                         ast[*c].typ.clone().unwrap(),
-//                     )
-//                 )
-//             );
-//             add_trait_to_struct(
-//                 ast, strct_module_pos, strct_traits_pos, &funcs,
-//                 trt_name, &trt_funcs, types_hm, false
-//             );
-//         }
-//
-//         for (trt, trt_funcs) in duck_traits.iter() {
-//             if strct_traits.contains_key(trt) { continue }
-//             //1 if all the functions in the trait are implemented
-//             // HashMap<String, (usize, HashMap<String, FuncType>)>
-//             if let Some(types_hm) = struct_matches_trait(trt_funcs, &funcs) {
-//                 add_trait_to_struct(
-//                     ast, strct_module_pos, strct_traits_pos, &funcs,
-//                     trt, trt_funcs, types_hm, true
-//                 )
-//             }
-//         }
-//     }
-}
-
 pub fn add_trait_to_struct(
     ast: &[Ast], struct_name: &str, funcs: &TraitFuncs, trt_name: &str, trt_funcs: &TraitFuncs,
     info: &Info
@@ -275,128 +148,7 @@ pub fn add_trait_to_struct(
             }
         ), "\n")
     )
-
-    // if add_identifier {
-    //     add_to_tree(
-    //         strct_traits_pos, ast,
-    //         Ast::new(AstNode::Identifier(trt.clone()))
-    //     );
-    // }
-    // for (func_name, (_trt_func_pos, _)) in trt_funcs {
-    //     let new_func_name = format!("{}::{}", trt, func_name);
-    //     //1 if already contains func with that name
-    //     if funcs.keys().any(|x| *x == new_func_name) { continue }
-    //     let func_pos = add_to_tree(
-    //         strct_module_pos, ast,
-    //         Ast::new(AstNode::Function(new_func_name))
-    //     );
-    //     // let trt_func_parts = ast[*trt_func_pos].children.clone().unwrap();
-    //     let (fp, _) = funcs.get(func_name).unwrap_or_else(||panic!("expected implementation of `{}`", func_name));
-    //     let func_parts = ast[*fp].children.clone().unwrap();
-    //     add_to_tree(func_pos, ast, ast[func_parts[0]].clone());
-    //     add_to_tree(func_pos, ast, ast[func_parts[1]].clone());
-    //     add_to_tree(func_pos, ast, ast[func_parts[2]].clone());
-    //     let body_pos = add_to_tree(
-    //         func_pos, ast, Ast::new(AstNode::Body)
-    //     );
-    //     if !types_hm.is_empty() {
-    //         let types_pos = add_to_tree(
-    //             func_pos, ast, Ast::new(AstNode::Types)
-    //         );
-    //         for (name, typ) in types_hm.iter() {
-    //             add_to_tree(types_pos, ast, Ast {
-    //                 value: AstNode::Type(name.clone()),
-    //                 children: None,
-    //                 parent: None,
-    //                 typ: Some(typ.clone()),
-    //                 is_mut: false,
-    //             });
-    //         }
-    //     }
-    //     let rtrn = add_to_tree(
-    //         body_pos, ast, Ast::new(AstNode::Return)
-    //     );
-    //
-    //     let prop = add_to_tree(
-    //         rtrn, ast, Ast::new(AstNode::Property)
-    //     );
-    //     add_to_tree(prop, ast, Ast::new(
-    //         AstNode::Identifier(String::from("self"))
-    //     ));
-    //     let func_call = add_to_tree(prop, ast, Ast::new(
-    //         AstNode::FunctionCall(false)
-    //     ));
-    //     add_to_tree(func_call, ast, Ast::new(
-    //         AstNode::Identifier(func_name.clone())
-    //     ));
-    //     add_to_tree(func_call, ast, Ast::new(
-    //         AstNode::Args
-    //     ));
-    // }
 }
-// fn add_trait_to_struct(
-//     ast: &mut Vec<Ast>, strct_module_pos: usize, strct_traits_pos: usize,
-//     funcs: &TraitFuncs, trt: &String, trt_funcs: &TraitFuncs, types_hm: HashMap<String, Type>,
-//     add_identifier: bool
-// ) {
-//     if add_identifier {
-//         add_to_tree(
-//             strct_traits_pos, ast,
-//             Ast::new(AstNode::Identifier(trt.clone()))
-//         );
-//     }
-//     for (func_name, (_trt_func_pos, _)) in trt_funcs {
-//         let new_func_name = format!("{}::{}", trt, func_name);
-//         //1 if already contains func with that name
-//         if funcs.keys().any(|x| *x == new_func_name) { continue }
-//         let func_pos = add_to_tree(
-//             strct_module_pos, ast,
-//             Ast::new(AstNode::Function(new_func_name))
-//         );
-//         // let trt_func_parts = ast[*trt_func_pos].children.clone().unwrap();
-//         let (fp, _) = funcs.get(func_name).unwrap_or_else(||panic!("expected implementation of `{}`", func_name));
-//         let func_parts = ast[*fp].children.clone().unwrap();
-//         add_to_tree(func_pos, ast, ast[func_parts[0]].clone());
-//         add_to_tree(func_pos, ast, ast[func_parts[1]].clone());
-//         add_to_tree(func_pos, ast, ast[func_parts[2]].clone());
-//         let body_pos = add_to_tree(
-//             func_pos, ast, Ast::new(AstNode::Body)
-//         );
-//         if !types_hm.is_empty() {
-//             let types_pos = add_to_tree(
-//                 func_pos, ast, Ast::new(AstNode::Types)
-//             );
-//             for (name, typ) in types_hm.iter() {
-//                 add_to_tree(types_pos, ast, Ast {
-//                     value: AstNode::Type(name.clone()),
-//                     children: None,
-//                     parent: None,
-//                     typ: Some(typ.clone()),
-//                     is_mut: false,
-//                 });
-//             }
-//         }
-//         let rtrn = add_to_tree(
-//             body_pos, ast, Ast::new(AstNode::Return)
-//         );
-//
-//         let prop = add_to_tree(
-//             rtrn, ast, Ast::new(AstNode::Property)
-//         );
-//         add_to_tree(prop, ast, Ast::new(
-//             AstNode::Identifier(String::from("self"))
-//         ));
-//         let func_call = add_to_tree(prop, ast, Ast::new(
-//             AstNode::FunctionCall(false)
-//         ));
-//         add_to_tree(func_call, ast, Ast::new(
-//             AstNode::Identifier(func_name.clone())
-//         ));
-//         add_to_tree(func_call, ast, Ast::new(
-//             AstNode::Args
-//         ));
-//     }
-// }
 
 //1 gets all the functions of the struct or trait (i think)
 pub fn get_trt_strct_functions(ast: &[Ast], module: &Ast) -> TraitFuncs {

@@ -60,6 +60,7 @@ pub fn apply_generics_from_base(return_typ: &Option<Type>, base: &Type) -> Optio
 
 pub fn apply_map_to_generic_typ(typ: &Type, map: &HashMap<String, Type>) -> Type {
     if let TypeKind::Generic(GenericType::NoVal(name)) = &typ.kind {
+        println!("{name} not in {map:?}");
         map[name].clone()
     } else {
         Type {

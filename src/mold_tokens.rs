@@ -95,13 +95,6 @@ impl Display for OperatorType {
             OperatorType::Div => "/",
             OperatorType::Mod => "%",
             OperatorType::FloorDiv => if unsafe { IS_COMPILED } { "/" } else { "//" },
-            // OperatorType::PlusEq => "+=",
-            // OperatorType::MinusEq => "-=",
-            // OperatorType::MulEq => "*=",
-            // OperatorType::PowEq => if unsafe { IS_COMPILED } { todo!() } else { "**=" },
-            // OperatorType::DivEq => "/=",
-            // OperatorType::ModEq => "%=",
-            // OperatorType::FloorDivEq => "//=",
             OperatorType::BinOr => "|",
             OperatorType::Pointer => "&", //1 python ignores this
             OperatorType::MutPointer => "&mut ", //1 python ignores this

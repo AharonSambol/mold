@@ -1,7 +1,6 @@
-use std::collections::HashMap;
 use pretty_print_tree::PrettyPrintTree;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
-use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, parse_file, some_vec};
+use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_TRAITS, some_vec};
 use crate::types::unwrap_u;
 
 #[inline]

@@ -1,14 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use fmt::Write;
-use pretty_print_tree::Color;
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::find_generics::{find_generics_in_typ, get_generic_names, get_generics, is_generic};
 use crate::construct_ast::get_typ::{get_arg_typ, get_params};
 use crate::construct_ast::mold_ast::{FuncType, StructType, TraitType, Info, make_ast_statement, VarTypes, EnumType};
 use crate::construct_ast::tree_utils::{add_to_tree};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{GenericType, print_type, print_type_b, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
+use crate::types::{GenericType, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
 use crate::{IMPL_TRAITS, ImplTraitsKey, ImplTraitsVal, IS_COMPILED, some_vec, typ_with_child, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::add_to_stack;
@@ -325,22 +324,6 @@ pub fn make_struct(
                         );
                     }
                 }
-
-                // let trait_impl_pos = unwrap_u(&ast[traits_pos].children).iter().find(
-                //     |&i| unwrap_enum!(&ast[*i].value, AstNode::Identifier(i), i) == trait_name
-                // );
-                // let pos =/* if let Some(pos) = trait_impl_pos { *pos } else {*/
-                //     add_to_tree(traits_pos, ast, Ast::new(
-                //         AstNode::Identifier(trait_name.clone())
-                //     ));
-                // add_to_tree(pos, ast, Ast {
-                //     value: AstNode::Type(type_name.clone()),
-                //     children: None,
-                //     parent: None,
-                //     typ: Some(typ),
-                //     is_mut: false,
-                // });
-                // panic!("!");
             }
             _ => (),
         }
@@ -593,17 +576,6 @@ pub fn make_trait(
                 children: None
             };
         }
-        // args.insert(0, Param {
-        //     name: String::from("self"),
-        //     typ: typ_with_child! {
-        //         TypeKind::MutPointer,
-        //         Type {
-        //             kind: TypeKind::Struct(TypName::Static("Self")),
-        //             children: None
-        //         }
-        //     },
-        //     is_mut: true
-        // });
         pos += 1;
         let return_type = if let SolidToken::Operator(OperatorType::Returns) = tokens[pos] {
             pos += 1;

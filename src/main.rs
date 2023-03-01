@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::{env, fs};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::fmt::{Display, Write as w};
+use std::fmt::{Write as w};
 use std::path::PathBuf;
 use std::process::Command;
 use once_cell::sync::Lazy;
@@ -27,7 +27,7 @@ use crate::construct_ast::tree_utils::clone_sub_tree;
 use crate::copy_folder::{change_file_extensions, CopyFolder, delete_unused_files};
 use crate::mold_tokens::SolidToken;
 use crate::to_python::ToWrapVal;
-use crate::types::{get_type_traits, Type, TypeKind};
+use crate::types::{Type};
 
 const RUST_IMPORTS: &str = "pub use std::{{\
 slice::{{Iter, IterMut}}, \
@@ -68,7 +68,6 @@ type OneOfEnums = HashMap<String, OneOfEnumTypes>;
 pub struct OneOfEnumTypes {
     options: Vec<Type>,
     generics: String,
-    traits: HashMap<String, String>,
 }
 // 2 optimizations:
 // lto = "fat"
@@ -116,7 +115,7 @@ fn main() {
         path.replacen(".mo", ".py", 1)
     };
     let copy_folder = CopyFolder { temp_path, module_path };
-    let main = copy_folder.start(&path);
+    let main = copy_folder.start();
 
     if !unsafe { IS_COMPILED } {
         let python_built_ins = {"class built_in_list_(list):

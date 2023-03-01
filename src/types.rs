@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use pretty_print_tree::{Color, PrettyPrintTree};
-use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
-use crate::{EMPTY_STR, get_traits, IMPL_TRAITS, ImplTraitsKey, ImplTraitsVal, unwrap_enum};
+use crate::construct_ast::ast_structure::{Ast, join, Param};
+use crate::{EMPTY_STR, get_traits, IMPL_TRAITS, ImplTraitsKey, ImplTraitsVal};
 use crate::add_types::polymorphism::escape_typ_chars;
 use crate::add_types::utils::get_pointer_inner;
 use crate::construct_ast::mold_ast::{add_trait_to_struct, get_trt_strct_functions, Info, TraitFuncs};
@@ -204,13 +204,6 @@ impl Display for Type {
 }
 
 impl Type {
-    // pub fn new(typ: String) -> Type {
-    //     Type {
-    //         kind: TypeKind::Struct(clean_type(typ)),
-    //         children: None
-    //     }
-    // }
-
     pub fn add_option(mut self, mut typ: Type) -> Type {
         if let TypeKind::OneOf = self.kind {
             if let TypeKind::OneOf = typ.kind {
@@ -284,44 +277,6 @@ pub fn clean_type(st: String) -> TypName {
         }
     )
 }
-
-pub fn get_type_traits(typ: &Type, ast: &Vec<Ast>, info: &Info) -> Vec<String> {
-    match &typ.kind {
-        TypeKind::Pointer | TypeKind::MutPointer => {
-            let mut res = vec![];
-            for trt in ["Display", "Debug"] {
-                if implements_trait(typ, trt, ast, info) {
-                    res.push(String::from(trt));
-                }
-            }
-            res
-        },
-        TypeKind::OneOf => { //3 this is not really optimized...
-            typ.children.as_ref().unwrap().iter().map(
-                |x| HashSet::from_iter(get_type_traits(x, ast, info).iter().cloned())
-            ).reduce(
-                |x1: HashSet<String>, x2| x1.intersection(&x2).cloned().collect()
-            ).unwrap().iter().map(|x| (*x).clone()).collect()
-        }
-        TypeKind::_Tuple => todo!(),
-        TypeKind::Trait(trt) => vec![trt.to_string()],
-        TypeKind::Enum(_) => vec![],
-        TypeKind::Struct(struct_name) => {
-            if let Some(res) = get_traits!(struct_name, info) {
-                res.iter().map(|x| x.trt_name.clone()).collect()
-            } else { vec![] }
-            // let struct_def = info.structs[struct_name.get_str()].pos;
-            // // let traits = ast[struct_def].children.as_ref().unwrap()[3];
-            // unwrap_u(&ast[traits].children).iter().map(|x|
-            //     unwrap_enum!(&ast[*x].value, AstNode::Identifier(idf), idf.clone())
-            // ).collect()
-        }
-        TypeKind::_Class(_) => todo!(),
-        _ => panic!(),
-    }
-}
-
-
 
 pub fn implements_trait(
     mut typ: &Type, expected_trait: &str, ast: &[Ast], info: &Info
