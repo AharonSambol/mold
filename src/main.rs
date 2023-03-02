@@ -39,6 +39,7 @@ pub use list_comprehension_macro::comp;";
 
 //3 I know this isn't exactly good practice...
 static mut IS_COMPILED: bool = false;
+static mut DONT_PRINT: bool = false;
 static mut IGNORE_TRAITS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 static mut IGNORE_STRUCTS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 static mut IGNORE_FUNCS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
@@ -46,6 +47,7 @@ static mut IGNORE_ENUMS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
 static mut PARSED_FILES: Lazy<HashMap<String, FileInfo>> = Lazy::new(HashMap::new);
 static mut PARSING_FILES: Lazy<HashSet<String>> = Lazy::new(HashSet::new);
 static mut MODULE_PATH: Option<PathBuf> = None;
+static mut IMPL_TRAITS: Lazy<HashMap<ImplTraitsKey, Vec<ImplTraitsVal>>> = Lazy::new(HashMap::new);
 #[derive(Eq, PartialEq, Hash, Debug)]
 struct ImplTraitsKey {
     name: String,
@@ -57,7 +59,6 @@ struct ImplTraitsVal {
     implementation: Option<String>,
     types: Option<HashMap<String, Type>>
 }
-static mut IMPL_TRAITS: Lazy<HashMap<ImplTraitsKey, Vec<ImplTraitsVal>>> = Lazy::new(HashMap::new);
 
 
 const EMPTY_STR: String = String::new();
@@ -78,24 +79,42 @@ fn main() {
     unsafe {
         IS_COMPILED = true;
     }
+    let mut test = false;
 
     let mut path = None;
     for argument in env::args() {
         if argument == "compile"    { unsafe { IS_COMPILED = true; } }
+        else if argument == "test"  { test = true; unsafe { DONT_PRINT = true; } }
         else if path.is_none()      { path = Some(argument); }
         else { panic!("unexpected argument `{argument}`") }
     }
-    let path = path.unwrap_or_else(|| String::from("."));
+    let path = path.unwrap_or_else(|| String::from(".")).as_str();
+    let paths = [
+        /*1     0*/ "tests/input_program.mo",
+        /*1     1*/ "tests/import_package/imports.mo",
+        /*1     2*/ "tests/built_ins.mo",
+        /*1     3*/ "tests/enums.mo",
+        /*1     4*/ "tests/pointers.mo",
+        /*1     5*/ "tests/generics.mo",
+        /*1     6*/ "tests/lists.mo",
+        /*1     7*/ "tests/algos.mo",
+    ];
+    if test {
+        for p in paths {
+            run_on_path(p);
+            unsafe {
+                IGNORE_TRAITS.clear();  IGNORE_STRUCTS.clear(); IGNORE_FUNCS.clear();
+                IGNORE_ENUMS.clear();   PARSED_FILES.clear();   PARSING_FILES.clear();
+                IMPL_TRAITS.clear();
+                MODULE_PATH = None;
+            }
+        }
+    } else {
+        run_on_path(paths[0]);
+    }
+}
 
-    let mut path = String::from("tests/input_program.mo");
-    // let path = String::from("tests/import_package/imports.mo");
-    // let mut path = String::from("tests/built_ins.mo");
-    // let mut path = String::from("tests/enums.mo");
-    // let mut path = String::from("tests/pointers.mo");
-    // let mut path = String::from("tests/generics.mo");
-    // let mut path = String::from("tests/lists.mo");
-    // let mut path = String::from("tests/algos.mo");
-
+fn run_on_path(path: &str) {
     let path = fs::canonicalize(path).unwrap().to_str().unwrap().to_string();
 
     let module_path_buf = find_module_path(&path);
@@ -204,7 +223,7 @@ class pointer_:
         let file_name = file_name.strip_suffix(".mo").unwrap();
 
         one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
-            "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
+                             "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
         );
         let mut rust_main_code = { format!(
             "#![allow(unused, non_camel_case_types)]
@@ -288,7 +307,9 @@ fn parse_file(path: &String, one_of_enums: &mut OneOfEnums) {
     let data = fs::read_to_string(path).expect("Couldn't read file");
     let data = put_at_start(&data);
     let tokens = mold_tokens::tokenize(&data);
-    println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidToken)>>());
+    if unsafe { !DONT_PRINT } {
+        println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidToken)>>());
+    }
     let mut info = Info {
         funcs: &mut Default::default(),
         structs: &mut Default::default(),

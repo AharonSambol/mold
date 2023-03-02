@@ -117,14 +117,15 @@ pub fn add_types(
             add_types(ast, children[1], vars, info, parent_struct);
             if let AstNode::Identifier(name) = &ast[children[0]].value {
                 if let Some(i) = get_from_stack(vars, name) {
-                    let should_be = &ast[i].typ;
-                    if ast[children[1]].typ != *should_be {
-                        panic!(
-                            "expected `{}` but found `{}`. variables can't change type, if you want to override use `:=`",
-                            should_be.as_ref().unwrap(),
-                            ast[children[1]].typ.as_ref().unwrap()
-                        );
-                    }
+                    let should_be = ast[i].typ.clone().unwrap();
+                    check_for_boxes(should_be, ast, children[1], info, vars);
+                    // if ast[children[1]].typ != *check_for_boxes(should_be, children[1], info, vars) {
+                    //     panic!(
+                    //         "expected `{}` but found `{}`. variables can't change type, if you want to override use `:=`",
+                    //         should_be.as_ref().unwrap(),
+                    //         ast[children[1]].typ.as_ref().unwrap()
+                    //     );
+                    // }
                 } else { //1 first assignment
                     add_to_stack(vars, name.clone(), children[0]);
                     ast[pos].value = AstNode::FirstAssignment;
@@ -139,10 +140,12 @@ pub fn add_types(
         AstNode::FirstAssignment => {
             add_types(ast, children[1], vars, info, parent_struct);
             if ast[pos].typ.is_some() {
-                ast[children[0]].typ = Some(check_for_boxes(
+                ast[children[0]].typ = ast[pos].typ.clone();
+                check_for_boxes(
                     ast[pos].typ.clone().unwrap(), ast, children[1],
                     info, vars
-                ));
+                );
+                // panic!("!{:?}", ast[children[0]].typ);
             } else {
                 let typ = ast[children[1]].typ.clone();
                 if typ.is_none() {

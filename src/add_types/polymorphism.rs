@@ -178,6 +178,10 @@ pub fn check_for_boxes(
         return check_for_boxes(expected, ast, unwrap_u(&got.children)[0], info, vars);
     }
     if let TypeKind::OneOf = expected.kind {
+        if *got.typ.as_ref().unwrap() == expected {
+            // panic!("{}", expected);
+            return expected;
+        }
         for typ in unwrap(&expected.children) {
             if let Some(t) = &got.typ {
                 if t == typ {

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use lazy_static::lazy_static;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
-use crate::{EMPTY_STR, IS_COMPILED, OneOfEnums, parse_file, PARSED_FILES, unwrap_enum};
+use crate::{DONT_PRINT, EMPTY_STR, IS_COMPILED, OneOfEnums, parse_file, PARSED_FILES, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::{add_to_stack, get_from_stack};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
@@ -119,13 +119,17 @@ pub fn construct_ast(tokens: &[SolidToken], pos: usize, info: &mut Info) -> Vec<
         &mut vec![HashMap::new()], info
     );
     // duck_type(&mut ast, info.traits, info.structs);
-    print_tree(&ast, 0);
+    if unsafe { !DONT_PRINT } {
+        print_tree(&ast, 0);
+    }
     if unsafe { IS_COMPILED } {
         add_types(
             &mut ast, 0, &mut vec![HashMap::new()],
             info, &None
         );
-        print_tree(&ast, 0);
+        if unsafe { !DONT_PRINT } {
+            print_tree(&ast, 0);
+        }
     }
     ast
 }
