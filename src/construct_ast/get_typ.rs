@@ -193,22 +193,36 @@ pub fn try_get_arg_typ(
             },
             SolidToken::UnaryOperator(op_type @ (OperatorType::Pointer | OperatorType::MutPointer)) => {
                 *pos += 1;
-                res = Some(typ_with_child! {
-                    match op_type {
-                        OperatorType::Pointer => TypeKind::Pointer,
-                        OperatorType::MutPointer => TypeKind::MutPointer,
-                        _ => unreachable!()
-                    },
-                    typ_with_child!{
-                        TypeKind::Generic(GenericType::WithVal(String::from("T"))),
-                        {
-                            let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call);
-                            if let Some(t) = t { t }
-                            else if panic { panic!() }
-                            else { return None }
-                        }
+                let is_parenthesis = matches!(tokens[*pos], SolidToken::Parenthesis(IsOpen::True));
+                // if is_parenthesis {
+                //     *pos += 1;
+                // }
+                let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call);
+                let inner = if let Some(t) = t {
+                    if matches!(t.kind, TypeKind::OneOf) && !is_parenthesis {
+                        //1 only make the first one a pointer
+                        res = Some(Type {
+                            kind: TypeKind::OneOf,
+                            children: Some(
+                                t.children.unwrap().iter().enumerate().map(|(i, child)|
+                                    if i == 0 {
+                                        pointer_of(op_type, child.clone())
+                                    } else {
+                                        child.clone()
+                                    }
+                                ).collect()
+                            )
+                        });
+                        make_enums(res.as_ref().unwrap(), info.one_of_enums);
+                        continue
+                    } else {
+                        t
                     }
-                });
+                }
+                else if panic { panic!() }
+                else { return None };
+
+                res = Some(pointer_of(op_type, inner));
                 *pos -= 1;
             }
             SolidToken::LifeTime(life_time) => {
@@ -299,4 +313,19 @@ fn get_inside_bracket_types(
     *pos += 1;
     res_children[0].children = Some(children);
     true
+}
+
+
+#[inline] fn pointer_of(kind: &OperatorType, inner: Type) -> Type {
+    typ_with_child! {
+        match kind {
+            OperatorType::Pointer => TypeKind::Pointer,
+            OperatorType::MutPointer => TypeKind::MutPointer,
+            _ => unreachable!()
+        },
+        typ_with_child! {
+            TypeKind::Generic(GenericType::WithVal(String::from("T"))),
+            inner
+        }
+    }
 }

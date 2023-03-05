@@ -73,6 +73,7 @@ pub fn make_enums(typ: &Type, enums: &mut OneOfEnums) {
         format!("<{}>", join(generics.iter(), ","))
     };
     let enm_name = escape_typ_chars(&typ.to_string());
+    println!("****** {enm_name}");
     enums.entry(enm_name).or_insert_with(|| {
         OneOfEnumTypes {
             generics,
@@ -88,6 +89,8 @@ pub fn escape_typ_chars(st: &str) -> String {
         .replace('>', "_endof_")
         .replace("Box<dyn ", "_boxof_")
         .replace('=', "_eq_")
+        .replace("&mut", "_mutpointer_").replace("& mut", "_mutpointer_")
+        .replace('&', "_pointer_")
 }
 
 fn add_one_of_enum(

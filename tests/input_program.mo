@@ -28,8 +28,8 @@
 # type i = int
 # type IList = List[i]
 
-# def f(a: int | bool):
-#     pass
+def f(a: &int | bool):
+    pass
 
 # def f(x: Display | Debug):
     # pass
@@ -38,7 +38,7 @@ def main():
     a: List[int | bool] = [1, False]
     x: int | bool = 3
     x = false
-    # f(x)
+    f(&3)
     # a.append("woooow")
     # for i in &a:
         # f(i)

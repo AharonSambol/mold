@@ -2,18 +2,19 @@ use std::any::Any;
 use std::fmt::{Debug, Display, Formatter, Error};
 use std::ptr;
 
-pub enum int_or_bool {
-    i(i32),
-    b(bool),
+pub enum int_or_bool<'a> {
+    i(&'a i32),
+    b(&'a bool),
 }
+
 pub enum _boxof_Display_endof___or___boxof_Debug_endof_  { __boxof_Display_endof_(Box<dyn Display>),__boxof_Debug_endof_(Box<dyn Debug>) }
 
-impl Display for int_or_bool {
+impl<'a> Display for int_or_bool<'a> {
     fn fmt(self: &Self, f: &mut Formatter<'_>) -> Result<(), Error> {
         todo!()
     }
 }
-impl Debug for int_or_bool {
+impl<'a> Debug for int_or_bool<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             int_or_bool::i(x) => Debug::fmt(x, f),
@@ -22,7 +23,10 @@ impl Debug for int_or_bool {
     }
 }
 fn a() {
-    let x = int_or_bool::b(false);
+    let mut x = int_or_bool::b(&false);
+    if 1 > 2 {
+        x = int_or_bool::i(&12);
+    }
     println!("{:?}", x);
 }
 
