@@ -21,6 +21,7 @@ use std::process::Command;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use fancy_regex::Regex as FancyRegex;
+use lazy_static::lazy_static;
 use crate::add_types::polymorphism::escape_typ_chars;
 use crate::built_in_funcs::put_at_start;
 use crate::construct_ast::mold_ast;
@@ -62,6 +63,10 @@ struct ImplTraitsVal {
     types: Option<HashMap<String, Type>>
 }
 
+lazy_static! {
+    pub static ref POINTER_WITHOUT_LIFETIME: FancyRegex = FancyRegex::new(r"&(?!\s*mut)(?!\s*')").unwrap();
+    pub static ref MUT_POINTER_WITHOUT_LIFETIME: FancyRegex = FancyRegex::new(r"&\s*mut(?!\s*')").unwrap();
+}
 
 const EMPTY_STR: String = String::new();
 
@@ -248,26 +253,28 @@ mod {module_name};
     }}.unwrap()
 }}
 
-fn main() {{ {module_name}::{file_name}::main(); }}
-",
-            // join(one_of_enums.values(), "\n")
+fn main() {{ {module_name}::{file_name}::main(); }}"
         )};
-        let pointer_without_lifetime = FancyRegex::new(r"&(?!\s*mut)(?!\s*')").unwrap();
-        let mut_pointer_without_lifetime = FancyRegex::new(r"&\s*mut(?!\s*')").unwrap();
         for (enm_name, enm_types) in one_of_enums {
-            println!("!!!!!!!! {}", enm_name);
             let mut needs_lifetime = false;
             let elems = enm_types.options
                 .iter()
                 .map(|x| {
                     let x_str = x.to_string();
-                    let new_str = mut_pointer_without_lifetime.replace_all(&x_str, "&mut 'a ");
-                    let new_str = pointer_without_lifetime.replace_all(&new_str, "&'a ");
-                    needs_lifetime = needs_lifetime || new_str != x_str;
-                    format!(
-                        "_{}({new_str})",
-                        escape_typ_chars(&x_str)
-                    )
+                    if x_str.contains('&') {
+                        let new_str = MUT_POINTER_WITHOUT_LIFETIME.replace_all(&x_str, "&mut 'a ");
+                        let new_str = POINTER_WITHOUT_LIFETIME.replace_all(&new_str, "&'a ");
+                        needs_lifetime = needs_lifetime || new_str != x_str;
+                        format!(
+                            "_{}({new_str})",
+                            escape_typ_chars(&x_str)
+                        )
+                    } else {
+                        format!(
+                            "_{}({x_str})",
+                            escape_typ_chars(&x_str)
+                        )
+                    }
                 });
             let elems = join(elems, ",");
             // let mut impls = get_type_traits(&Type {
@@ -275,19 +282,12 @@ fn main() {{ {module_name}::{file_name}::main(); }}
             //     children: Some(types),
             // }, ast, info);
             let res = format!(
-                "/*#[derive(Clone, PartialEq)]*/\npub enum {enm_name} {} {{ {} }}",
-                if needs_lifetime {
-                    if enm_types.generics.is_empty() {
-                        String::from("<'a>")
-                    } else {
-                        format!("<'a{}", enm_types.generics.strip_prefix('<').unwrap())
-                    }
-                } else if enm_types.generics.is_empty() {
-                        EMPTY_STR
-                } else {
-                    enm_types.generics
-                },
-                elems
+                "/*#[derive(Clone, PartialEq)]*/\npub enum {enm_name} {} {{ {elems} }}",
+                if enm_types.generics.is_empty() {
+                    if needs_lifetime { String::from("<'a>") } else { EMPTY_STR }
+                } else if needs_lifetime {
+                    format!("<'a{}", enm_types.generics.strip_prefix('<').unwrap())
+                } else { enm_types.generics },
                 // todo!() //1 impls
             );
             writeln!(&mut rust_main_code, "{}", res).unwrap();
