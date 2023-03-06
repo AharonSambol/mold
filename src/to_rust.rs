@@ -6,7 +6,7 @@ use std::iter::zip;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
 use crate::add_types::ast_add_types::{get_inner_type, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::apply_generics_from_base;
-use crate::add_types::utils::{get_pointer_inner, is_float};
+use crate::add_types::utils::{get_pointer_complete_inner, is_float};
 use crate::construct_ast::mold_ast::{Info};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, implements_trait};
@@ -586,7 +586,7 @@ fn in_to_rust(
 ) -> String {
     #[inline] fn is_hm(node: &Ast) -> bool {
         let node_typ = node.typ.as_ref().unwrap();
-        let node_typ = get_pointer_inner(node_typ);
+        let node_typ = get_pointer_complete_inner(node_typ);
         if let TypeKind::Struct(name) = &node_typ.kind {
             if name == "HashMap" {
                 return true
@@ -951,7 +951,7 @@ fn is_string_addition(ast: &[Ast], pos: usize, op: &OperatorType) -> bool{
 
 pub fn get_struct_and_func_name<'a>(ast: &'a [Ast], children: &[usize]) -> Option<(&'a TypName, &'a String)> {
     let typ = if let Some(t) = &ast[children[0]].typ { t } else { return  None };
-    let typ = get_pointer_inner(typ);
+    let typ = get_pointer_complete_inner(typ);
     if let Type{ kind: TypeKind::Struct(struct_name), .. } = typ {
         if let AstNode::Identifier(func_name) =
             &ast[unwrap_u(&ast[children[1]].children)[0]].value

@@ -25,6 +25,7 @@ pub fn get_params(
                     *pos += 2;
                     get_arg_typ(tokens, pos, info)
                 } else { UNKNOWN_TYPE };
+
                 params.push((Param {
                     name: wrd.clone(),
                     typ: if is_args {
@@ -79,7 +80,7 @@ pub fn get_params(
 pub fn get_arg_typ(
     tokens: &[SolidToken], pos: &mut usize, info: &mut Info
 ) -> Type {
-    try_get_arg_typ(tokens, pos, info, true, true).unwrap()
+    try_get_arg_typ(tokens, pos, info, true, true, &mut 0).unwrap()
 }
 
 enum StructTraitOrEnum {
@@ -87,8 +88,10 @@ enum StructTraitOrEnum {
 }
 
 /// # is_top_call should be passed true as default
+/// # inside_par should be false as default
 pub fn try_get_arg_typ(
-    tokens: &[SolidToken], pos: &mut usize, info: &mut Info, panic: bool, is_top_call: bool
+    tokens: &[SolidToken], pos: &mut usize, info: &mut Info, panic: bool,
+    is_top_call: bool, inside_par: &mut u32
 ) -> Option<Type> {
     if info.structs.is_empty() {
         panic!()
@@ -116,13 +119,12 @@ pub fn try_get_arg_typ(
             | SolidToken::Comma
             | SolidToken::Colon
             | SolidToken::NewLine
-            | SolidToken::Parenthesis(IsOpen::False)
             | SolidToken::Operator(OperatorType::Eq)
             => break,
             SolidToken::Operator(OperatorType::BinOr) => {
                 let typ = unwrap_enum!(res, Some(x), x, "need a value before |");
                 *pos += 1;
-                let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call);
+                let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call, inside_par);
                 *pos -= 1;
                 if let Some(t) = t {
                     res = Some(typ.add_option(t));
@@ -139,7 +141,7 @@ pub fn try_get_arg_typ(
                         kind: TypeKind::InnerType(wrd),
                         children: some_vec![{
                             *pos += 2;
-                            if let Some(t) = try_get_arg_typ(tokens, pos, info, panic, false)
+                            if let Some(t) = try_get_arg_typ(tokens, pos, info, panic, false, inside_par)
                             { t } else if panic { panic!() } else { return None }
                         }],
                     });
@@ -197,7 +199,7 @@ pub fn try_get_arg_typ(
                 // if is_parenthesis {
                 //     *pos += 1;
                 // }
-                let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call);
+                let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call, inside_par);
                 let inner = if let Some(t) = t {
                     if matches!(t.kind, TypeKind::OneOf) && !is_parenthesis {
                         //1 only make the first one a pointer
@@ -234,18 +236,27 @@ pub fn try_get_arg_typ(
                     children: None
                 });
             }
+            SolidToken::Parenthesis(IsOpen::False) => {
+                if *inside_par != 0 {
+                    *inside_par -= 1;
+                    *pos += 1;
+                }
+                break
+            }
             SolidToken::Parenthesis(IsOpen::True) => {
                 if res.is_some() {
                     panic!("unexpected parenthesis, at {pos}")
                 }
-                if let SolidToken::Parenthesis(IsOpen::False) = tokens[*pos + 1] {
-                    *pos += 1;
+                *pos += 1;
+                if let SolidToken::Parenthesis(IsOpen::False) = tokens[*pos] {
                     res = Some(Type{
                         kind: TypeKind::EmptyType,
                         children: None
                     })
                 } else {
-                    panic!("unexpected parenthesis, at {pos}")
+                    *inside_par += 1;
+                    return try_get_arg_typ(tokens, pos, info, panic, is_top_call, inside_par)
+                    // panic!("unexpected parenthesis, at {pos}")
                 }
             }
             _ => panic!("unexpected token `{:?}`, at {}", tokens[*pos], *pos)
@@ -305,7 +316,7 @@ fn get_inside_bracket_types(
     while matches!(&tokens[*pos], SolidToken::Comma) || is_first {
         is_first = false;
         *pos += 1;
-        let t = try_get_arg_typ(tokens, pos, info, panic, false);
+        let t = try_get_arg_typ(tokens, pos, info, panic, false, &mut 0); // todo if it encounters a parenthesis now that is wrong (i think)
         if let Some(t) = t {
             children.push(add_child(t, &mut generic_num, info));
         } else if panic { panic!() } else { return false };

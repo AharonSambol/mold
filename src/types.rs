@@ -4,7 +4,7 @@ use pretty_print_tree::{Color, PrettyPrintTree};
 use crate::construct_ast::ast_structure::{Ast, join, Param};
 use crate::{EMPTY_STR, get_traits, IMPL_TRAITS, ImplTraitsKey, ImplTraitsVal};
 use crate::add_types::polymorphism::escape_typ_chars;
-use crate::add_types::utils::get_pointer_inner;
+use crate::add_types::utils::get_pointer_complete_inner;
 use crate::construct_ast::mold_ast::{add_trait_to_struct, get_trt_strct_functions, Info, TraitFuncs};
 
 pub const UNKNOWN_TYPE: Type = Type {
@@ -341,7 +341,7 @@ pub fn implements_trait(
     }
     if let TypeKind::Pointer | TypeKind::MutPointer = &typ.kind {
         if expected_trait == "Debug" { // TODO this probably has to do with dereferencing or smthing
-            typ = get_pointer_inner(typ);
+            typ = get_pointer_complete_inner(typ);
         }
     }
     if let TypeKind::OneOf = &typ.kind {
@@ -373,8 +373,21 @@ pub fn implements_trait(
             let trt_module = ast[trt_pos].children.as_ref().unwrap()[1];
             let trt_funcs = get_trt_strct_functions(ast, &ast[trt_module]);
 
+            let one_of_enum = info.one_of_enums.get(
+                typ.to_string().as_str()
+            ).unwrap();
+            let generics = if one_of_enum.needs_lifetime {
+                if one_of_enum.generics.is_empty() {
+                    String::from("<'b_i_lifetime>")
+                } else {
+                    one_of_enum.generics.replacen('<', "<'b_i_lifetime, ", 1)
+                }
+            } else {
+                one_of_enum.generics.clone()
+            };
+
             let implementation = format!(
-                "impl {trt_file}::{expected_trait} for {typ} {{ \n\t{} \n}}",
+                "impl{generics} {trt_file}::{expected_trait} for {typ}{generics} {{ \n\t{} \n}}",
                 join( // TODO generics !!!!!!
                     trt_funcs.iter().map(|(func_name, (_, func_typ))| {
                         let none = vec![];

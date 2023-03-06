@@ -76,6 +76,7 @@ type OneOfEnums = HashMap<String, OneOfEnumTypes>;
 pub struct OneOfEnumTypes {
     options: Vec<Type>,
     generics: String,
+    needs_lifetime: bool
 }
 // 2 optimizations:
 // lto = "fat"
@@ -92,6 +93,7 @@ fn main() {
     for argument in env::args() {
         if argument == "compile"    { unsafe { IS_COMPILED = true; } }
         else if argument == "test"  { test = true; unsafe { DONT_PRINT = true; } }
+        else if argument == "noprint" { unsafe { DONT_PRINT = true; }} // todo remove this
         else if path.is_none()      { path = Some(argument); }
         else { panic!("unexpected argument `{argument}`") }
     }
@@ -262,8 +264,8 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
                 .map(|x| {
                     let x_str = x.to_string();
                     if x_str.contains('&') {
-                        let new_str = MUT_POINTER_WITHOUT_LIFETIME.replace_all(&x_str, "&mut 'a ");
-                        let new_str = POINTER_WITHOUT_LIFETIME.replace_all(&new_str, "&'a ");
+                        let new_str = MUT_POINTER_WITHOUT_LIFETIME.replace_all(&x_str, "&mut 'b_i_lifetime ");
+                        let new_str = POINTER_WITHOUT_LIFETIME.replace_all(&new_str, "&'b_i_lifetime ");
                         needs_lifetime = needs_lifetime || new_str != x_str;
                         format!(
                             "_{}({new_str})",
@@ -284,9 +286,9 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
             let res = format!(
                 "/*#[derive(Clone, PartialEq)]*/\npub enum {enm_name} {} {{ {elems} }}",
                 if enm_types.generics.is_empty() {
-                    if needs_lifetime { String::from("<'a>") } else { EMPTY_STR }
+                    if needs_lifetime { String::from("<'b_i_lifetime>") } else { EMPTY_STR }
                 } else if needs_lifetime {
-                    format!("<'a{}", enm_types.generics.strip_prefix('<').unwrap())
+                    format!("<'b_i_lifetime, {}", enm_types.generics.strip_prefix('<').unwrap())
                 } else { enm_types.generics },
                 // todo!() //1 impls
             );

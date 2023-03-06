@@ -1,6 +1,6 @@
 use pretty_print_tree::PrettyPrintTree;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
-use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_TRAITS, some_vec};
+use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, some_vec};
 use crate::types::unwrap_u;
 
 #[inline]
@@ -139,7 +139,7 @@ pub fn print_tree(ast: &[Ast], pos: usize){
                         match &vc[*x].value {
                             AstNode::StaticFunction(name)
                             | AstNode::Function(name) =>    !unsafe { IGNORE_FUNCS  .contains(name.as_str()) },
-                            // AstNode::Struct(name) =>        !unsafe { IGNORE_STRUCTS.contains(name.as_str()) },
+                            AstNode::Struct(name) =>        !unsafe { IGNORE_STRUCTS.contains(name.as_str()) },
                             AstNode::Trait{name, .. } =>    !unsafe { IGNORE_TRAITS .contains(name.as_str()) },
                             AstNode::Enum(name) =>          !unsafe { IGNORE_ENUMS  .contains(name.as_str()) },
                             _ => true

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::add_types::utils::get_pointer_inner;
+use crate::add_types::utils::get_pointer_complete_inner;
 use crate::construct_ast::ast_structure::Param;
 use crate::types::{GenericType, Type, TypeKind, unwrap};
 
@@ -40,7 +40,7 @@ pub fn map_generic_types(generic: &Type, t: &Type, res: &mut HashMap<String, Typ
 
 pub fn apply_generics_from_base(return_typ: &Option<Type>, base: &Type) -> Option<Type> {
     if let Some(rt) = return_typ {
-        let base = get_pointer_inner(base);
+        let base = get_pointer_complete_inner(base);
 
         if let Some(struct_def) = &base.children {
             if let Type { kind: TypeKind::GenericsMap, children: Some(generic_map) } = &struct_def[0] {

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
-use crate::{typ_with_child, unwrap_enum, some_vec, EMPTY_STR, OneOfEnums, OneOfEnumTypes, IMPL_TRAITS, ImplTraitsKey, get_traits};
+use crate::{typ_with_child, unwrap_enum, some_vec, EMPTY_STR, OneOfEnums, OneOfEnumTypes, IMPL_TRAITS, ImplTraitsKey, get_traits, MUT_POINTER_WITHOUT_LIFETIME, POINTER_WITHOUT_LIFETIME};
 use crate::add_types::ast_add_types::{find_index_typ, get_enum_property_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::{get_function_return_type};
-use crate::add_types::utils::{get_from_stack, get_pointer_inner};
+use crate::add_types::utils::{get_from_stack, get_pointer_complete_inner};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of, print_tree};
 use crate::mold_tokens::OperatorType;
@@ -66,6 +66,13 @@ pub fn make_enums(typ: &Type, enums: &mut OneOfEnums) {
             }
         }
     });
+    let needs_lifetime = types.iter().any(|x| { //1 if contains a pointer without a lifetime
+        let x_str = x.to_string();
+        if x_str.contains('&') {
+            MUT_POINTER_WITHOUT_LIFETIME.find(&x_str).is_ok()
+                || POINTER_WITHOUT_LIFETIME.find(&x_str).is_ok()
+        } else { false }
+    });
 
     let generics = if generics.is_empty() {
         EMPTY_STR
@@ -73,11 +80,12 @@ pub fn make_enums(typ: &Type, enums: &mut OneOfEnums) {
         format!("<{}>", join(generics.iter(), ","))
     };
     let enm_name = escape_typ_chars(&typ.to_string());
-    println!("****** {enm_name}");
+
     enums.entry(enm_name).or_insert_with(|| {
         OneOfEnumTypes {
             generics,
-            options: types.clone(),
+            needs_lifetime,
+            options: types.clone()
         }
     });
 }
@@ -265,12 +273,12 @@ pub fn check_for_boxes(
                     let pos = add_box(ast, pos);
                     ast[pos].typ = Some(res.clone());
                     return res
-                } else if expected_trait == "__str__" && matches!(&got_typ.kind, TypeKind::Pointer | TypeKind::MutPointer) {
-                    if implements_trait(get_pointer_inner(got_typ), expected_trait.get_str(), ast, info) {
+                } /*else if expected_trait == "__str__" && matches!(&got_typ.kind, TypeKind::Pointer | TypeKind::MutPointer) {
+                    if implements_trait(get_pointer_complete_inner(got_typ), expected_trait.get_str(), ast, info) {
                         return expected
                     }
                     panic!("expected: `{expected_trait}` got: `{got_typ}`")
-                } else {
+                } */ else {
                     print_type(&Some(expected.clone()));
                     print_type(&Some(got_typ.clone()));
                     todo!()
@@ -526,9 +534,11 @@ pub fn check_for_boxes(
             // let got_children = unwrap_u(&got.children).clone();
             let typ = match &got.value {
                 AstNode::UnaryOp(OperatorType::Pointer | OperatorType::MutPointer) => {
-                    let expected_children = unwrap(&expected.children).clone();
+                    let expected_inner = expected.children.as_ref().unwrap()[0]
+                        .children.as_ref().unwrap()[0]
+                        .clone();
                     check_for_boxes(
-                        expected_children[0].clone(), ast, unwrap_u(&got.children)[0],
+                        expected_inner, ast, unwrap_u(&got.children)[0],
                         info, vars
                     );
                     expected.clone()  //1 got what expected, no need to panic
@@ -580,7 +590,6 @@ pub fn check_for_boxes(
         }
         _ => {
             print_tree(ast, 0);
-
             panic!("{:?}", expected)
         },
     }

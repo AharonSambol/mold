@@ -7,7 +7,7 @@ use regex::Regex;
 use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS, IMPL_TRAITS, ImplTraitsKey, get_traits};
 use crate::add_types::generics::{apply_generics_from_base, apply_map_to_generic_typ, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::check_for_boxes;
-use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_inner, is_float};
+use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_complete_inner, get_pointer_inner, is_float};
 use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
 use crate::mold_tokens::OperatorType;
 
@@ -141,6 +141,7 @@ pub fn add_types(
             add_types(ast, children[1], vars, info, parent_struct);
             if ast[pos].typ.is_some() {
                 ast[children[0]].typ = ast[pos].typ.clone();
+                // panic!("\ne: {:?}\ng: {:?}", ast[pos].typ.clone().unwrap(), ast[children[1]].typ.clone().unwrap());
                 check_for_boxes(
                     ast[pos].typ.clone().unwrap(), ast, children[1],
                     info, vars
@@ -405,8 +406,8 @@ fn add_type_operator(
     add_types(ast, children[1], vars, info, parent_struct);
     let t1 = ast[children[0]].typ.as_ref().unwrap();
     let t2 = ast[children[1]].typ.as_ref().unwrap();
-    let t1 = get_pointer_inner(t1);
-    let t2 = get_pointer_inner(t2);
+    let t1 = get_pointer_complete_inner(t1);
+    let t2 = get_pointer_complete_inner(t2);
     let t1_name = unwrap_enum!(
         &t1.kind, TypeKind::Struct(t), t, "operator not valid for this type"
     );
@@ -468,7 +469,7 @@ fn add_type_property(
     let left_kind = ast[children[0]].typ.clone().unwrap_or_else(||
         panic!("{:?}", ast[children[0]].value)
     );
-    let left_kind = get_pointer_inner(&left_kind);
+    let left_kind = get_pointer_complete_inner(&left_kind);
     match &left_kind.kind {
         TypeKind::Struct(struct_name) => {
             let struct_description = if *struct_name == "Self" {
@@ -721,7 +722,7 @@ fn format_args_and_get_return_typ(
 
     if let Some(base) = base {
         if let Some(vc) = &mut expected_input {
-            let typ = get_pointer_inner(&vc[0].typ);
+            let typ = get_pointer_complete_inner(&vc[0].typ);
             if !matches!(&typ.kind, TypeKind::Struct(name) if name == "Self") {
                 panic!("used static function as a method")
             }
@@ -1213,7 +1214,7 @@ pub fn find_index_typ(ast: &[Ast], info: &Info, base: usize, pos: usize) -> Opti
                     ast, info.traits, trait_name.get_str(), "index"
                 ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", trait_name)),
             Some(Type { kind: TypeKind::Pointer | TypeKind::MutPointer, .. }) =>
-                return find_index_func(&Some(get_pointer_inner(typ.as_ref().unwrap()).clone()), ast, info, pos), // todo pos here might not be correct in the case of &Self
+                return find_index_func(&Some(get_pointer_complete_inner(typ.as_ref().unwrap()).clone()), ast, info, pos), // todo pos here might not be correct in the case of &Self
             _ => panic!("{typ:?}")
         }
     }

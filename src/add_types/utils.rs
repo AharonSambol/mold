@@ -69,14 +69,28 @@ pub fn add_to_stack(vars: &mut VarTypes, var: String, pos: usize) {
     vars.last_mut().unwrap().insert(var, pos);
 }
 
-pub fn get_pointer_inner(mut typ: &Type) -> &Type {
+pub fn get_pointer_complete_inner(mut typ: &Type) -> &Type {
     while let TypeKind::MutPointer | TypeKind::Pointer = &typ.kind {
         typ = &typ.children.as_ref().unwrap()[0];
         if let TypeKind::Generic(GenericType::WithVal(_)) = &typ.kind {
             typ = &typ.children.as_ref().unwrap()[0];
-        }
+        } else { unreachable!() }
     }
     typ
+}
+
+pub fn try_get_pointer_inner(mut typ: &Type) -> &Type {
+    if let TypeKind::MutPointer | TypeKind::Pointer = &typ.kind {
+        typ = &typ.children.as_ref().unwrap()[0];
+        if let TypeKind::Generic(GenericType::WithVal(_)) = &typ.kind {
+            typ = &typ.children.as_ref().unwrap()[0];
+        } else { unreachable!() }
+    }
+    typ
+}
+
+pub fn get_pointer_inner(typ: &Type) -> &Type {
+    &typ.children.as_ref().unwrap()[0].children.as_ref().unwrap()[0]
 }
 
 #[inline]

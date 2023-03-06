@@ -6,6 +6,11 @@ pub enum int_or_bool<'a> {
     i(&'a i32),
     b(&'a bool),
 }
+impl<'a> Debug for int_or_bool<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
 
 pub enum _boxof_Display_endof___or___boxof_Debug_endof_  { __boxof_Display_endof_(Box<dyn Display>),__boxof_Debug_endof_(Box<dyn Debug>) }
 
@@ -14,14 +19,14 @@ impl<'a> Display for int_or_bool<'a> {
         todo!()
     }
 }
-impl<'a> Debug for int_or_bool<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            int_or_bool::i(x) => Debug::fmt(x, f),
-            int_or_bool::b(x) => Debug::fmt(x, f),
-        }
-    }
-}
+// impl<'a> Debug for int_or_bool<'a> {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//             int_or_bool::i(x) => Debug::fmt(x, f),
+//             int_or_bool::b(x) => Debug::fmt(x, f),
+//         }
+//     }
+// }
 fn a() {
     let mut x = int_or_bool::b(&false);
     if 1 > 2 {

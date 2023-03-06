@@ -28,17 +28,16 @@
 # type i = int
 # type IList = List[i]
 
-def f(a: &int | bool):
-    pass
+def f(a: &(int | bool)):
+    print(a)
 
 # def f(x: Display | Debug):
     # pass
 
 def main():
-    a: List[int | bool] = [1, False]
-    x: int | bool = 3
-    x = false
-    f(&3)
+    # a: List[int | bool] = [1, False]
+    x: &(int | bool) = &3
+    f(x)
     # a.append("woooow")
     # for i in &a:
         # f(i)

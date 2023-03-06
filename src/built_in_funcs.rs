@@ -65,7 +65,6 @@ pub fn put_at_start(input: &str) -> String {
                 "lower(self, s: str) -> str",
                 "upper(self, s: str) -> str",
                 "__init__(self)",
-                "__str__(self: &Self) -> str",
                 // todo chars()
                 // todo is(digit\numeric\ascii...)
                 // todo "join(lst: List[T]) -> int",
@@ -124,7 +123,6 @@ pub fn put_at_start(input: &str) -> String {
             methods: vec![
                 "__len__(self: &Self) -> int",
                 "__init__(self)",
-                "__str__(self: &Self) -> str",
                 "into_iter(self) -> IntoIterator[Item=T]",
                 "append(self, t: T)",
                 "index(self, pos: usize) -> T",
@@ -142,7 +140,6 @@ pub fn put_at_start(input: &str) -> String {
             methods: vec![ // todo
                 "__len__(self: &Self) -> int",
                 "__init__(self)",
-                "__str__(self: &Self) -> str",
                 "add(self, t: T)",
                 "into_iter(self) -> IntoIterator[Item=T]",
             ],
@@ -158,7 +155,6 @@ pub fn put_at_start(input: &str) -> String {
             methods: vec![
                 "__init__(self)",
                 "__len__(self: &Self) -> int",
-                "__str__(self: &Self) -> str",
                 "into_iter(self) -> IntoIterator[Item=K]",
             ], // todo
             traits: Some(vec!["Debug"]),
@@ -192,17 +188,6 @@ pub fn put_at_start(input: &str) -> String {
             types: None,
             ignore: false
         }), // todo Sized?
-        //2 __str__
-        BuiltIn::Trait(BuiltInTrait {
-            name: "__str__",
-            duck: true,
-            generics: None,
-            methods: vec![
-                "__str__(self: &Self) -> str",
-            ],
-            types: None,
-            ignore: false
-        }),
         //2 Iterator
         BuiltIn::Trait(BuiltInTrait {
             name: "Iterator",

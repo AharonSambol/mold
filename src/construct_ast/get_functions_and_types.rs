@@ -106,7 +106,7 @@ pub fn get_struct_and_func_names(
                     generics: &mut vec![],
                     struct_inner_types: &mut HashSet::new(),
                     cur_file_path: &mut PathBuf::new(),
-                }, false, true
+                }, false, true, &mut 0
             );
             if let Some(res) = res {
                 resolved_types.insert((*typ).clone(), res);
