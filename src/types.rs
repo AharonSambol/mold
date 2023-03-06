@@ -148,11 +148,10 @@ impl Display for Type {
             TypeKind::Unknown => write!(f, "UNKNOWN TYPE"),
             TypeKind::OneOf => {
                 let children = unwrap(&self.children);
-                write!(f, "{}", join(
-                    children.iter()
-                        .map(|x| escape_typ_chars(&x.to_string())),
-                    "__or__"
-                ))
+                let mut children: Vec<_> = children.iter()
+                    .map(|x| escape_typ_chars(&x.to_string())).collect();
+                children.sort();
+                write!(f, "{}", children.join("__or__"))
             },
             TypeKind::_Tuple => {
                 write!(f, "({})", join(unwrap(&self.children).iter(), ","))
@@ -224,6 +223,18 @@ impl Type {
                 children: Some(vec![self, typ])
             }
         }
+    }
+
+    pub fn contains(&self, other: &Self) -> bool {
+        let (TypeKind::OneOf, TypeKind::OneOf) = (&self.kind, &other.kind) else {
+            unreachable!()
+        };
+        let self_children = self.children.as_ref().unwrap();
+        let other_children = other.children.as_ref().unwrap();
+        if self_children.len() < other_children.len() { return false }
+        other_children.iter().all(|opt|
+            self_children.iter().any(|s_opt| opt == s_opt)
+        ) // 3 NOT EFFICIENT
     }
 
     fn format_generics(&self) -> String {

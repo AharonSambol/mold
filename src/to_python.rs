@@ -569,9 +569,9 @@ pub fn to_python(
                     .map(|i| format!("_{i}"))
                     .collect::<Vec<_>>();
                 let args_with_self = if args.is_empty() { EMPTY_STR } else {
-                    format!("self.{}", join(args.iter(), ", self."))
+                    format!("self.{}", args.join(", self."))
                 };
-                let args = join(args.iter(), ",");
+                let args = args.join(",");
                 writeln!(res,
 "class {opt_name}({name}):
     def __init__(self,{args}):

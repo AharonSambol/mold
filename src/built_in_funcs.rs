@@ -352,7 +352,7 @@ pub fn put_at_start(input: &str) -> String {
                     write!(data, "TRAIT {}", trt.name).unwrap();
                 }
                 if let Some(generics) = trt.generics {
-                    write!(data, "<{}>", join(generics.iter(), ",")).unwrap();
+                    write!(data, "<{}>", generics.join(",")).unwrap();
                 }
                 write!(data, ":").unwrap();
                 if let Some(typs) = trt.types {
@@ -370,12 +370,12 @@ pub fn put_at_start(input: &str) -> String {
                     IGNORE_STRUCTS.insert(stct.name);
                 }
                 if let Some(generics) = stct.generics {
-                    write!(data, "struct {}<{}>", stct.name, join(generics.iter(), ",")).unwrap();
+                    write!(data, "struct {}<{}>", stct.name, generics.join(",")).unwrap();
                 } else {
                     write!(data, "struct {}", stct.name).unwrap();
                 }
                 if let Some(traits) = stct.traits {
-                    write!(data, "({}):", join(traits.iter(), ",")).unwrap();
+                    write!(data, "({}):", traits.join(",")).unwrap();
                 } else {
                     write!(data, ":").unwrap();
                 }
@@ -393,14 +393,14 @@ pub fn put_at_start(input: &str) -> String {
                 unsafe {
                     IGNORE_FUNCS.insert(func.name); // if you make this optional you need to also change where I don't box vals passed to builtin funcs
                 }
-                let args = join(func.args.iter(), ",");
+                let args = func.args.join(",");
                 let rtrn = if let Some(t) = func.return_typ {
                     format!("-> {t}")
                 } else {
                     EMPTY_STR
                 };
                 let generics = if let Some(generics) = func.generics {
-                    format!("<{}>", join(generics.iter(), ","))
+                    format!("<{}>", generics.join(","))
                 } else {
                     EMPTY_STR
                 };
@@ -410,9 +410,9 @@ pub fn put_at_start(input: &str) -> String {
                 if enm.ignore {
                     unsafe { IGNORE_ENUMS.insert(enm.name); }
                 }
-                let args = join(enm.args.iter(), "\n\t");
+                let args = enm.args.join("\n\t");
                 let generics = if let Some(generics) = enm.generics {
-                    format!("<{}>", join(generics.iter(), ","))
+                    format!("<{}>", generics.join(","))
                 } else {
                     EMPTY_STR
                 };
