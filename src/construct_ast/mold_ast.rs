@@ -6,6 +6,7 @@ use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
 use crate::{DONT_PRINT, EMPTY_STR, IS_COMPILED, OneOfEnums, parse_file, PARSED_FILES, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::{add_to_stack, get_from_stack};
+use crate::construct_ast::ast_structure::AstNode::As;
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
 use crate::types::{Type, unwrap_u};
 use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
@@ -431,6 +432,68 @@ pub fn make_ast_statement(
                 }
             }
             SolidToken::Import => todo!(),
+            SolidToken::Match => {
+                vars.push(HashMap::new());
+
+                let match_pos = add_to_tree(parent, ast, Ast::new(AstNode::Match));
+                pos = make_ast_expression(tokens, pos+1, ast, match_pos, vars, info);
+
+                if let SolidToken::Colon = tokens[pos] {
+                    pos += 1;
+                } else { panic!("expected `:`, found `{:?}`", tokens[pos]) }
+
+                pos = make_ast_statement(tokens, pos, ast, match_pos, indent + 1, vars, info) - 1;
+                vars.pop();
+            }
+            SolidToken::Case => {
+                let case = add_to_tree(parent, ast, Ast::new(AstNode::Case));
+                let expression = add_to_tree(case, ast, Ast::new(AstNode::Body));
+
+                // pos = make_ast_expression(tokens, pos + 1, ast, case, vars, info);
+                pos += 1;
+                let idf = unwrap_enum!(&tokens[pos], SolidToken::Word(wrd), wrd.clone(), "expected identifier");
+                add_to_tree(expression, ast, Ast::new(AstNode::Identifier(idf)));
+
+                pos += 1;
+                while let SolidToken::Period = tokens[pos] {
+                    pos += 1;
+                    let idf = unwrap_enum!(&tokens[pos], SolidToken::Word(wrd), wrd.clone(), "expected identifier");
+                    let prop = insert_as_parent_of_prev(ast, expression, AstNode::Property);
+                    add_to_tree(prop, ast, Ast::new(AstNode::Identifier(idf)));
+                    pos += 1;
+                }
+                if let SolidToken::Parenthesis(IsOpen::True) = tokens[pos] {
+                    // todo allow this too:  `case opt1(a, int(b)):`
+                    let parn = add_to_tree(expression, ast, Ast::new(AstNode::Parentheses));
+                    loop {
+                        pos += 1;
+                        let name = unwrap_enum!(&tokens[pos], SolidToken::Word(wrd), wrd.clone(), "expected identifier");
+                        add_to_tree(parn, ast, Ast::new(AstNode::Identifier(name)));
+                        pos += 1;
+                        if !matches!(tokens[pos], SolidToken::Comma) { break }
+                    }
+                    if let SolidToken::Parenthesis(IsOpen::False) = tokens[pos] {
+                        pos += 1;
+                    } else { panic!("expected `)`, found `{:?}`", tokens[pos]) }
+                }
+                if let SolidToken::Colon = tokens[pos] {
+                    pos += 1;
+                } else if let SolidToken::As = tokens[pos] {
+                    pos += 1;
+                    add_to_tree(
+                        case, ast, Ast::new(AstNode::Identifier(
+                            unwrap_enum!(&tokens[pos], SolidToken::Word(wrd), wrd.clone())
+                        ))
+                    );
+                    pos += 1;
+                    if let SolidToken::Colon = tokens[pos] {
+                        pos += 1;
+                    } else { panic!("expected `:`, found `{:?}`", tokens[pos]) }
+                } else { panic!("expected `:`, found `{:?}`", tokens[pos])  }
+
+                let body = add_to_tree(case, ast, Ast::new(AstNode::Body));
+                pos = make_ast_statement(tokens, pos, ast, body, indent + 1, vars, info) - 1;
+            }
             _ => panic!("unexpected token `{:?}`", token)
         }
         pos += 1;
@@ -972,6 +1035,7 @@ fn if_while_statement(
     pos = make_ast_expression(
         tokens, pos, ast, colon_par, vars, info
     );
+    // todo check that there is colon after the condition? (for statement too)
     //4 body:
     let body_pos = add_to_tree(stmt_pos, ast, Ast::new(AstNode::Body));
     vars.push(HashMap::new());
@@ -1027,7 +1091,6 @@ fn get_for_loop_vars(
         }
     }
 }
-
 
 fn find_module(module: &[&String], parent: &Path) -> Option<PathBuf> {
     // println!("module: {module:?}");

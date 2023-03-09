@@ -1,14 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
-use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, implements_trait};
+use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, implements_trait, print_type, clean_type};
 use lazy_static::lazy_static;
 use regex::Regex;
 use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS, IMPL_TRAITS, ImplTraitsKey, get_traits};
 use crate::add_types::generics::{apply_generics_from_base, apply_map_to_generic_typ, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::check_for_boxes;
 use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_complete_inner, get_pointer_inner, is_float};
-use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
+use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of, print_tree};
 use crate::mold_tokens::OperatorType;
 
 lazy_static! {
@@ -53,6 +53,114 @@ pub fn add_types(
                 add_types(ast, child, vars, info, parent_struct);
             }
             vars.pop();
+        }
+        AstNode::Match => {
+            vars.push(HashMap::new());
+            for child in children {
+                add_types(ast, child, vars, info, parent_struct);
+                // print_type(&ast[child].typ);
+            }
+            vars.pop();
+        }
+        AstNode::Case => {
+            let parent_match = &ast[*ast[pos].parent.as_ref().unwrap()];
+            let match_on = parent_match.children.as_ref().unwrap()[0];
+            let match_type = ast[match_on].typ.as_ref().unwrap();
+
+            let mut expression_children = ast[children[0]].children.clone().unwrap();
+
+            if let TypeKind::Enum(enum_name) = &match_type.kind {
+                let enum_name = enum_name.to_string();
+
+                let option = match &ast[expression_children[0]].value {
+                    AstNode::Identifier(idf) => idf,
+                    AstNode::Property => {
+                        add_types(ast, ast[expression_children[0]].children.as_ref().unwrap()[0], vars, info, parent_struct); //1 add type to enum so that it knows to use `::` and not `.` to separate hem
+                        let sides = ast[expression_children[0]].children.as_ref().unwrap();
+                        let left = unwrap_enum!(&ast[sides[0]].value, AstNode::Identifier(name), name, "expected identifier"); // todo this is a bad exception
+                        let right = unwrap_enum!(&ast[sides[1]].value, AstNode::Identifier(name), name, "expected identifier"); // todo this is a bad exception
+                        if *left != enum_name {
+                            panic!("expected `{enum_name}` but found `{left}`");
+                        }
+                        right
+                    }
+                    _ => panic!("expected identifier but found `{}`", ast[expression_children[0]].value)
+                };
+
+
+                let enm = &ast[info.enums[&enum_name].pos];
+                let enm_module = &ast[enm.children.as_ref().unwrap()[1]];
+                let opt_pos = unwrap_u(&enm_module.children).iter().find(
+                    |opt| matches!(&ast[**opt].value, AstNode::Identifier(idf) if idf == option)
+                ).unwrap_or_else(|| panic!("couldnt find `{option}` in enum `{enum_name}`"));
+                let enum_types = unwrap_u(&ast[*opt_pos].children).clone();
+
+                vars.push(HashMap::new());
+
+                if expression_children.len() == 2 {
+                    let par = &ast[expression_children[1]];
+                    let par_children = unwrap_u(&par.children).clone();
+                    if par_children.len() != enum_types.len() {
+                        panic!("incorrect amount of elements, expected `{}` but found `{}`", enum_types.len(), par_children.len())
+                    }
+                    for (elem, typ) in par_children.iter().zip(enum_types) {
+                        add_to_stack(
+                            vars,
+                            unwrap_enum!(&ast[*elem].value, AstNode::Identifier(name), name.clone()),
+                            *elem
+                        );
+                        ast[*elem].typ = ast[typ].typ.clone();
+                    }
+                }
+                add_types(ast, *children.last().unwrap(), vars, info, parent_struct); //1 body
+                vars.pop();
+
+            } else if let TypeKind::OneOf = &match_type.kind {
+                let one_of_enums_name = match_type.to_string();
+                let option_name = if let AstNode::Identifier(idf) = &ast[expression_children[0]].value {
+                    let idf = clean_type(idf.clone());
+                    ast[expression_children[0]].value = AstNode::Identifier(format!("_{idf}"));
+                    idf
+                } else {
+                    panic!("expected identifier but found `{}`", ast[expression_children[0]].value)
+                };
+                let property = insert_as_parent_of(ast, expression_children[0], AstNode::Property);
+                //1 needs to update it cuz the tree just changed
+                expression_children = ast[children[0]].children.clone().unwrap();
+
+                add_to_tree(property, ast, Ast::new(AstNode::Identifier(one_of_enums_name.clone())));
+                ast[property].children.as_mut().unwrap().reverse();
+
+                if expression_children.len() == 2 {
+                    panic!("unexpected parenthesis")
+                }
+
+                vars.push(HashMap::new());
+                if children.len() == 3 {
+                    let as_name = unwrap_enum!(&ast[children[1]].value, AstNode::Identifier(n), n);
+                    add_to_stack(vars, as_name.clone(), expression_children[0]);
+                }
+                add_types(ast, expression_children[0], vars, info, parent_struct); //1 this will add the enum type
+                let enum_typ = ast[expression_children[0]].typ.as_ref().unwrap();
+                let enm = &info.one_of_enums[
+                    unwrap_enum!(&enum_typ.kind, TypeKind::Enum(nme), nme.get_str())
+                ];
+                let typ = enm.options.iter().find(
+                    |opt| opt.to_string() == option_name.get_str()
+                ).unwrap_or_else(
+                    || panic!("couldn't find `{option_name}` in `{one_of_enums_name}` {}",
+                    enm.options.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ")
+                    )
+                );
+                ast[expression_children[0]].typ = Some(typ.clone());
+
+
+                add_types(ast, *children.last().unwrap(), vars, info, parent_struct); //1 body
+                vars.pop();
+            } else {
+                panic!("only matches on enums are currently supported (got `{}`), \
+                please use if/elif/else instead", match_type)
+            };
         }
         AstNode::Module | AstNode::Body | AstNode::ReturnType
         | AstNode::GenericsDeclaration | AstNode::ColonParentheses
@@ -100,12 +208,13 @@ pub fn add_types(
                 ast[pos].is_mut = ast[x].is_mut;
                 return;
             }
+            // todo not sure how this works... doesnt it need to have generic map as child?
             ast[pos].typ = Some(Type {
                 kind: if info.structs.contains_key(name) {
                     TypeKind::Struct(TypName::Str(name.clone()))
                 } else if info.funcs.contains_key(name) {
                     TypeKind::Function(name.clone())
-                } else if info.enums.contains_key(name) {
+                } else if info.enums.contains_key(name) | info.one_of_enums.contains_key(name) {
                     TypeKind::Enum(TypName::Str(name.clone()))
                 } else {
                     panic!("used `{name}` before assignment") //todo // 5 unreachable!
@@ -394,7 +503,7 @@ pub fn add_types(
         AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
         | AstNode::Trait { .. } /*| AstNode::Traits*/ | AstNode::Type(_) | AstNode::Types
         | AstNode::Arg { .. } | AstNode::Cast | AstNode::As(_) | AstNode::From | AstNode::Import
-        | AstNode::Ignore => {}
+        | AstNode::Ignore | AstNode::CaseModule => {}
     }
 }
 
@@ -977,21 +1086,34 @@ fn put_args_in_vec(
 pub fn get_enum_property_typ(
     ast: &[Ast], info: &Info, children: &[usize], enm_name: &TypName
 ) -> Option<Type> {
-    let generics = &info.enums[enm_name.get_str()].generics;
-    let len = if let Some(g) = generics {
+    let generics = if let Some(enm) = info.enums.get(enm_name.get_str()) {
+        enm.generics.clone()
+    } else {
+        let generics = &info.one_of_enums[enm_name.get_str()].generics;
+        if generics.is_empty() {
+            None
+        } else {
+            Some(generics.split(',').map(|x| x.to_string()).collect::<Vec<_>>())
+        }
+    };
+    // let generics = &info.enums[enm_name.get_str()].generics;
+    let len = if let Some(g) = &generics {
         g.len()
     } else { 0 };
     if len == 0 {
-        Some(Type {
-            kind: TypeKind::Enum(enm_name.clone()),
-            children: None
+        Some(typ_with_child! {
+            TypeKind::Enum(enm_name.clone()),
+            Type {
+                kind: TypeKind::GenericsMap,
+                children: None
+            }
         })
     } else {
         let mut generics_map = HashMap::new();
         let args = &ast[children[1]];
         if let AstNode::FunctionCall(_) = &args.value {
             let args = &ast[unwrap_u(&args.children)[1]];
-            let generics = generics.clone().unwrap();
+            let generics = generics.unwrap();
             let zip = generics
                 .iter()
                 .zip(unwrap_u(&args.children).clone());

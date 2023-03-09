@@ -18,6 +18,16 @@ pub fn to_rust(
     let children = unwrap_u(&ast[pos].children);
 
     match &ast[pos].value {
+        AstNode::Body => {
+            let indent = "\t".repeat(indentation);
+            format!(
+                " {{{}\n{}}}",
+                children.iter().map(|child|
+                    format!("\n{indent}{};", to_rust(ast, *child, indentation, info))
+                ).collect::<Vec<_>>().concat(),
+                "\t".repeat(indentation - 1)
+            )
+        },
         AstNode::Module => {
             let indent = "\t".repeat(indentation);
             format!(
@@ -30,15 +40,8 @@ pub fn to_rust(
                 ).collect::<Vec<_>>().concat()
             )
         },
-        AstNode::Body => {
-            let indent = "\t".repeat(indentation);
-            format!(
-                " {{{}\n{}\n}}",
-                children.iter().map(|child|
-                    format!("\n{indent}{};", to_rust(ast, *child, indentation, info))
-                ).collect::<Vec<_>>().concat(),
-                "\t".repeat(indentation - 1)
-            )
+        AstNode::CaseModule => {
+            format!("{},", to_rust(ast, children[0], indentation, info))
         },
         AstNode::Function(name) | AstNode::StaticFunction(name) => {
             if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
@@ -577,6 +580,49 @@ pub fn to_rust(
             )
         },
         AstNode::Ignore => EMPTY_STR,
+        AstNode::Match => {
+            let sep = format!("\n{}", "\t".repeat(indentation + 1));
+            let sep_m1 = format!("\n{}", "\t".repeat(indentation));
+            format!(
+                "match {} {{ {sep}{}{sep_m1}}}",
+                to_rust(ast, children[0], indentation, info),
+                join(
+                    children.iter().skip(1).map(
+                        |child| to_rust(ast, *child, indentation + 1, info)
+                    ),
+                    sep.as_str()
+                )
+            )
+        }
+        AstNode::Case => {
+            let parent_match = &ast[*ast[pos].parent.as_ref().unwrap()];
+            let match_on = parent_match.children.as_ref().unwrap()[0];
+            let is_one_of = matches!(&ast[match_on].typ, Some(Type { kind: TypeKind::OneOf, .. }));
+
+            let condition_children = ast[children[0]].children.as_ref().unwrap();
+            let option_name = to_rust(ast, condition_children[0], indentation, info);
+            let body = to_rust(ast, *children.last().unwrap(), indentation + 1, info);
+            if is_one_of {
+                format!(
+                    "{option_name}({}) => {body}",
+                    if children.len() == 3 {
+                        unwrap_enum!(&ast[children[1]].value, AstNode::Identifier(n), n)
+                    } else { "_" }
+                )
+            } else if condition_children.len() == 1 {
+                format!("{option_name} => {body}")
+            } else {
+                format!(
+                    "{option_name}({}) => {body}",
+                    join(
+                        ast[condition_children[1]].children.as_ref().unwrap().iter().map(
+                            |x| to_rust(ast, *x, indentation, info),
+                        ),
+                        ", "
+                    )
+                )
+            }
+        }
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
 }

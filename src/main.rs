@@ -19,7 +19,6 @@ use std::fmt::{Write as w};
 use std::path::PathBuf;
 use std::process::Command;
 use once_cell::sync::Lazy;
-use regex::Regex;
 use fancy_regex::Regex as FancyRegex;
 use lazy_static::lazy_static;
 use crate::add_types::polymorphism::escape_typ_chars;
@@ -32,6 +31,7 @@ use crate::mold_tokens::SolidToken;
 use crate::to_python::ToWrapVal;
 use crate::types::{Type};
 
+const EMPTY_STR: String = String::new();
 const RUST_IMPORTS: &str = "pub use std::{{\
 slice::{{Iter, IterMut}}, \
 iter::Rev, \
@@ -40,7 +40,7 @@ ptr, \
 fmt::{{Debug, Display, Formatter, Error}} }};
 pub use list_comprehension_macro::comp;";
 
-//3 I know this isn't exactly good practice...
+//3 This isn't exactly good practice...
 static mut IS_COMPILED: bool = false;
 static mut DONT_PRINT: bool = false;
 static mut IGNORE_TRAITS: Lazy<HashSet<&'static str>> = Lazy::new(HashSet::new);
@@ -51,11 +51,20 @@ static mut PARSED_FILES: Lazy<HashMap<String, FileInfo>> = Lazy::new(HashMap::ne
 static mut PARSING_FILES: Lazy<HashSet<String>> = Lazy::new(HashSet::new);
 static mut MODULE_PATH: Option<PathBuf> = None;
 static mut IMPL_TRAITS: Lazy<HashMap<ImplTraitsKey, Vec<ImplTraitsVal>>> = Lazy::new(HashMap::new);
+
+lazy_static! {
+    pub static ref POINTER_WITHOUT_LIFETIME: FancyRegex = FancyRegex::new(r"&(?!\s*mut)(?!\s*')").unwrap();
+    pub static ref MUT_POINTER_WITHOUT_LIFETIME: FancyRegex = FancyRegex::new(r"&\s*mut(?!\s*')").unwrap();
+}
+
+type OneOfEnums = HashMap<String, OneOfEnumTypes>;
+
 #[derive(Eq, PartialEq, Hash, Debug)]
 struct ImplTraitsKey {
     name: String,
     path: String
 }
+
 #[derive(Clone, Debug)]
 struct ImplTraitsVal {
     trt_name: String,
@@ -63,21 +72,19 @@ struct ImplTraitsVal {
     types: Option<HashMap<String, Type>>
 }
 
-lazy_static! {
-    pub static ref POINTER_WITHOUT_LIFETIME: FancyRegex = FancyRegex::new(r"&(?!\s*mut)(?!\s*')").unwrap();
-    pub static ref MUT_POINTER_WITHOUT_LIFETIME: FancyRegex = FancyRegex::new(r"&\s*mut(?!\s*')").unwrap();
-}
-
-const EMPTY_STR: String = String::new();
-
-type OneOfEnums = HashMap<String, OneOfEnumTypes>;
-
 #[derive(Debug, Clone)]
 pub struct OneOfEnumTypes {
     options: Vec<Type>,
     generics: String,
     needs_lifetime: bool
 }
+
+// TODO python Option enum doesnt work
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 // 2 optimizations:
 // lto = "fat"
 // codegen-units = 1

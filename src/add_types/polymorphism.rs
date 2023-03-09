@@ -10,10 +10,10 @@ use crate::mold_tokens::OperatorType;
 use crate::types::{GenericType, implements_trait, print_type, Type, TypeKind, TypName, unwrap, unwrap_u};
 
 // TODO also cast: `as Box<dyn P>`
-fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leaves ast[pos] without anything pointing at it
+fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize {
     let ast_len = ast.len();
-    let inner_val = ast[pos].clone();
-    let parent_pos = inner_val.parent.unwrap();
+    let parent_pos = ast[pos].parent.unwrap();
+
     let parent_children = ast[parent_pos].children.as_mut().unwrap();
     *parent_children.iter_mut().find(|x| **x == pos).unwrap() = ast_len; //1 ast_len is the position the Property will be pushed into
 
@@ -21,20 +21,19 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leave
         value: AstNode::Property,
         children: None,
         parent: Some(parent_pos),
-        typ: None,
         is_mut: false,
+        typ: Some(typ_with_child! {
+            TypeKind::Struct(TypName::Static("Box")),
+            typ_with_child! {
+                TypeKind::GenericsMap,
+                typ_with_child! {
+                    TypeKind::Generic(GenericType::WithVal(String::from("T"))),
+                    ast[pos].typ.clone().unwrap()
+                }
+            }
+        }),
     });
     let property = ast.len() - 1;
-    ast[property].typ = Some(typ_with_child! {
-        TypeKind::Struct(TypName::Static("Box")),
-        typ_with_child! {
-            TypeKind::GenericsMap,
-            typ_with_child! {
-                TypeKind::Generic(GenericType::WithVal(String::from("T"))),
-                inner_val.typ.clone().unwrap()
-            }
-        }
-    });
     add_to_tree(
         property, ast, Ast::new(AstNode::Identifier(String::from("Box")))
     );
@@ -45,9 +44,48 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize { // todo i think this leave
         func_call, ast, Ast::new(AstNode::Identifier(String::from("new")))
     );
     let args_pos = add_to_tree(func_call, ast, Ast::new(AstNode::Args));
-    add_to_tree(args_pos, ast, inner_val);
+
+    ast[pos].parent = Some(args_pos);
+    ast[args_pos].children = Some(vec![pos]);
+
     property
 }
+
+/* TODO
+    fn cast_one_of_to_other_one_of(ast: &mut Vec<Ast>, pos: usize, to_typ: Type) -> usize {
+        let ast_len = ast.len();
+        let parent_pos = ast[pos].parent.unwrap();
+
+        let parent_children = ast[parent_pos].children.as_mut().unwrap();
+        *parent_children.iter_mut().find(|x| **x == pos).unwrap() = ast_len; //1 ast_len is the position the Property will be pushed into
+
+        ast.push(Ast {
+            value: AstNode::Body,
+            children: None,
+            parent: Some(parent_pos),
+            typ: Some(to_typ),
+            is_mut: false,
+        });
+        let body = ast.len() - 1;
+
+        add_to_tree(
+            body, ast, Ast::new(AstNode::Match(String::from("Box")))
+        );
+        let func_call = add_to_tree(
+            body, ast, Ast::new(AstNode::FunctionCall(true))
+        );
+        add_to_tree(
+            func_call, ast, Ast::new(AstNode::Identifier(String::from("new")))
+        );
+        let args_pos = add_to_tree(func_call, ast, Ast::new(AstNode::Args));
+
+        ast[pos].parent = Some(args_pos);
+        ast[args_pos].children = Some(vec![pos]);
+
+        property
+    }
+
+ */
 
 pub fn make_enums(typ: &Type, enums: &mut OneOfEnums) {
     let types = unwrap(&typ.children);
@@ -92,7 +130,6 @@ pub fn make_enums(typ: &Type, enums: &mut OneOfEnums) {
 
 #[inline]
 pub fn escape_typ_chars(st: &str) -> String {
-    println!("^^ {st}");
     st
         .replace("::<", "_of_")
         .replace('>', "_endof_")
@@ -191,8 +228,45 @@ pub fn check_for_boxes(
     }
     if let TypeKind::OneOf = expected.kind {
         if let Some(got_typ @ Type{ kind: TypeKind::OneOf, .. }) = &got.typ {
-            if expected == *got_typ || expected.contains(got_typ) {
+            if expected == *got_typ {
                 return expected
+            } else if expected.contains(got_typ) {
+                let match_pos = insert_as_parent_of(ast, pos, AstNode::Match);
+                let from_enum_name = got_typ.to_string();
+                let to_enum_name = expected.to_string();
+                for typ in got_typ.children.as_ref().unwrap() {
+                    let case = add_to_tree(match_pos, ast, Ast::new(AstNode::Case));
+                    /**/let condition = add_to_tree(case, ast, Ast::new(AstNode::Body));
+                    /*-*/let prop = add_to_tree(condition, ast, Ast::new(AstNode::Property));
+                    /*--*/let frm_enm =add_to_tree(prop, ast, Ast::new(AstNode::Identifier(from_enum_name.clone())));
+                    ast[frm_enm].typ = Some(Type { kind: TypeKind::Enum(TypName::Static("")), children: None}); //1 so that is uses `::` and not `.`
+                    /*--*/add_to_tree(prop, ast, Ast::new(AstNode::Identifier(format!("_{typ}"))));
+                    /**/add_to_tree(case, ast, Ast::new(AstNode::Identifier(String::from("x"))));
+
+                    /**/let body = add_to_tree(case, ast, Ast::new(AstNode::CaseModule));
+                    /*-*/let prop = add_to_tree(body, ast, Ast::new(AstNode::Property));
+                    /*--*/add_to_tree(prop, ast, Ast::new(AstNode::Identifier(to_enum_name.clone())));
+                    /*--*/let func_call = add_to_tree(prop, ast, Ast::new(AstNode::FunctionCall(true)));
+                    /*---*/add_to_tree(func_call, ast, Ast::new(AstNode::Identifier(format!("_{typ}"))));
+                    /*---*/let args = add_to_tree(func_call, ast, Ast::new(AstNode::Args));
+                    /*----*/add_to_tree(args, ast, Ast::new(AstNode::Identifier(String::from("x"))));
+
+                    /*
+                    match typ {
+                        type1::one(a, b) => type2::one(a, b),
+                        type1::two => type2::two(a, b),
+                    }
+                     */
+                }
+                print_tree(ast, match_pos);
+                // todo!()
+                return expected
+                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             }
         }
         for typ in unwrap(&expected.children) {
@@ -217,6 +291,9 @@ pub fn check_for_boxes(
                 }
             }
         }
+        print_tree(ast, 0);
+        println!("{}", join(unwrap(&expected.children).iter().map(|x| x.to_string()), "` or `"));
+        println!("{:?}", got);
         panic!(
             "expected: `{}` but found `{}`",
             join(unwrap(&expected.children).iter().map(|x| x.to_string()), "` or `"),
@@ -656,6 +733,11 @@ fn can_soft_cast(typ: &Type, expected: &Type) -> bool {
     if typ == expected { return true }
     if let TypeKind::Enum(enum_name1) = &typ.kind {
         if matches!(&expected.kind, TypeKind::Enum(enum_name2) if enum_name1 == enum_name2) {
+            print_type(&Some(typ.clone()));
+            print_type(&Some(expected.clone()));
+            // if unwrap(&typ.children).is_empty() && unwrap(&expected.children)[0].children.is_none() {
+            //     return true
+            // }
             let generic_map1 = &unwrap(&typ.children)[0];
             let generic_map2 = &unwrap(&expected.children)[0];
             for generic1 in unwrap(&generic_map1.children) {

@@ -228,12 +228,12 @@ pub fn to_python(
             )
         },
         AstNode::ColonParentheses => {
-            let mut res = String::new();
-            for child in children {
-                write!(res, "{}", to_python(ast, *child, indentation, ToWrapVal::GetInnerValue)).unwrap();
-            }
-            write!(res, ":").unwrap();
-            res
+            format!(
+                "{}:",
+                children.iter().map(|child|
+                    to_python(ast, *child, indentation, ToWrapVal::GetInnerValue)
+                ).collect::<Vec<_>>().concat()
+            )
         },
         AstNode::Index => {
             match add_val_wrapper {
@@ -557,7 +557,9 @@ pub fn to_python(
             }
 
             let mut res = format!(
-                "class {name}:{}\n\n",
+                "class {name}:\n\
+                \tdef getattr(attr): return eval(f'{name}.{{attr}}')\
+                {}\n\n",
                 options.iter()
                     .enumerate()
                     .map(|(i, (opt_name, _))| format!("\n\t{opt_name}={i}"))
@@ -573,9 +575,12 @@ pub fn to_python(
                 };
                 let args = args.join(",");
                 writeln!(res,
-"class {opt_name}({name}):
-    def __init__(self,{args}):
-        ({args_with_self}) = ({args})"
+"class {name}__{opt_name}({name}):
+\tdef __init__(self,{args}):
+\t\t({args_with_self}) = ({args})
+\tdef getattr(attr): return eval(f'Color.{{attr}}')
+\tdef get_enum_inner_vals_(self): return {args_with_self}
+{name}.{opt_name} = {name}__{opt_name}"
                 ).unwrap();
             }
             res
@@ -686,6 +691,45 @@ pub fn to_python(
             )
         },
         AstNode::GenericsDeclaration | AstNode::Trait { .. } | AstNode::Ignore => EMPTY_STR,
+        AstNode::Match => {
+            format!(
+                "match {}:{}",
+                to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue),
+                children.iter().skip(1).map(|case|
+                    to_python(ast, *case, indentation + 1, ToWrapVal::Nothing)
+                ).collect::<Vec<_>>().concat(),
+            )
+        }
+        AstNode::Case => {
+            let name = if children.len() == 2 {
+                "_val_"
+            } else {
+                unwrap_enum!(&ast[children[1]].value, AstNode::Identifier(n), n)
+            };
+            let condition_children = ast[children[0]].children.as_ref().unwrap();
+            let empty_vec = vec![];
+            let par_values = if condition_children.len() == 2 {
+                unwrap_u(&ast[condition_children[1]].children)
+            } else { &empty_vec };
+
+            let par_names = join(
+                par_values.iter().map(
+                    |x| unwrap_enum!(&ast[*x].value, AstNode::Identifier(i), i)
+                ),
+                ", "
+            );
+            let indent = "\t".repeat(indentation);
+            format!(
+                "\n{indent}case {name} if isinstance({name}, {}):\
+                {}\
+                {}",
+                to_python(ast, condition_children[0], indentation, ToWrapVal::GetName),
+                if par_values.is_empty() { EMPTY_STR } else {
+                    format!("\n{indent}\t({par_names})={name}.get_enum_inner_vals_()")
+                },
+                to_python(ast, *children.last().unwrap(), indentation + 1, ToWrapVal::Nothing),
+            )
+        }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }
 }
