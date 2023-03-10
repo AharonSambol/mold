@@ -36,7 +36,15 @@ def main():
             print("a")
         case E.b(x):
             print("b=", x)
-        case c:
+        case E.c:
             pass
-        case d:
+        case E.d:
+            pass
+    a: int | bool | str = false
+    match a:
+        case int:
+            print("a")
+        case bool:
+            print("b=")
+        case _:
             pass

@@ -719,15 +719,18 @@ pub fn to_python(
                 ", "
             );
             let indent = "\t".repeat(indentation);
+            let case_type = to_python(ast, condition_children[0], indentation, ToWrapVal::GetName);
+            let body = to_python(ast, *children.last().unwrap(), indentation + 1, ToWrapVal::Nothing);
+            if case_type == "_" {
+                return format!("\n{indent}case _:{body}")
+            }
             format!(
-                "\n{indent}case {name} if isinstance({name}, {}):\
+                "\n{indent}case {name} if isinstance({name}, {case_type}):\
                 {}\
-                {}",
-                to_python(ast, condition_children[0], indentation, ToWrapVal::GetName),
+                {body}",
                 if par_values.is_empty() { EMPTY_STR } else {
                     format!("\n{indent}\t({par_names})={name}.get_enum_inner_vals_()")
-                },
-                to_python(ast, *children.last().unwrap(), indentation + 1, ToWrapVal::Nothing),
+                }
             )
         }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)

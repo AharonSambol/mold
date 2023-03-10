@@ -92,7 +92,7 @@ pub struct OneOfEnumTypes {
 fn main() {
     // todo remove
     unsafe {
-        IS_COMPILED = true;
+        // IS_COMPILED = true;
     }
     let mut test = false;
 

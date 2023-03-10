@@ -97,11 +97,14 @@ pub fn add_types(
 
                 let option = match &ast[expression_children[0]].value {
                     AstNode::Identifier(_) => {
+                        panic!("expected property, please prefix this with the enum e.g. `Color.red`");
+                        /*
                         let prop = insert_as_parent_of(ast, expression_children[0], AstNode::Property);
                         add_to_tree(prop, ast, Ast::new(AstNode::Identifier(enum_name.clone())));
                         ast[prop].children.as_mut().unwrap().reverse();
                         add_types(ast, ast[prop].ref_children()[0], vars, info, parent_struct); //1 add type to enum so that it knows to use `::` and not `.` to separate hem
                         unwrap_enum!(&ast[expression_children[0]].value, AstNode::Identifier(idf), idf)
+                        */
                     },
                     AstNode::Property => {
                         add_types(ast, ast[expression_children[0]].ref_children()[0], vars, info, parent_struct); //1 add type to enum so that it knows to use `::` and not `.` to separate hem
