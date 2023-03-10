@@ -55,7 +55,7 @@ pub fn to_rust(
             for child in children.iter().skip(2) {
                 match &ast[*child].value {
                     AstNode::IfStatement => {
-                        let c_children = ast[*child].children.as_ref().unwrap();
+                        let c_children = ast[*child].ref_children();
                         write!(
                             res, "\n{}else if {}{}",
                             "\t".repeat(indentation),
@@ -503,7 +503,7 @@ pub fn to_rust(
                     _ => unreachable!()
                 },
                 /*1 loops*/ loops.iter().map(|r#loop| {
-                    let colon_par = ast[*r#loop].children.as_ref().unwrap()[0];
+                    let colon_par = ast[*r#loop].ref_children()[0];
                     format!("for {} {{", to_rust(ast, colon_par, indentation, info))
                 }).collect::<Vec<_>>().concat(),
                 /*1 condition*/ if let Some(condition) = &ast[children[2]].children {
@@ -511,14 +511,14 @@ pub fn to_rust(
                 } else { EMPTY_STR },
                 /*1 add method*/ if let AstNode::ListComprehension = &ast[pos].value { "res.push" } else { "res.insert" },
                 /*1 add element*/ if let AstNode::DictComprehension = &ast[pos].value {
-                    let parts = ast[children[0]].children.as_ref().unwrap();
+                    let parts = ast[children[0]].ref_children();
                     format!(
                         "{},{}",
                         to_rust(ast, parts[0], indentation, info),
                         to_rust(ast, parts[1], indentation, info)
                     )
                 } else {
-                    to_rust(ast, ast[children[0]].children.as_ref().unwrap()[0], indentation, info)
+                    to_rust(ast, ast[children[0]].ref_children()[0], indentation, info)
                 },
                 /*1 close braces*/ "}".repeat(loops.len() + (ast[children[2]].children.is_some() as usize))
             )
@@ -544,7 +544,7 @@ pub fn to_rust(
                 format!(
                     "use super::{}::{{ {} }};",
                     join(
-                        ast[children[0]].children.as_ref().unwrap()
+                        ast[children[0]].ref_children()
                             .iter()
                             .map(|i| to_rust(
                                 ast, *i, indentation, info
@@ -593,10 +593,10 @@ pub fn to_rust(
         }
         AstNode::Case => {
             let parent_match = &ast[*ast[pos].parent.as_ref().unwrap()];
-            let match_on = parent_match.children.as_ref().unwrap()[0];
+            let match_on = parent_match.ref_children()[0];
             let is_one_of = matches!(&ast[match_on].typ, Some(Type { kind: TypeKind::OneOf, .. }));
 
-            let condition_children = ast[children[0]].children.as_ref().unwrap();
+            let condition_children = ast[children[0]].ref_children();
             let option_name = to_rust(ast, condition_children[0], indentation, info);
             let body = to_rust(ast, *children.last().unwrap(), indentation + 1, info);
             if option_name == "_" {
@@ -614,7 +614,7 @@ pub fn to_rust(
                 format!(
                     "{option_name}({}) => {{ {body} }}",
                     join(
-                        ast[condition_children[1]].children.as_ref().unwrap().iter().map(
+                        ast[condition_children[1]].ref_children().iter().map(
                             |x| to_rust(ast, *x, indentation, info),
                         ),
                         ", "
@@ -838,12 +838,12 @@ fn built_in_funcs(
             for i in args.iter().skip(1) {
                 /*if let Some(Type { kind: TypeKind::Enum(name), .. }) = &ast[*i].typ {
                     if name == "i32__or__bool" {
-                        let func_call = ast[*i].children.as_ref().unwrap()[1];
-                        let func_children = ast[func_call].children.as_ref().unwrap();
+                        let func_call = ast[*i].ref_children()[1];
+                        let func_children = ast[func_call].ref_children();
                         let opt_name = &ast[func_children[0]];
                         if matches!(&opt_name.value, AstNode::Identifier(n) if n == "_i32") {
                             let args_pos = &ast[func_children[1]];
-                            optional_args.push(args_pos.children.as_ref().unwrap()[0]);
+                            optional_args.push(args_pos.ref_children()[0]);
                             continue
                         }
                     }
@@ -1026,7 +1026,7 @@ fn format_generics(generics_ast: &Ast) -> String {
 //     match &ast[parent].value {
 //         AstNode::Parentheses => should_be_mut_index(ast, parent),
 //         AstNode::Assignment | AstNode::Index =>
-//             if ast[parent].children.as_ref().unwrap()[0] == pos {
+//             if ast[parent].ref_children()[0] == pos {
 //                 IndexTyp::Mut
 //             } else {
 //                 IndexTyp::Val

@@ -36,5 +36,7 @@ def main():
             print("a")
         case E.b(x):
             print("b=", x)
-        case _:
-            print("other")
+        case c:
+            pass
+        case d:
+            pass

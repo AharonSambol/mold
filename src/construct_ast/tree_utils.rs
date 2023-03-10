@@ -40,7 +40,7 @@ pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNod
 
 pub fn insert_as_parent_of(ast: &mut Vec<Ast>, node: usize, value: AstNode) -> usize {
     let parent = ast[node].parent.unwrap();
-    let index_in_parent = ast[parent].children.as_ref().unwrap().iter()
+    let index_in_parent = ast[parent].ref_children().iter()
         .position(|x| *x == node).unwrap();
     ast[parent].children.as_mut().unwrap()[index_in_parent] = ast.len();
     

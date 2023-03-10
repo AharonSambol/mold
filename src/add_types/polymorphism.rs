@@ -94,7 +94,7 @@ pub fn make_enums(typ: &Type, enums: &mut OneOfEnums) {
         if let TypeKind::GenericsMap = &ch[0].kind {
             for mut generic in unwrap(&ch[0].children) {
                 if let TypeKind::InnerType(_) = &generic.kind {
-                    generic = &generic.children.as_ref().unwrap()[0];
+                    generic = &generic.ref_children()[0];
                 }
                 if let TypeKind::Generic(GenericType::NoVal(name)) = &generic.kind {
                     if !generics.contains(name) {
@@ -202,7 +202,7 @@ pub fn check_for_boxes(
             AstNode::Index => {
                 is_box_typ(
                     &find_index_typ(
-                        ast, info, got.children.as_ref().unwrap()[0], pos
+                        ast, info, got.ref_children()[0], pos
                     ).unwrap()
                 )
             }
@@ -234,7 +234,7 @@ pub fn check_for_boxes(
                 let match_pos = insert_as_parent_of(ast, pos, AstNode::Match);
                 let from_enum_name = got_typ.to_string();
                 let to_enum_name = expected.to_string();
-                for typ in got_typ.children.as_ref().unwrap() {
+                for typ in got_typ.ref_children() {
                     let case = add_to_tree(match_pos, ast, Ast::new(AstNode::Case));
                     /**/let condition = add_to_tree(case, ast, Ast::new(AstNode::Body));
                     /*-*/let prop = add_to_tree(condition, ast, Ast::new(AstNode::Property));
@@ -330,7 +330,7 @@ pub fn check_for_boxes(
 
                 let mut got_typ = got.typ.as_ref().unwrap();
                 if let TypeKind::Generic(GenericType::WithVal(_)) = &got_typ.kind {
-                    got_typ = &got_typ.children.as_ref().unwrap()[0];
+                    got_typ = &got_typ.ref_children()[0];
                 }
                 if implements_trait(got_typ, expected_trait.get_str(), ast, info) {
                     let res = typ_with_child! {
@@ -555,7 +555,7 @@ pub fn check_for_boxes(
                 }
                 AstNode::Index => {
                     find_index_typ(
-                        ast, info, got.children.as_ref().unwrap()[0], pos
+                        ast, info, got.ref_children()[0], pos
                     ).unwrap()
                 }
                 AstNode::FunctionCall(_) => {
@@ -563,7 +563,7 @@ pub fn check_for_boxes(
                         &ast[unwrap_u(&got.children)[0]].value,
                         AstNode::Identifier(n), n
                     );
-                    let args = &ast[unwrap_u(&got.children)[1]].children.as_ref().unwrap();
+                    let args = &ast[unwrap_u(&got.children)[1]].ref_children();
                     let args: Vec<_> = args.iter().map(|x| ast[*x].typ.clone().unwrap()).collect();
                     get_function_return_type(
                         &info.funcs[func_name].output,
@@ -613,8 +613,8 @@ pub fn check_for_boxes(
             // let got_children = unwrap_u(&got.children).clone();
             let typ = match &got.value {
                 AstNode::UnaryOp(OperatorType::Pointer | OperatorType::MutPointer) => {
-                    let expected_inner = expected.children.as_ref().unwrap()[0]
-                        .children.as_ref().unwrap()[0]
+                    let expected_inner = expected.ref_children()[0]
+                        .ref_children()[0]
                         .clone();
                     check_for_boxes(
                         expected_inner, ast, unwrap_u(&got.children)[0],
@@ -631,7 +631,7 @@ pub fn check_for_boxes(
                 }
                 AstNode::Index => {
                     find_index_typ(
-                        ast, info, got.children.as_ref().unwrap()[0], pos
+                        ast, info, got.ref_children()[0], pos
                     ).unwrap()
                 }
                 AstNode::FunctionCall(_) => {
@@ -639,7 +639,7 @@ pub fn check_for_boxes(
                         &ast[unwrap_u(&got.children)[0]].value,
                         AstNode::Identifier(n), n
                     );
-                    let args = &ast[unwrap_u(&got.children)[1]].children.as_ref().unwrap();
+                    let args = &ast[unwrap_u(&got.children)[1]].ref_children();
                     let args: Vec<_> = args.iter().map(|x| ast[*x].typ.clone().unwrap()).collect();
                     get_function_return_type(
                         &info.funcs[func_name].output,

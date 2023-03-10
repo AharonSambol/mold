@@ -379,7 +379,7 @@ use crate::{{ _index_mut, _index, {} }};
             structs:
                 info.structs.iter().map(|(name, typ)|
                     (name.clone(), (typ.clone(), clone_sub_tree(
-                        &ast, typ.pos,None // todo exclude the body of the functions? Some(ast[typ.pos].children.as_ref().unwrap()[2]) //1 the body
+                        &ast, typ.pos,None // todo exclude the body of the functions? Some(ast[typ.pos].ref_children()[2]) //1 the body
                     )))
                 ).collect(),
             traits: info.traits.iter().map(|(name, typ)|

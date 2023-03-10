@@ -10,6 +10,7 @@ use crate::add_types::polymorphism::check_for_boxes;
 use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_complete_inner, get_pointer_inner, is_float};
 use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of, print_tree};
 use crate::mold_tokens::OperatorType;
+use crate::to_rust::to_rust;
 
 lazy_static! {
     pub static ref SPECIFIED_NUM_TYPE_RE: Regex = Regex::new(r"(?:[iu](?:8|16|32|64|128|size)|f32|f64)$").unwrap();
@@ -56,15 +57,37 @@ pub fn add_types(
         }
         AstNode::Match => {
             vars.push(HashMap::new());
-            for child in children {
-                add_types(ast, child, vars, info, parent_struct);
-                // print_type(&ast[child].typ);
+            add_types(ast, children[0], vars, info, parent_struct);
+            let match_on = ast[children[0]].typ.as_ref().unwrap();
+            let amount_of_options = if let TypeKind::Enum(enum_name) = &match_on.kind {
+                let enm = &ast[info.enums[&enum_name.to_string()].pos];
+                let enm_module = &ast[enm.ref_children()[1]];
+                unwrap_u(&enm_module.children).len()
+            } else {
+                info.one_of_enums[&match_on.to_string()].options.len()
+            };
+
+            let mut covered = HashSet::new();
+            for child in children.iter().skip(1) {
+                add_types(ast, *child, vars, info, parent_struct);
+                let name_pos = ast[ast[*child].ref_children()[0]].ref_children()[0];
+                let case_str = to_rust(ast, name_pos,0, info);
+                if covered.contains(&case_str) {
+                    panic!("same case twice `{case_str}`")
+                }
+                covered.insert(case_str);
+            }
+            let has_default = covered.remove("_");
+            if !has_default && covered.len() != amount_of_options {
+                if covered.len() > amount_of_options {
+                    unreachable!()
+                } else { panic!("not all cases covered") } // todo should say which arent
             }
             vars.pop();
         }
         AstNode::Case => {
             let parent_match = &ast[*ast[pos].parent.as_ref().unwrap()];
-            let match_on = parent_match.children.as_ref().unwrap()[0];
+            let match_on = parent_match.ref_children()[0];
             let match_type = ast[match_on].typ.as_ref().unwrap();
 
             let mut expression_children = ast[children[0]].children.clone().unwrap();
@@ -73,10 +96,16 @@ pub fn add_types(
                 let enum_name = enum_name.to_string();
 
                 let option = match &ast[expression_children[0]].value {
-                    AstNode::Identifier(idf) => idf,
+                    AstNode::Identifier(_) => {
+                        let prop = insert_as_parent_of(ast, expression_children[0], AstNode::Property);
+                        add_to_tree(prop, ast, Ast::new(AstNode::Identifier(enum_name.clone())));
+                        ast[prop].children.as_mut().unwrap().reverse();
+                        add_types(ast, ast[prop].ref_children()[0], vars, info, parent_struct); //1 add type to enum so that it knows to use `::` and not `.` to separate hem
+                        unwrap_enum!(&ast[expression_children[0]].value, AstNode::Identifier(idf), idf)
+                    },
                     AstNode::Property => {
-                        add_types(ast, ast[expression_children[0]].children.as_ref().unwrap()[0], vars, info, parent_struct); //1 add type to enum so that it knows to use `::` and not `.` to separate hem
-                        let sides = ast[expression_children[0]].children.as_ref().unwrap();
+                        add_types(ast, ast[expression_children[0]].ref_children()[0], vars, info, parent_struct); //1 add type to enum so that it knows to use `::` and not `.` to separate hem
+                        let sides = ast[expression_children[0]].ref_children();
                         let left = unwrap_enum!(&ast[sides[0]].value, AstNode::Identifier(name), name, "expected identifier"); // todo this is a bad exception
                         let right = unwrap_enum!(&ast[sides[1]].value, AstNode::Identifier(name), name, "expected identifier"); // todo this is a bad exception
                         if *left != enum_name {
@@ -94,7 +123,7 @@ pub fn add_types(
                 }
 
                 let enm = &ast[info.enums[&enum_name].pos];
-                let enm_module = &ast[enm.children.as_ref().unwrap()[1]];
+                let enm_module = &ast[enm.ref_children()[1]];
                 let opt_pos = unwrap_u(&enm_module.children).iter().find(
                     |opt| matches!(&ast[**opt].value, AstNode::Identifier(idf) if idf == option)
                 ).unwrap_or_else(|| panic!("couldnt find `{option}` in enum `{enum_name}`"));
@@ -154,7 +183,7 @@ pub fn add_types(
                 let enum_typ = ast[expression_children[0]].typ.as_ref().unwrap();
                 let enm = &info.one_of_enums[
                     unwrap_enum!(&enum_typ.kind, TypeKind::Enum(nme), nme.get_str())
-                    ];
+                ];
                 let typ = enm.options.iter().find(
                     |opt| opt.to_string() == option_name.get_str()
                 ).unwrap_or_else(
@@ -393,7 +422,7 @@ pub fn add_types(
                                 } = &unwrap(&typ.children)[0] {
                                     Some(children.as_ref().unwrap()[0].clone())
                                 } else {
-                                    Some(typ.children.as_ref().unwrap()[0].clone())
+                                    Some(typ.ref_children()[0].clone())
                                 }
                             },
                             TypeKind::Generic(GenericType::WithVal(of)) => {
@@ -711,7 +740,7 @@ fn get_type_comprehension(
         parent_struct: &Option<HashMap<String, usize>>, children: &[usize]
     ) {
         for r#loop in ast[children[1]].children.clone().unwrap() {
-            let colon_par = ast[r#loop].children.as_ref().unwrap()[0];
+            let colon_par = ast[r#loop].ref_children()[0];
             add_types( //1 iter type
                        ast,
                        unwrap_u(&ast[colon_par].children)[1],
@@ -730,14 +759,14 @@ fn get_type_comprehension(
         add_types(ast, condition[0], vars, info, parent_struct);
     }
 
-    let stmt = ast[children[0]].children.as_ref().unwrap()[0];
+    let stmt = ast[children[0]].ref_children()[0];
     add_types(ast, stmt, vars, info, parent_struct);
 
     vars.pop();
 
     #[inline] fn get_generics(ast: &mut [Ast], pos: usize, stmt: usize) -> Vec<Type> {
         if let AstNode::DictComprehension = &ast[pos].value {
-            let stmt_children = ast[stmt].children.as_ref().unwrap();
+            let stmt_children = ast[stmt].ref_children();
             ["K", "V"].iter().enumerate().map(|(i, name)|
                 typ_with_child! {
                     TypeKind::Generic(GenericType::WithVal(String::from(*name))),
@@ -878,7 +907,7 @@ fn format_args_and_get_return_typ(
 
     let rtrn_typ = if base.is_some() || func_name == "__init__" {
         let init_type = if func_name == "__init__" {
-            let mut class_typ = ast[ast[pos].children.as_ref().unwrap()[0]].typ.clone();
+            let mut class_typ = ast[ast[pos].ref_children()[0]].typ.clone();
             let generics = match &class_typ.as_ref().unwrap().kind {
                 TypeKind::Struct(name) => &info.structs[name.get_str()].generics,
                 TypeKind::Trait(name) => &info.traits[name.get_str()].generics,
@@ -923,7 +952,7 @@ fn format_args_and_get_return_typ(
             _ => panic!()
         };
 
-        let return_pos = ast[func_pos].children.as_ref().unwrap()[1];
+        let return_pos = ast[func_pos].ref_children()[1];
         if let Some(t) = init_type {
             return Some(t)
             // get_function_return_type(
@@ -950,7 +979,7 @@ fn is_castable(exp: &Type, got: &Type, ast: &[Ast], info: &Info, is_built_in: bo
         TypeKind::Generic(GenericType::NoVal(_)) => true,
         TypeKind::Generic(_) => panic!("huh? (not sure why I wrote this...)"),
         TypeKind::OneOf => {
-            exp.children.as_ref().unwrap().iter().any(|opt|
+            exp.ref_children().iter().any(|opt|
                 is_castable(opt, got, ast, info, is_built_in)
             )
         }
@@ -1044,9 +1073,9 @@ fn put_args_in_vec(
             .take_while(|x| !matches!(ast[**x].value, AstNode::NamedArg(_))) //1 while isn't named
             .cloned().collect();
         let expected_typ = &expected_args[pos_in_args].typ //1 vec
-            .children.as_ref().unwrap()[0] //1 generic map
-            .children.as_ref().unwrap()[0] //1 generic(withVal(t))
-            .children.as_ref().unwrap()[0]; //1 the actual type
+            .ref_children()[0] //1 generic map
+            .ref_children()[0] //1 generic(withVal(t))
+            .ref_children()[0]; //1 the actual type
 
         let inner_typ = check_for_boxes(
             expected_typ.clone(), ast, vec_children[0], info, vars
@@ -1375,10 +1404,10 @@ pub fn get_inner_type(typ: &Type, trait_names: Vec<&str>, inner_type_name: &str,
         }
         TypeKind::Trait(trt_name) => {
             if !trait_names.contains(&trt_name.get_str()) { return None }
-            let generic_map = &typ.children.as_ref().unwrap()[0];
+            let generic_map = &typ.ref_children()[0];
             for child in unwrap(&generic_map.children) {
                 if matches!(&child.kind, TypeKind::InnerType(name) if name == inner_type_name) {
-                    return Some(child.children.as_ref().unwrap()[0].clone());
+                    return Some(child.ref_children()[0].clone());
                 }
             }
             None

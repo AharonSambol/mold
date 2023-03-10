@@ -47,7 +47,7 @@ pub fn apply_generics_from_base(return_typ: &Option<Type>, base: &Type) -> Optio
                 let hm = HashMap::from_iter(
                     generic_map.iter().filter_map(|x|
                         if let TypeKind::Generic(GenericType::WithVal(name)) = &x.kind {
-                            Some((name.clone(), x.children.as_ref().unwrap()[0].clone()))
+                            Some((name.clone(), x.ref_children()[0].clone()))
                         } else { None }
                     )
                 );

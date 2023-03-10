@@ -87,7 +87,7 @@ pub fn to_python(
             for child in children.iter().skip(2){
                 match &ast[*child].value {
                     AstNode::IfStatement => {
-                        let c_children = ast[*child].children.as_ref().unwrap();
+                        let c_children = ast[*child].ref_children();
                         write!(
                             res, "\n{}elif {}{}",
                             "\t".repeat(indentation),
@@ -129,7 +129,7 @@ pub fn to_python(
                     to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue)
                 ),
                 AstNode::Property => {
-                    let prop_children = ast[children[0]].children.as_ref().unwrap();
+                    let prop_children = ast[children[0]].ref_children();
                     let base = to_python(ast, prop_children[0], indentation, ToWrapVal::GetName);
                     let attr = to_python(ast, prop_children[1], indentation, ToWrapVal::GetName);
                     let val = to_python(ast, children[1], indentation, ToWrapVal::GetInnerValue);
@@ -603,7 +603,7 @@ pub fn to_python(
             )
         }
         AstNode::ListComprehension | AstNode::SetComprehension | AstNode::DictComprehension => {
-            let parts = ast[children[0]].children.as_ref().unwrap();
+            let parts = ast[children[0]].ref_children();
             let loops = ast[children[1]].children.clone().unwrap();
             format!("{}{}{}{}{}",
                 /*[{*/match &ast[pos].value {
@@ -621,8 +621,8 @@ pub fn to_python(
                     to_python(ast, parts[0], indentation, ToWrapVal::GetInnerValue)
                 },
                 /*loops*/loops.iter().map(|r#loop| {
-                    let colon_par = ast[*r#loop].children.as_ref().unwrap()[0];
-                    let loop_parts = ast[colon_par].children.as_ref().unwrap();
+                    let colon_par = ast[*r#loop].ref_children()[0];
+                    let loop_parts = ast[colon_par].ref_children();
                     format!(" for {} in map(value_, {})",
                             to_python(ast, loop_parts[0], indentation, ToWrapVal::Nothing),
                             to_python(ast, loop_parts[1], indentation, ToWrapVal::Nothing)
@@ -658,7 +658,7 @@ pub fn to_python(
                 format!(
                     "from {} import {}",
                     join(
-                        ast[children[0]].children.as_ref().unwrap()
+                        ast[children[0]].ref_children()
                             .iter()
                             .map(|i| to_python(
                                 ast, *i, indentation, ToWrapVal::GetName
@@ -706,7 +706,7 @@ pub fn to_python(
             } else {
                 unwrap_enum!(&ast[children[1]].value, AstNode::Identifier(n), n)
             };
-            let condition_children = ast[children[0]].children.as_ref().unwrap();
+            let condition_children = ast[children[0]].ref_children();
             let empty_vec = vec![];
             let par_values = if condition_children.len() == 2 {
                 unwrap_u(&ast[condition_children[1]].children)

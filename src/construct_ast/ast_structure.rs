@@ -31,6 +31,10 @@ impl Ast {
             is_mut: true
         }
     }
+    #[inline]
+    pub fn ref_children(&self) -> &Vec<usize> {
+        self.children.as_ref().unwrap()
+    }
 }
 
 #[derive(Clone, Debug)]

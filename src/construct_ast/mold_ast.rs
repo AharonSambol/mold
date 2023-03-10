@@ -306,7 +306,7 @@ pub fn make_ast_statement(
                 let assignment_pos = *unwrap_u(&ast[parent].children).last().unwrap();
                 let assignment = &mut ast[assignment_pos];
                 assignment.is_mut = false;
-                let var_pos = ast[assignment_pos].children.as_ref().unwrap()[0];
+                let var_pos = ast[assignment_pos].ref_children()[0];
                 ast[var_pos].is_mut = false;
             }
             SolidToken::UnaryOperator(OperatorType::Dereference) => {

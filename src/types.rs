@@ -159,7 +159,7 @@ impl Display for Type {
             TypeKind::Generic(c) => {
                 match c {
                     GenericType::WithVal(_) =>
-                        write!(f, "{}", self.children.as_ref().unwrap()[0]),
+                        write!(f, "{}", self.ref_children()[0]),
                     GenericType::NoVal(name) => write!(f, "{name}"),
                     GenericType::Declaration(_) => write!(f, "GENERIC({c:?})")
                 }
@@ -229,8 +229,8 @@ impl Type {
         let (TypeKind::OneOf, TypeKind::OneOf) = (&self.kind, &other.kind) else {
             unreachable!()
         };
-        let self_children = self.children.as_ref().unwrap();
-        let other_children = other.children.as_ref().unwrap();
+        let self_children = self.ref_children();
+        let other_children = other.ref_children();
         if self_children.len() < other_children.len() { return false }
         other_children.iter().all(|opt|
             self_children.iter().any(|s_opt| opt == s_opt)
@@ -250,6 +250,10 @@ impl Type {
             }
         }
         EMPTY_STR
+    }
+    #[inline]
+    pub fn ref_children(&self) -> &Vec<Type> {
+        self.children.as_ref().unwrap()
     }
 }
 
@@ -356,7 +360,7 @@ pub fn implements_trait(
         }
     }
     if let TypeKind::OneOf = &typ.kind {
-        let res = typ.children.as_ref().unwrap().iter().all(
+        let res = typ.ref_children().iter().all(
             |typ| implements_trait(typ, expected_trait, ast, info)
         );
         if !res {
@@ -381,7 +385,7 @@ pub fn implements_trait(
                 .strip_prefix("out/src/").unwrap()
                 .rsplit_once('.').unwrap().0
                 .replace('/', "::"); // todo \ for windows
-            let trt_module = ast[trt_pos].children.as_ref().unwrap()[1];
+            let trt_module = ast[trt_pos].ref_children()[1];
             let trt_funcs = get_trt_strct_functions(ast, &ast[trt_module]);
 
             let one_of_enum = info.one_of_enums.get(
@@ -416,7 +420,7 @@ pub fn implements_trait(
                         let typ_str = escape_typ_chars(&typ.to_string());
                         format!(
                             "fn {func_name}({param}) {rtrn} {{ \n\t\tmatch self {{\n\t\t\t{}\n\t\t}}\n\t}}",
-                            join(typ.children.as_ref().unwrap().iter().map(|t|
+                            join(typ.ref_children().iter().map(|t|
                                 format!(
                                     "{typ_str}::_{}(x) => {trt_file}::{expected_trait}::{func_name}(x, {args}),",
                                     escape_typ_chars(&t.to_string())
@@ -453,10 +457,10 @@ pub fn implements_trait(
                 |x| x.trt_name == expected_trait
             ) || {
                 let strct_def = info.structs[struct_name.get_str()].pos;
-                let strct_module = ast[strct_def].children.as_ref().unwrap()[2];
+                let strct_module = ast[strct_def].ref_children()[2];
                 let strct_funcs = get_trt_strct_functions(ast, &ast[strct_module]);
                 let trt_pos = info.traits[expected_trait].pos;
-                let trt_module = ast[trt_pos].children.as_ref().unwrap()[1];
+                let trt_module = ast[trt_pos].ref_children()[1];
                 let trt_funcs = get_trt_strct_functions(ast, &ast[trt_module]);
                 // if let AstNode::Trait { strict: true, .. } = ast[trt_pos].value {
                 //     // TODO if implements
