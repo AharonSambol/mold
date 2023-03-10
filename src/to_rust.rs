@@ -40,9 +40,6 @@ pub fn to_rust(
                 ).collect::<Vec<_>>().concat()
             )
         },
-        AstNode::CaseModule => {
-            format!("{},", to_rust(ast, children[0], indentation, info))
-        },
         AstNode::Function(name) | AstNode::StaticFunction(name) => {
             if unsafe { IGNORE_FUNCS.contains(name.as_str()) } {
                 return EMPTY_STR
@@ -602,18 +599,20 @@ pub fn to_rust(
             let condition_children = ast[children[0]].children.as_ref().unwrap();
             let option_name = to_rust(ast, condition_children[0], indentation, info);
             let body = to_rust(ast, *children.last().unwrap(), indentation + 1, info);
-            if is_one_of {
+            if option_name == "_" {
+                format!("_ => {{ {body} }}")
+            } else if is_one_of {
                 format!(
-                    "{option_name}({}) => {body}",
+                    "{option_name}({}) => {{ {body} }}",
                     if children.len() == 3 {
                         unwrap_enum!(&ast[children[1]].value, AstNode::Identifier(n), n)
                     } else { "_" }
                 )
             } else if condition_children.len() == 1 {
-                format!("{option_name} => {body}")
+                format!("{option_name} => {{ {body} }}")
             } else {
                 format!(
-                    "{option_name}({}) => {body}",
+                    "{option_name}({}) => {{ {body} }}",
                     join(
                         ast[condition_children[1]].children.as_ref().unwrap().iter().map(
                             |x| to_rust(ast, *x, indentation, info),

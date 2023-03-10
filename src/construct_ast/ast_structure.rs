@@ -67,7 +67,6 @@ pub enum AstNode {
     ListLiteral, // children = elements
     Match, // children[0] = value, children[1..] = cases
     Module, // children = all the functions/classes/enums..
-    CaseModule, // (used for match case to put `{}` without `;`) children = all the functions/classes/enums..
     Number(String),
     Operator(OperatorType), // children[0] = elem1, children[1] = elem2
     Parentheses, // children[0] = inside
@@ -128,7 +127,6 @@ impl AstNode {
             | AstNode::Break
             | AstNode::Body
             | AstNode::Module
-            | AstNode::CaseModule
             | AstNode::Function { .. }
             | AstNode::StaticFunction { .. }
             | AstNode::Struct(_)
@@ -173,7 +171,6 @@ impl Display for AstNode {
             // AstNode::Traits => write!(f, "TRAITS"),
             AstNode::Body => write!(f, "BODY"),
             AstNode::Module => write!(f, "MODULE"),
-            AstNode::CaseModule => write!(f, "CASE_MODULE"),
             AstNode::Function(func) => write!(f, "FUNC({func})"),
             AstNode::StaticFunction(func) => {
                 write!(f, "STATIC_FUNC({})", func)

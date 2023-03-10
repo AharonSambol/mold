@@ -86,7 +86,12 @@ pub fn add_types(
                     }
                     _ => panic!("expected identifier but found `{}`", ast[expression_children[0]].value)
                 };
-
+                if option == "_" {
+                    vars.push(HashMap::new());
+                    add_types(ast, *children.last().unwrap(), vars, info, parent_struct); //1 body
+                    vars.pop();
+                    return
+                }
 
                 let enm = &ast[info.enums[&enum_name].pos];
                 let enm_module = &ast[enm.children.as_ref().unwrap()[1]];
@@ -114,10 +119,19 @@ pub fn add_types(
                 }
                 add_types(ast, *children.last().unwrap(), vars, info, parent_struct); //1 body
                 vars.pop();
-
             } else if let TypeKind::OneOf = &match_type.kind {
+                if expression_children.len() == 2 {
+                    panic!("unexpected parenthesis")
+                }
                 let one_of_enums_name = match_type.to_string();
                 let option_name = if let AstNode::Identifier(idf) = &ast[expression_children[0]].value {
+                    if idf == "_" {
+                        vars.push(HashMap::new());
+                        add_types(ast, *children.last().unwrap(), vars, info, parent_struct); //1 body
+                        vars.pop();
+                        return
+                    }
+
                     let idf = clean_type(idf.clone());
                     ast[expression_children[0]].value = AstNode::Identifier(format!("_{idf}"));
                     idf
@@ -131,10 +145,6 @@ pub fn add_types(
                 add_to_tree(property, ast, Ast::new(AstNode::Identifier(one_of_enums_name.clone())));
                 ast[property].children.as_mut().unwrap().reverse();
 
-                if expression_children.len() == 2 {
-                    panic!("unexpected parenthesis")
-                }
-
                 vars.push(HashMap::new());
                 if children.len() == 3 {
                     let as_name = unwrap_enum!(&ast[children[1]].value, AstNode::Identifier(n), n);
@@ -144,16 +154,14 @@ pub fn add_types(
                 let enum_typ = ast[expression_children[0]].typ.as_ref().unwrap();
                 let enm = &info.one_of_enums[
                     unwrap_enum!(&enum_typ.kind, TypeKind::Enum(nme), nme.get_str())
-                ];
+                    ];
                 let typ = enm.options.iter().find(
                     |opt| opt.to_string() == option_name.get_str()
                 ).unwrap_or_else(
-                    || panic!("couldn't find `{option_name}` in `{one_of_enums_name}` {}",
-                    enm.options.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ")
-                    )
+                    || panic!("couldn't find `{option_name}` in `{one_of_enums_name}`")
                 );
-                ast[expression_children[0]].typ = Some(typ.clone());
 
+                ast[expression_children[0]].typ = Some(typ.clone());
 
                 add_types(ast, *children.last().unwrap(), vars, info, parent_struct); //1 body
                 vars.pop();
@@ -503,7 +511,7 @@ pub fn add_types(
         AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
         | AstNode::Trait { .. } /*| AstNode::Traits*/ | AstNode::Type(_) | AstNode::Types
         | AstNode::Arg { .. } | AstNode::Cast | AstNode::As(_) | AstNode::From | AstNode::Import
-        | AstNode::Ignore | AstNode::CaseModule => {}
+        | AstNode::Ignore => {}
     }
 }
 

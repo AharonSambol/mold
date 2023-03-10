@@ -243,7 +243,7 @@ pub fn check_for_boxes(
                     /*--*/add_to_tree(prop, ast, Ast::new(AstNode::Identifier(format!("_{typ}"))));
                     /**/add_to_tree(case, ast, Ast::new(AstNode::Identifier(String::from("x"))));
 
-                    /**/let body = add_to_tree(case, ast, Ast::new(AstNode::CaseModule));
+                    /**/let body = add_to_tree(case, ast, Ast::new(AstNode::Body));
                     /*-*/let prop = add_to_tree(body, ast, Ast::new(AstNode::Property));
                     /*--*/add_to_tree(prop, ast, Ast::new(AstNode::Identifier(to_enum_name.clone())));
                     /*--*/let func_call = add_to_tree(prop, ast, Ast::new(AstNode::FunctionCall(true)));

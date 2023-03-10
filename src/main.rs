@@ -114,6 +114,7 @@ fn main() {
         /*1     5*/ "tests/generics.mo",
         /*1     6*/ "tests/lists.mo",
         /*1     7*/ "tests/algos.mo",
+        /*1     8*/ "tests/unions.mo",
     ];
     if test {
         for p in paths {
