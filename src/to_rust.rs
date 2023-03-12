@@ -622,6 +622,8 @@ pub fn to_rust(
                 )
             }
         }
+        // AstNode::Null => panic!("unexpected `None`, can only assign `None` to variable which is of `union` type"),
+        AstNode::Null => String::from("None"),
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
 }

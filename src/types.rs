@@ -84,6 +84,7 @@ pub enum TypeKind {
     _Class(String),
     Pointer,
     MutPointer,
+    Null,
 }
 
 #[derive(Debug, Clone)]
@@ -144,6 +145,7 @@ pub fn print_type_b(typ: &Option<Type>, color: Color){
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
+            TypeKind::Null => write!(f, "None"),
             TypeKind::EmptyType => write!(f, "()"),
             TypeKind::Unknown => write!(f, "UNKNOWN TYPE"),
             TypeKind::OneOf => {

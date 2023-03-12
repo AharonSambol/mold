@@ -8,7 +8,7 @@ use crate::types::{unwrap_u};
 
 lazy_static!{
     static ref NUM_TYP_RE: Regex = Regex::new(r"[uif]").unwrap();
-    pub static ref NONE: String = String::from("_NONE");
+    // pub static ref NONE: String = String::from("_NONE");
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -153,7 +153,7 @@ pub fn to_python(
             }
         },
         AstNode::Identifier(name) => {
-            let name = if name == "None" { &NONE } else { name };
+            let name = if name == "None" { panic!() } else { name };
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
                 ToWrapVal::GetName | ToWrapVal::GetAsValue => name.clone(),
@@ -544,6 +544,7 @@ pub fn to_python(
         }
         AstNode::Continue => String::from("continue"),
         AstNode::Break => String::from("break"),
+        AstNode::Null => String::from("None"),
         AstNode::Enum(name) => {
             if unsafe { IGNORE_ENUMS.contains(name.as_str()) } {
                 return EMPTY_STR;

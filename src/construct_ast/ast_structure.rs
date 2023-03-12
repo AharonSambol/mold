@@ -92,6 +92,7 @@ pub enum AstNode {
     UnaryOp(OperatorType),  // children[0] = elem
     WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
     NamedArg(String), // children[0] = value
+    Null,
 }
 
 impl AstNode {
@@ -102,6 +103,7 @@ impl AstNode {
             | AstNode::StructInit
             | AstNode::Property
             | AstNode::Ternary
+            | AstNode::Null
             | AstNode::Number(_)
             | AstNode::Char(_)
             | AstNode::String { .. }
@@ -159,6 +161,7 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            AstNode::Null => write!(f, "None"),
             AstNode::Case => write!(f, "[CASE]"),
             AstNode::Match => write!(f, "[MATCH]"),
             AstNode::Ignore => write!(f, "[IGNORE]"),

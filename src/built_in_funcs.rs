@@ -41,6 +41,19 @@ pub fn put_at_start(input: &str) -> String {
         make_primitive!(u64), make_primitive!(u128), make_primitive!(usize),
         make_primitive!(f32), make_primitive!(f64),
         make_primitive!(bool), make_primitive!(str), make_primitive!(char),
+        // //1 None
+        // BuiltIn::Struct(BuiltInStruct {
+        //     name: "None",
+        //     generics: None,
+        //     methods: vec![
+        //         "__init__(self)",
+        //         "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]"
+        //     ],
+        //     types: None,
+        //     traits: Some(vec![
+        //         "Debug", "Display"
+        //     ]),
+        // }),
         //1 String
         BuiltIn::Struct(BuiltInStruct{
             name: "String",

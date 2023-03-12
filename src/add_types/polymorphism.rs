@@ -142,27 +142,27 @@ pub fn escape_typ_chars(st: &str) -> String {
 fn add_one_of_enum(
     ast: &mut Vec<Ast>, pos: usize, enum_name: &str, enum_option: &str
 ) -> usize { // todo i think this leaves ast[pos] without anything pointing at it
-    let ast_len = ast.len();
     let inner_val = ast[pos].clone();
-    let parent_pos = inner_val.parent.unwrap();
-    let parent_children = ast[parent_pos].children.as_mut().unwrap();
-    *parent_children.iter_mut().find(|x| **x == pos).unwrap() = ast_len; //1 ast_len is the position the Property will be pushed into
 
-    ast.push(Ast {
+    ast[pos] = Ast {
         value: AstNode::Property,
         children: None,
-        parent: Some(parent_pos),
+        parent: Some(inner_val.parent.unwrap()),
         typ: Some(typ_with_child! {
             TypeKind::Enum(TypName::Str(String::from(enum_name))),
             Type { kind: TypeKind::GenericsMap, children: None }
         }),
         is_mut: false,
-    });
-    let property = ast.len() - 1;
-    for x in [AstNode::Identifier(String::from(enum_name)), AstNode::FunctionCall(true)] {
-        add_to_tree(property, ast, Ast::new(x));
+    };
+    let property = pos;
+    let enm = add_to_tree(property, ast, Ast::new(AstNode::Identifier(String::from(enum_name))));
+    ast[enm].typ = Some(Type{ kind: TypeKind::Enum(TypName::Str(String::from(enum_name))), children: None }); //1 so that uses `::` and not `.`
+
+    if enum_option == "_None" {
+        add_to_tree(property, ast, Ast::new(AstNode::Identifier(String::from("_None"))));
+        return property
     }
-    let func_call = ast.len() - 1;
+    let func_call = add_to_tree(property, ast, Ast::new(AstNode::FunctionCall(true)));
     for x in [AstNode::Identifier(String::from(enum_option)), AstNode::Args] {
         add_to_tree(func_call, ast, Ast::new(x));
     }

@@ -629,6 +629,10 @@ pub fn make_ast_expression(
             SolidToken::Bool(bl) => {
                 add_to_tree(parent, ast, Ast::new(AstNode::Bool(*bl)));
             },
+            SolidToken::Null => {
+                add_to_tree(parent, ast, Ast::new(AstNode::Null));
+            },
+
             SolidToken::Word(wrd) => {
                 pos = word_tok(
                     tokens, pos, ast, parent, 0, 

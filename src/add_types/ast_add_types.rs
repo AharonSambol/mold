@@ -347,6 +347,12 @@ pub fn add_types(
         AstNode::Property => {
             add_type_property(ast, pos, vars, info, parent_struct, &children)
         }
+        AstNode::Null => {
+            ast[pos].typ = Some(Type {
+                kind: TypeKind::Null,
+                children: None
+            });
+        }
         AstNode::Number(num) => {
             ast[pos].typ = Some(
                 typ_with_child! {

@@ -79,12 +79,6 @@ pub struct OneOfEnumTypes {
     needs_lifetime: bool
 }
 
-// TODO python Option enum doesnt work
-//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-//  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
 // 2 optimizations:
 // lto = "fat"
 // codegen-units = 1
@@ -92,7 +86,7 @@ pub struct OneOfEnumTypes {
 fn main() {
     // todo remove
     unsafe {
-        // IS_COMPILED = true;
+        IS_COMPILED = true;
     }
     let mut test = false;
 
@@ -220,6 +214,22 @@ class pointer_:
     def __lt__(self, other): return self.p < other.p
     def __ge__(self, other): return self.p >= other.p
     def __gt__(self, other): return self.p > other.p
+
+class Option:
+    NONE=0
+    Some=1
+    def getattr(attr): return eval(f'Option.{attr}')
+class _Option_None:
+    pass
+Option.NONE = _Option_None
+class _Option_Some:
+    def __init__(self, x):
+        self.x = x
+    def get_enum_inner_vals_(self):
+        return x
+
+
+Option.Some = _Option_Some
 "};
         let mut built_ins = File::create(
             format!("{}/mold_core_built_ins.py", copy_folder.module_path) // todo windows is \
@@ -239,6 +249,7 @@ class pointer_:
         // let file_name = file_name.strip_suffix(".rs").unwrap();
         let file_name = file_name.strip_suffix(".mo").unwrap();
 
+        // TODO something about this  v
         one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
             "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
         );
@@ -271,7 +282,9 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
                 .iter()
                 .map(|x| {
                     let x_str = x.to_string();
-                    if x_str.contains('&') {
+                    if x_str == "None" {
+                        String::from("_None")
+                    } else if x_str.contains('&') {
                         let new_str = MUT_POINTER_WITHOUT_LIFETIME.replace_all(&x_str, "&mut 'b_i_lifetime ");
                         let new_str = POINTER_WITHOUT_LIFETIME.replace_all(&new_str, "&'b_i_lifetime ");
                         needs_lifetime = needs_lifetime || new_str != x_str;

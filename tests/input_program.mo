@@ -30,6 +30,8 @@
 enum E:
     a, b(int), c, d
 def main():
+    o = Option.Some(2)
+
     a = E.d
     match a:
         case E.a:
@@ -40,7 +42,9 @@ def main():
             pass
         case E.d:
             pass
-    a: int | bool | str = false
+    a: int | bool | str | None = false
+    a = 1
+    a = None
     match a:
         case int:
             print("a")

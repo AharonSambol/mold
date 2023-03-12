@@ -259,6 +259,15 @@ pub fn try_get_arg_typ(
                     // panic!("unexpected parenthesis, at {pos}")
                 }
             }
+            SolidToken::Null => {
+                if res.is_some() {
+                    panic!("unexpected None, at {pos}")
+                }
+                res = Some(Type{
+                    kind: TypeKind::Null,
+                    children: None
+                })
+            }
             _ => panic!("unexpected token `{:?}`, at {}", tokens[*pos], *pos)
         }
         *pos += 1;

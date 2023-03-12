@@ -36,7 +36,7 @@
             methods: vec![
                 concat!("clone() -> ", stringify!($val)),
                 "__init__(self)",
-                "__str__(self: &Self) -> str",
+                // "__str__(self: &Self) -> str",
                 "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]"
             ],
             types: None,

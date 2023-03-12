@@ -58,6 +58,7 @@ pub enum SolidToken {
     Break, Continue, Return, Pass,
     Cast, In, IMut,
     From, Import, As,
+    Null,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,7 +364,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                     "False" | "false" => SolidToken::Bool(false),
                     "imut" => SolidToken::IMut, "cast" => SolidToken::Cast,
                     "from" => SolidToken::From, "import" => SolidToken::Import,
-                    "as" => SolidToken::As,
+                    "as" => SolidToken::As, "None" => SolidToken::Null,
                     _ => {
                         if let Some(SolidToken::LifeTime(lf)) = res.last_mut() {
                             *lf = format!("'{st}");
