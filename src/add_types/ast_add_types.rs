@@ -6,7 +6,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS, IMPL_TRAITS, ImplTraitsKey, get_traits};
 use crate::add_types::generics::{apply_generics_from_base, apply_map_to_generic_typ, get_function_return_type, map_generic_types};
-use crate::add_types::polymorphism::check_for_boxes;
+use crate::add_types::polymorphism::{check_for_boxes, make_enums};
 use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_complete_inner, get_pointer_inner, is_float};
 use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of, print_tree};
 use crate::mold_tokens::OperatorType;
@@ -30,6 +30,17 @@ pub fn add_types(
 ) {
     let children = ast[pos].children.clone().unwrap_or_default();
     match &ast[pos].value {
+        AstNode::Tuple => {
+            for child in children {
+                add_types(ast, child, vars, info, parent_struct);
+            }
+            ast[pos].typ = Some(Type {
+                kind: TypeKind::Tuple,
+                children: Some(ast[pos].children.as_ref().unwrap().iter().map(
+                    |child| ast[*child].typ.clone().unwrap()
+                ).collect())
+            });
+        }
         AstNode::ListComprehension | AstNode::SetComprehension | AstNode::DictComprehension => {
             ast[pos].typ = get_type_comprehension(
                 ast, pos, vars, info, parent_struct, &children
@@ -504,6 +515,7 @@ pub fn add_types(
             add_types(ast, children[1], vars, info, parent_struct);
             ast[pos].typ = find_index_typ(ast, info, children[0], pos);
             ast[pos].is_mut = ast[children[0]].is_mut; // todo if it doesnt need to be mut then maybe not?
+            print_tree(ast, pos);
             if ast[pos].typ.is_none() {
                 panic!();
             }
@@ -1370,26 +1382,52 @@ pub fn get_property_idf_typ(
     None
 }
 
-pub fn find_index_typ(ast: &[Ast], info: &Info, base: usize, pos: usize) -> Option<Type> {
-    fn find_index_func(typ: &Option<Type>, ast: &[Ast], info: &Info, pos: usize) -> usize {
+pub fn find_index_typ(ast: &[Ast], info: &mut Info, base: usize, pos: usize) -> Option<Type> {
+    fn find_index_typ_inner(typ: &Option<Type>, ast: &[Ast], info: &mut Info, pos: usize) -> Option<Type> {
         match typ {
-            Some(Type { kind: TypeKind::Struct(struct_name), .. }) =>
-                find_function_in_struct(
+            Some(Type { kind: TypeKind::Struct(struct_name), .. }) => {
+                let index_func = find_function_in_struct(
                     ast, info.structs, struct_name.get_str(), "index", pos
-                ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", struct_name)),
-            Some(Type { kind: TypeKind::Trait(trait_name), .. }) =>
-                find_function_in_trait(
+                ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", struct_name));
+                let idx_typ = &ast[unwrap_u(&ast[index_func].children)[2]].typ;
+                apply_generics_from_base(idx_typ, typ.as_ref().unwrap())
+            }
+            Some(Type { kind: TypeKind::Trait(trait_name), .. }) => {
+                let index_func = find_function_in_trait(
                     ast, info.traits, trait_name.get_str(), "index"
-                ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", trait_name)),
+                ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", trait_name));
+                let idx_typ = &ast[unwrap_u(&ast[index_func].children)[2]].typ;
+                apply_generics_from_base(idx_typ, typ.as_ref().unwrap())
+            }
             Some(Type { kind: TypeKind::Pointer | TypeKind::MutPointer, .. }) =>
-                return find_index_func(&Some(get_pointer_complete_inner(typ.as_ref().unwrap()).clone()), ast, info, pos), // todo pos here might not be correct in the case of &Self
+                find_index_typ_inner(&Some(
+                    get_pointer_complete_inner(typ.as_ref().unwrap()).clone()
+                ), ast, info, pos), // todo pos here might not be correct in the case of &Self
+            Some(Type { kind: TypeKind::Tuple, children }) => {
+                let index = ast[pos].children.as_ref().unwrap()[1];
+                if let AstNode::Number(num) = &ast[index].value {
+                    if let Ok(num) = num.parse::<usize>() {
+                        return Some(children.as_ref().unwrap()[num].clone())
+                    }
+                }
+                let options = HashSet::<&Type>::from_iter(
+                    children.as_ref().unwrap().iter()
+                ).iter().map(|t| (*t).clone()).collect::<Vec<_>>();
+                if options.len() > 1 {
+                    let typ = Type {
+                        kind: TypeKind::OneOf,
+                        children: Some(options)
+                    };
+                    make_enums(&typ, info.one_of_enums);
+                    Some(typ)
+                } else {
+                    Some(options[0].clone())
+                }
+            },
             _ => panic!("{typ:?}")
         }
     }
-    let index_func = find_index_func(&ast[base].typ, ast, info, pos);
-    let typ = &ast[unwrap_u(&ast[index_func].children)[2]].typ;
-
-    apply_generics_from_base(typ, ast[base].typ.as_ref().unwrap())
+    find_index_typ_inner(&ast[base].typ, ast, info, pos)
 }
 
 pub fn get_inner_type(typ: &Type, trait_names: Vec<&str>, inner_type_name: &str, info: &Info) -> Option<Type> {

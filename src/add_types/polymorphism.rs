@@ -183,7 +183,7 @@ pub fn check_for_boxes(
         }
     }
     #[inline] fn supplied_box(
-        got: &Ast, vars: &VarTypes, ast: &[Ast], info: &Info, pos: usize
+        got: &Ast, vars: &VarTypes, ast: &[Ast], info: &mut Info, pos: usize
     ) -> bool {
         match &got.value {
             AstNode::Struct(bx) => bx == "Box",
@@ -664,6 +664,12 @@ pub fn check_for_boxes(
             if typ != expected {
                 print_type(&Some(expected.clone()));
                 print_type(&Some(typ.clone()));
+                panic!("expected: `{expected}` got: `{typ}`");
+            }
+        }
+        TypeKind::Tuple => {
+            let typ = got.typ.as_ref().unwrap();
+            if *typ != expected {
                 panic!("expected: `{expected}` got: `{typ}`");
             }
         }

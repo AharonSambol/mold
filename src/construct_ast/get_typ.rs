@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, make_ast_expression, STType};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{clean_type, MUT_STR_TYPE, Type, UNKNOWN_TYPE, TypeKind, GenericType, TypName};
+use crate::types::{clean_type, MUT_STR_TYPE, Type, UNKNOWN_TYPE, TypeKind, GenericType, TypName, unwrap};
 use crate::{typ_with_child, unwrap_enum, some_vec, IS_COMPILED};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::polymorphism::make_enums;
@@ -83,8 +83,8 @@ pub fn get_arg_typ(
     try_get_arg_typ(tokens, pos, info, true, true, &mut 0).unwrap()
 }
 
-enum StructTraitOrEnum {
-    Struct, Trait, Enum
+enum StructTraitEnumOrTuple {
+    Struct, Trait, Enum, Tuple
 }
 
 /// # is_top_call should be passed true as default
@@ -100,19 +100,17 @@ pub fn try_get_arg_typ(
     loop {
         match &tokens[*pos] {
             SolidToken::Bracket(IsOpen::True) => {
-                if let Some(Type{ kind: TypeKind::Struct(_), .. }) = res {
-                    if !get_inside_bracket_types(
-                        tokens, pos, info, panic, &mut res, StructTraitOrEnum::Struct
-                    ) { return None }
-                } else if let Some(Type{ kind: TypeKind::Trait(_), .. }) = res {
-                    if !get_inside_bracket_types(
-                        tokens, pos, info, panic, &mut res, StructTraitOrEnum::Trait
-                    ) { return None }
-                } else if let Some(Type{ kind: TypeKind::Enum(_), .. }) = res {
-                    if !get_inside_bracket_types(
-                        tokens, pos, info, panic, &mut res, StructTraitOrEnum::Enum
-                    ) { return None }
+                let typ = match res {
+                    Some(Type{ kind: TypeKind::Struct(_), .. }) => StructTraitEnumOrTuple::Struct,
+                    Some(Type{ kind: TypeKind::Trait(_), .. }) => StructTraitEnumOrTuple::Trait,
+                    Some(Type{ kind: TypeKind::Enum(_), .. }) => StructTraitEnumOrTuple::Enum,
+                    Some(Type{ kind: TypeKind::Tuple, .. }) => StructTraitEnumOrTuple::Tuple,
+                    _ => panic!("unexpected bracket")
+                };
+                if !get_inside_bracket_types(tokens, pos, info, panic, &mut res, typ) {
+                    return None
                 }
+                
                 *pos -= 1;
             },
             SolidToken::Bracket(IsOpen::False)
@@ -155,10 +153,15 @@ pub fn try_get_arg_typ(
                             children: None
                         }
                     })
+                } else if wrd == "tuple" || wrd == "Tuple" {
+                    Some(Type {
+                        kind: TypeKind::Tuple,
+                        children: None
+                    })
                 } else if info.structs.contains_key(&wrd) || wrd == "Self" { // TODO !!! Formatter !!!
                     Some(typ_with_child! {
                         TypeKind::Struct(TypName::Str(wrd)),
-                        Type{
+                        Type {
                             kind: TypeKind::GenericsMap,
                             children: None
                         }
@@ -280,16 +283,20 @@ pub fn try_get_arg_typ(
 
 fn get_inside_bracket_types(
     tokens: &[SolidToken], pos: &mut usize, info: &mut Info, panic: bool,
-    res: &mut Option<Type>, structs_or_traits: StructTraitOrEnum
+    res: &mut Option<Type>, structs_or_traits: StructTraitEnumOrTuple
 ) -> bool {
-    let (struct_name, res_children) = unwrap_enum!(
-        res,
-        Some(Type{
-            kind: TypeKind::Struct(n) | TypeKind::Trait(n) | TypeKind::Enum(n),
-            children: Some(c)
-        }),
-        (n, c)
-    );
+    let mut no_name = TypName::Static("");
+    let (struct_name, generic_map) =
+        if let Some(
+            Type{
+                kind: TypeKind::Struct(n) | TypeKind::Trait(n) | TypeKind::Enum(n),
+                children: Some(c)
+            }
+        ) = res {
+            (n, &mut c[0])
+        } else if let Some(c @ Type{ kind: TypeKind::Tuple, .. }) = res {
+            (&mut no_name, c)
+        } else { unreachable!() };
 
     *pos += 1;
     let add_child = |t: Type, i: &mut usize, info: &mut Info| {
@@ -304,9 +311,13 @@ fn get_inside_bracket_types(
             }
         }
         let generics = match structs_or_traits {
-            StructTraitOrEnum::Struct => get_generics(info.structs, struct_name),
-            StructTraitOrEnum::Trait => get_generics(info.traits, struct_name),
-            StructTraitOrEnum::Enum => get_generics(info.enums, struct_name)
+            StructTraitEnumOrTuple::Struct => get_generics(info.structs, struct_name),
+            StructTraitEnumOrTuple::Trait => get_generics(info.traits, struct_name),
+            StructTraitEnumOrTuple::Enum => get_generics(info.enums, struct_name),
+            StructTraitEnumOrTuple::Tuple => {
+                *i += 1;
+                return t
+            }
         }.unwrap();
         if *i >= generics.len() {
             panic!("too many generics passed, expected only `{}`", generics.len())
@@ -331,7 +342,7 @@ fn get_inside_bracket_types(
         } else if panic { panic!() } else { return false };
     }
     *pos += 1;
-    res_children[0].children = Some(children);
+    generic_map.children = Some(children);
     true
 }
 

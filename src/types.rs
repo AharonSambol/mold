@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 use pretty_print_tree::{Color, PrettyPrintTree};
 use crate::construct_ast::ast_structure::{Ast, join, Param};
 use crate::{EMPTY_STR, get_traits, IMPL_TRAITS, ImplTraitsKey, ImplTraitsVal};
@@ -85,6 +86,7 @@ pub enum TypeKind {
     Pointer,
     MutPointer,
     Null,
+    Tuple,
 }
 
 #[derive(Debug, Clone)]
@@ -93,13 +95,18 @@ pub struct Type {
     pub children: Option<Vec<Type>>
 }
 
+impl Eq for Type {}
 impl PartialEq for Type {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind && self.children == other.children
     }
 }
-
+impl Hash for Type {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.to_string().hash(state);
+    }
+}
 
 #[allow(dead_code)]
 pub fn print_type(typ: &Option<Type>) {
@@ -145,6 +152,9 @@ pub fn print_type_b(typ: &Option<Type>, color: Color){
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
+            TypeKind::Tuple => {
+                write!(f, "({})", join(unwrap(&self.children).iter(), ", "))
+            },
             TypeKind::Null => write!(f, "None"),
             TypeKind::EmptyType => write!(f, "()"),
             TypeKind::Unknown => write!(f, "UNKNOWN TYPE"),
@@ -205,6 +215,7 @@ impl Display for Type {
 }
 
 impl Type {
+    // TODO dont have same one twice e.g. int | bool + bool | str != int | int | ...
     pub fn add_option(mut self, mut typ: Type) -> Type {
         if let TypeKind::OneOf = self.kind {
             if let TypeKind::OneOf = typ.kind {
@@ -287,7 +298,7 @@ pub fn clean_type(st: String) -> TypName {
             "str" => "String",
             "int" => "i32",
             "float" => "f32",
-            "List" => "Vec",
+            "List" | "list" => "Vec",
             "Set" => "HashSet",
             "Dict" => "HashMap",
             _ => return TypName::Str(st)
@@ -501,6 +512,9 @@ pub fn implements_trait(
             // unwrap_u(&traits.children).iter().any(|trt|
             //     matches!(&ast[*trt].value, AstNode::Identifier(name) if expected_trait == name)
             // )
+        }
+        TypeKind::Tuple => {
+            ["Debug"].contains(&expected_trait)
         }
         _ => false
     }

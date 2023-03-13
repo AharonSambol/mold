@@ -198,17 +198,53 @@ pub fn to_rust(
                 to_rust(ast, *child, indentation, info)
             ).collect::<Vec<_>>().concat()
         },
-        AstNode::Index => {
+        AstNode::Index => { // TODO pointer to tuple? or pointer to pointer?
+            let base = to_rust(ast, children[0], indentation, info);
+            let index = to_rust(ast, children[1], indentation, info);
+            let inner = get_pointer_complete_inner(ast[children[0]].typ.as_ref().unwrap());
+            if let TypeKind::Tuple = inner.kind {
+                if let AstNode::Number(num) = &ast[children[1]].value {
+                    return format!("{base}.{num}")
+                }
+                let enum_typ = ast[pos].typ.as_ref().unwrap().to_string();
+                let tuple_types = inner.children.as_ref().unwrap();
+                let tuple_len = tuple_types.len();
+                if tuple_types.iter().skip(1).all(|t| *t == tuple_types[0]) {
+                    return format!(
+                        "{{ \
+                    let _idx_ = {index};\
+                    match _idx_ {{ {}, _ => panic!(\"index `{{_idx_}}` out of range, tuple of len `{tuple_len}`\") }}\
+                    }}",
+                        join((0..tuple_len).map(
+                            |i| format!(
+                                "{i} | {} => {base}.{i}",
+                                (i as isize) - (tuple_len as isize),
+                            )
+                        ), ", ")
+                    )
+                }
+                return format!(
+                    "{{ \
+                    let _idx_ = {index};\
+                    match _idx_ {{ {}, _ => panic!(\"index `{{_idx_}}` out of range, tuple of len `{tuple_len}`\") }}\
+                    }}",
+                    join((0..tuple_len).map(
+                        |i| format!(
+                            "{i} | {} => {enum_typ}::_{}({base}.{i})",
+                            (i as isize) - (tuple_len as isize),
+                            tuple_types[i]
+                        )
+                    ), ", ")
+                )
+            }
             format!(
-                "{}{}, {})",
+                "{}{base}, {index})",
                 match ast[children[0]].typ.as_ref().unwrap().kind {
                     TypeKind::Pointer => "*_index(",
                     TypeKind::MutPointer => "*_index_mut(",
                     _ if ast[pos].is_mut => "*_index_mut(&mut ",
                     _ => "*_index(&"
-                },
-                to_rust(ast, children[0], indentation, info),
-                to_rust(ast, children[1], indentation, info)
+                }
             )
             /*
             to_rust(ast, children[0], indentation, info);
@@ -622,8 +658,15 @@ pub fn to_rust(
                 )
             }
         }
-        // AstNode::Null => panic!("unexpected `None`, can only assign `None` to variable which is of `union` type"),
-        AstNode::Null => String::from("None"),
+        AstNode::Null => panic!("unexpected `None`, can only assign `None` to variable which is of `union` type"),
+        AstNode::Tuple => {
+            format!(
+                "({})",
+                join(children.iter().map(
+                    |child| to_rust(ast, *child, indentation, info)
+                ), ", ")
+            )
+        }
         _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
     }
 }

@@ -370,6 +370,7 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                             *lf = format!("'{st}");
                             continue
                         }
+                        // TODO if reserved_words.contains(st) { panic }
                         SolidToken::Word(clean(st))
                     }
                 }

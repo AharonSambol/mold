@@ -28,6 +28,10 @@ impl<'a> Display for int_or_bool<'a> {
 //     }
 // }
 fn a() {
+    let tp = (1, 2);
+    let x = &tp;
+    let xx = x.0;
+
     let mut x = int_or_bool::b(&false);
     if 1 > 2 {
         x = int_or_bool::i(&12);

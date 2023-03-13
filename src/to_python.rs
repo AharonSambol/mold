@@ -279,30 +279,13 @@ pub fn to_python(
             }
         },
         AstNode::ListLiteral => {
+            let elems = join(children.iter().map(
+                |child| to_python(ast, *child, indentation + 1, ToWrapVal::GetInnerValue)
+            ), ", ");
             match add_val_wrapper {
                 ToWrapVal::Nothing => panic!(),
-                ToWrapVal::GetAsValue => {
-                    let mut res = String::from("value_(built_in_list_([");
-                    for (i, child) in children.iter().enumerate() {
-                        if i != 0 {
-                            write!(res, ", ").unwrap();
-                        }
-                        write!(res, "{}", to_python(ast, *child, indentation + 1, ToWrapVal::GetInnerValue)).unwrap();
-                    }
-                    write!(res, "]))").unwrap();
-                    res
-                },
-                ToWrapVal::GetName | ToWrapVal::GetInnerValue => {
-                    let mut res = String::from("built_in_list_([");
-                    for (i, child) in children.iter().enumerate() {
-                        if i != 0 {
-                            write!(res, ", ").unwrap();
-                        }
-                        write!(res, "{}", to_python(ast, *child, indentation + 1, ToWrapVal::GetInnerValue)).unwrap();
-                    }
-                    write!(res, "])").unwrap();
-                    res
-                },
+                ToWrapVal::GetAsValue => format!("value_(built_in_list_([{elems}]))"),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!("built_in_list_([{elems}])"),
             }
         },
         AstNode::SetLiteral => {
@@ -733,6 +716,16 @@ pub fn to_python(
                     format!("\n{indent}\t({par_names})={name}.get_enum_inner_vals_()")
                 }
             )
+        }
+        AstNode::Tuple => {
+            let elems = join(children.iter().map(
+                |child| to_python(ast, *child, indentation, ToWrapVal::GetInnerValue)
+            ), ", ");
+            match add_val_wrapper {
+                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::GetAsValue => format!("value_(({elems}))"),
+                ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!("({elems})"),
+            }
         }
         _ => panic!("Unexpected AST {:?}", ast[pos].value)
     }

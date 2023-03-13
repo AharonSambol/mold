@@ -610,9 +610,15 @@ pub fn make_ast_expression(
                 if amount_of_open == -1 { break }
             },
             SolidToken::NewLine if amount_of_open == 0 => break,
-            SolidToken::Colon | SolidToken::Comma => {
-                break
-            },
+            SolidToken::Comma => {
+                if matches!(ast[parent].value, AstNode::Parentheses | AstNode::Tuple) {
+                    ast[parent].value = AstNode::Tuple;
+                    while let SolidToken::Comma = tokens[pos] {
+                        pos = make_ast_expression(tokens, pos + 1, ast, parent, vars, info) - 1;
+                    }
+                } else { break }
+            }
+            SolidToken::Colon => break,
             SolidToken::Num(num) => {
                 add_to_tree(parent, ast, Ast::new(AstNode::Number(num.clone())));
             },
@@ -632,7 +638,6 @@ pub fn make_ast_expression(
             SolidToken::Null => {
                 add_to_tree(parent, ast, Ast::new(AstNode::Null));
             },
-
             SolidToken::Word(wrd) => {
                 pos = word_tok(
                     tokens, pos, ast, parent, 0, 

@@ -87,6 +87,7 @@ pub enum AstNode {
     Ternary, // children[0] = val if true, children[1] = condition, children[2] = val if false
     Trait { name: String, strict: bool },  // children[0] = Module (functions)
     // Traits,
+    Tuple,
     Type(String), // e.g.  struct A: \n type Inner
     Types,
     UnaryOp(OperatorType),  // children[0] = elem
@@ -103,6 +104,7 @@ impl AstNode {
             | AstNode::StructInit
             | AstNode::Property
             | AstNode::Ternary
+            | AstNode::Tuple
             | AstNode::Null
             | AstNode::Number(_)
             | AstNode::Char(_)
@@ -161,6 +163,7 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            AstNode::Tuple => write!(f, "(TUPLE)"),
             AstNode::Null => write!(f, "None"),
             AstNode::Case => write!(f, "[CASE]"),
             AstNode::Match => write!(f, "[MATCH]"),

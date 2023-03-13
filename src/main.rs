@@ -86,7 +86,7 @@ pub struct OneOfEnumTypes {
 fn main() {
     // todo remove
     unsafe {
-        IS_COMPILED = true;
+        // IS_COMPILED = true;
     }
     let mut test = false;
 
@@ -214,22 +214,6 @@ class pointer_:
     def __lt__(self, other): return self.p < other.p
     def __ge__(self, other): return self.p >= other.p
     def __gt__(self, other): return self.p > other.p
-
-class Option:
-    NONE=0
-    Some=1
-    def getattr(attr): return eval(f'Option.{attr}')
-class _Option_None:
-    pass
-Option.NONE = _Option_None
-class _Option_Some:
-    def __init__(self, x):
-        self.x = x
-    def get_enum_inner_vals_(self):
-        return x
-
-
-Option.Some = _Option_Some
 "};
         let mut built_ins = File::create(
             format!("{}/mold_core_built_ins.py", copy_folder.module_path) // todo windows is \
@@ -266,7 +250,7 @@ mod {module_name};
         vc.iter_mut().rev().nth(-pos as usize -1)
     }}.unwrap()
 }}
-#[inline] fn _index<T>(vc: &Vec<T>, pos: i32) -> &T {{
+#[inline] fn _index<T>(vc: &[T], pos: i32) -> &T {{
     if pos >= 0 {{
         vc.iter().nth(pos as usize)
     }} else {{

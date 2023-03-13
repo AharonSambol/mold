@@ -26,29 +26,21 @@
 #         return 1
 #
 # type i = int
-# type IList = List[i]
-enum E:
-    a, b(int), c, d
-def main():
-    o = Option.Some(2)
 
-    a = E.d
-    match a:
-        case E.a:
-            print("a")
-        case E.b(x):
-            print("b=", x)
-        case E.c:
-            pass
-        case E.d:
-            pass
-    a: int | bool | str | None = false
-    a = 1
-    a = None
-    match a:
-        case int:
-            print("a")
-        case bool:
-            print("b=")
-        case _:
-            pass
+# type IList = List[i]
+def tp(x: Tuple[int, bool]):
+    print(x)
+
+def main():
+    o: int | None = None
+    t: tuple[int, bool] = (1, False)
+    tp(t)
+    #{
+    a = (1, 2, 3)
+    print(a)
+    pa = &a
+    x = 0
+    b = &pa[x]
+    print(b)
+
+    # match on ref
