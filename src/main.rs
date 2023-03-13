@@ -86,10 +86,9 @@ pub struct OneOfEnumTypes {
 fn main() {
     // todo remove
     unsafe {
-        // IS_COMPILED = true;
+        IS_COMPILED = true;
     }
     let mut test = false;
-
     let mut path = None;
     for argument in env::args() {
         if argument == "compile"    { unsafe { IS_COMPILED = true; } }
@@ -148,7 +147,12 @@ fn run_on_path(path: &str) {
     let main = copy_folder.start();
 
     if !unsafe { IS_COMPILED } {
-        let python_built_ins = {"class built_in_list_(list):
+        let python_built_ins = {
+"
+from copy import deepcopy as _clone
+def clone(x): return _clone(x.v.p)
+
+class built_in_list_(list):
     def _iter_(self): return iter(pointer_(value_(x)) for x in super().__iter__())
     def append(self, val): return super().append(val.v)
     def getattr(self, attr): return self.__getattribute__(attr)
@@ -181,11 +185,11 @@ class value_:
     def __str__(self): return f'{self.v}'
     def __getitem__(self, pos): return self.v.__getitem__(pos)
     def __setitem__(self, pos, val): return self.v.__setitem__(pos, val)
-    def __eq__(self, other): return self.v == other.v
-    def __le__(self, other): return self.v <= other.v
-    def __lt__(self, other): return self.v < other.v
-    def __ge__(self, other): return self.v >= other.v
-    def __gt__(self, other): return self.v > other.v
+    def __eq__(self, other): return self.v == other
+    def __le__(self, other): return self.v <= other
+    def __lt__(self, other): return self.v < other
+    def __ge__(self, other): return self.v >= other
+    def __gt__(self, other): return self.v > other
 
 class pointer_:
     def __init__(self, p):
@@ -256,6 +260,9 @@ mod {module_name};
     }} else {{
         vc.iter().rev().nth(-pos as usize -1)
     }}.unwrap()
+}}
+#[inline(always)] fn clone<T: Clone>(x: &T) -> T {{
+    x.clone()
 }}
 
 fn main() {{ {module_name}::{file_name}::main(); }}"
@@ -361,7 +368,7 @@ fn parse_file(path: &String, one_of_enums: &mut OneOfEnums) {
         let mut file = File::create(path).unwrap();
         file.write_all(format!("
 {RUST_IMPORTS}
-use crate::{{ _index_mut, _index, {} }};
+use crate::{{ _index_mut, _index, clone, {} }};
 
 {code}",
             join(enums.keys(), ",")
@@ -434,7 +441,6 @@ fn interpret(ast: &[Ast]) -> String {
     let py = py.trim();
     let py = { format!(
         r#"from typing import *
-from copy import deepcopy
 from mold_core_built_ins import *
 
 list = built_in_list_

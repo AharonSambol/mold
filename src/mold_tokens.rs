@@ -329,8 +329,8 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
             }
             Char(chr) => SolidToken::Char(clean_char(*chr)),
             Word { start, end, .. } => {
-                let st = &input_code[*start..*end];
-                match st {
+                let st = slice(input_code, *start, *end);
+                match st.as_str() {
                     "def" => SolidToken::Def, "class" => SolidToken::Class,
                     "enum" => SolidToken::Enum, "struct" => SolidToken::Struct,
                     "trait" => SolidToken::Trait, "TRAIT" => SolidToken::StrictTrait,
@@ -371,12 +371,12 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                             continue
                         }
                         // TODO if reserved_words.contains(st) { panic }
-                        SolidToken::Word(clean(st))
+                        SolidToken::Word(clean(&st))
                     }
                 }
             },
             Str { start, end, mutable: m } => SolidToken::Str {
-                val: String::from(&input_code[*start..*end]),
+                val: slice(input_code, *start, *end),
                 mutable: *m
             },
             Operator { start, end, .. } => {
@@ -399,17 +399,15 @@ fn solidify_tokens(tokens: &Vec<Token>, input_code: &str) -> Vec<SolidToken> {
                     panic!("invalid operator {oper}")
                 }
             },
-            Num { start, end, .. } => SolidToken::Num(
-                String::from(&input_code[*start..*end])
-            ),
+            Num { start, end, .. } => SolidToken::Num(slice(input_code, *start, *end)),
             Colon => SolidToken::Colon, Comma => SolidToken::Comma, Period => SolidToken::Period,
             Tab => if open == 0 { SolidToken::Tab } else { continue },
             NewLine => {
                 if open != 0 { continue }
+                while let Some(SolidToken::Tab) = res.last() {
+                    res.pop();
+                }
                 if is_empty_line {
-                    while let Some(SolidToken::Tab) = res.last() {
-                        res.pop();
-                    }
                     continue
                 }
                 is_empty_line = true;
@@ -576,7 +574,12 @@ fn is_mut_pointer(tokens: &[Token], solid_tokens: &[SolidToken], pos: usize, inp
         return false
     };
     if let Word {start, end, ..} = tokens[pos] {
-        return &input_code[start..end] == "mut"
+        return &slice(input_code, start, end) == "mut"
     }
     false
+}
+
+#[inline]
+fn slice(input_code: &str, start: usize, end: usize) -> String {
+    input_code.chars().skip(start).take(end - start).collect()
 }

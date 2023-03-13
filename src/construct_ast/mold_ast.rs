@@ -451,8 +451,15 @@ pub fn make_ast_statement(
 
                 // pos = make_ast_expression(tokens, pos + 1, ast, case, vars, info);
                 pos += 1;
-                let idf = unwrap_enum!(&tokens[pos], SolidToken::Word(wrd), wrd.clone(), "expected identifier");
-                add_to_tree(expression, ast, Ast::new(AstNode::Identifier(idf)));
+                if let SolidToken::Word(wrd) = &tokens[pos] {
+                    add_to_tree(expression, ast, Ast::new(AstNode::Identifier(wrd.clone())));
+                } else if let SolidToken::Null = &tokens[pos] {
+                    add_to_tree(expression, ast, Ast::new(AstNode::Null));
+                } else {
+                    panic!("expected identifier")
+                }
+                // let idf = unwrap_enum!(&tokens[pos], SolidToken::Word(wrd), wrd.clone(), "expected identifier");
+                // add_to_tree(expression, ast, Ast::new(AstNode::Identifier(idf)));
 
                 pos += 1;
                 while let SolidToken::Period = tokens[pos] {

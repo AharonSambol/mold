@@ -109,7 +109,13 @@ impl Hash for Type {
 }
 
 #[allow(dead_code)]
+#[track_caller]
 pub fn print_type(typ: &Option<Type>) {
+    let caller_location = std::panic::Location::caller();
+    let caller_file = caller_location.file();
+    let caller_line_number = caller_location.line();
+    println!("[{caller_file}:{caller_line_number}]");
+
     let ppt: PrettyPrintTree<Type> = {
         PrettyPrintTree::<Type>::new(
             Box::new(|typ| {
@@ -129,7 +135,13 @@ pub fn print_type(typ: &Option<Type>) {
 }
 
 #[allow(dead_code)]
+#[track_caller]
 pub fn print_type_b(typ: &Option<Type>, color: Color){
+    let caller_location = std::panic::Location::caller();
+    let caller_file = caller_location.file();
+    let caller_line_number = caller_location.line();
+    println!("[{caller_file}:{caller_line_number}]");
+
     let mut ppt: PrettyPrintTree<Type> = {
         PrettyPrintTree::<Type>::new(
             Box::new(|typ| {

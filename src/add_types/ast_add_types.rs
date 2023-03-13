@@ -70,6 +70,7 @@ pub fn add_types(
             vars.push(HashMap::new());
             add_types(ast, children[0], vars, info, parent_struct);
             let match_on = ast[children[0]].typ.as_ref().unwrap();
+            let match_on = get_pointer_complete_inner(match_on);
             let amount_of_options = if let TypeKind::Enum(enum_name) = &match_on.kind {
                 let enm = &ast[info.enums[&enum_name.to_string()].pos];
                 let enm_module = &ast[enm.ref_children()[1]];
@@ -100,7 +101,7 @@ pub fn add_types(
             let parent_match = &ast[*ast[pos].parent.as_ref().unwrap()];
             let match_on = parent_match.ref_children()[0];
             let match_type = ast[match_on].typ.as_ref().unwrap();
-
+            let match_type = get_pointer_complete_inner(match_type);
             let mut expression_children = ast[children[0]].children.clone().unwrap();
 
             if let TypeKind::Enum(enum_name) = &match_type.kind {
@@ -178,6 +179,9 @@ pub fn add_types(
                     let idf = clean_type(idf.clone());
                     ast[expression_children[0]].value = AstNode::Identifier(format!("_{idf}"));
                     idf
+                } else if let AstNode::Null = &ast[expression_children[0]].value {
+                    ast[expression_children[0]].value = AstNode::Identifier(String::from("_None"));
+                    TypName::Static("None")
                 } else {
                     panic!("expected identifier but found `{}`", ast[expression_children[0]].value)
                 };
@@ -221,7 +225,9 @@ pub fn add_types(
             }
         }
         AstNode::Return => {
-            add_types(ast, children[0], vars, info, parent_struct);
+            if !children.is_empty() {
+                add_types(ast, children[0], vars, info, parent_struct);
+            }
             let mut func_pos = ast[pos].parent.unwrap();
             while !matches!(ast[func_pos].value, AstNode::Function(_) | AstNode::StaticFunction(_)) {
                 func_pos = ast[func_pos].parent.unwrap();
@@ -515,7 +521,6 @@ pub fn add_types(
             add_types(ast, children[1], vars, info, parent_struct);
             ast[pos].typ = find_index_typ(ast, info, children[0], pos);
             ast[pos].is_mut = ast[children[0]].is_mut; // todo if it doesnt need to be mut then maybe not?
-            print_tree(ast, pos);
             if ast[pos].typ.is_none() {
                 panic!();
             }

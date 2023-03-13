@@ -707,7 +707,10 @@ pub fn to_python(
             let body = to_python(ast, *children.last().unwrap(), indentation + 1, ToWrapVal::Nothing);
             if case_type == "_" {
                 return format!("\n{indent}case _:{body}")
+            } else if case_type == "None" {
+                return format!("\n{indent}case None:{body}")
             }
+
             format!(
                 "\n{indent}case {name} if isinstance({name}, {case_type}):\
                 {}\

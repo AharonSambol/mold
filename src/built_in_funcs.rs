@@ -325,6 +325,13 @@ pub fn put_at_start(input: &str) -> String {
             args: vec!["t: IntoIterator[Item=T]"],
             return_typ: Some("Iterator[Item=&T]"),
         }),
+        //4 clone
+        BuiltIn::Func(BuiltInFunc{
+            name: "clone",
+            generics: Some(vec!["T"]),
+            args: vec!["t: &T"],
+            return_typ: Some("T"),
+        }),
         /* //1 Rev
         StructFunc::Struct(BuiltInStruct{
             name: "Rev",

@@ -28,19 +28,62 @@
 # type i = int
 
 # type IList = List[i]
-def tp(x: Tuple[int, bool]):
-    print(x)
+
+
+def print_board(board: &List[str]):
+	res = ""	 # first we make an empty string
+	for x in range(9):
+		element: str = clone(&board[x])
+		if element == " ":  # if the element is not set (to X or O)
+			# then add the number of the position
+			res = res + "*"
+		else:   # otherwise add the shape to the result
+			res += element
+		if x % 3 == 2:  # if it’s 2, 5 or 8 then add an enter after it
+			res += "\n"
+		else:   # otherwise add a pipe
+			res += " | "
+	print(res)  # and finally print out our string
+	# we don’t need to return anything from this function
+
+def get_winner(board: &List[str]) -> str:
+	for shape in ["X", "O"]:
+		for r in range(3):
+			if board[r * 3] == shape and board[r * 3 + 1] == shape and board[r * 3 + 2] == shape:
+				return shape
+		for r in range(3):
+			if board[r] == shape and board[r + 3] == shape and board[r + 6] == shape:
+				return shape
+			if (board[0] == shape and board[4] == shape and board[8] == shape) or (board[2] == shape and board[4] == shape and board[6] == shape):
+				return shape
+	return ""	# no one won
+def get_input() -> int:
+    return 1
 
 def main():
-    o: int | None = None
-    t: tuple[int, bool] = (1, False)
-    tp(t)
-    #{
-    a = (1, 2, 3)
-    print(a)
-    pa = &a
-    x = 0
-    b = &pa[x]
-    print(b)
+    board =  ["X", "O", "X", " ", "O", " ", " ", "O", " "]
+    print_board(&board)
+    print("winner:", get_winner(&board))
 
-    # match on ref
+    for i in range(9):
+    	pos = get_input()
+    	if i % 2 == 0:
+    		board[pos] = "X"
+    	else:
+    		board[pos] = "O"
+    	print_board(&board)
+    	# this will return the shape of the winner, if there is none it will return an empty string ""
+    	winner = get_winner(&board)
+    	if winner != "":
+    		print(winner, "won!")
+    		return
+    print("it's a draw")
+
+    # {
+    o: int | None = None
+    op = &o
+    match op:
+        case int as i:
+            print(i)
+        case None:
+            print("None")

@@ -110,11 +110,19 @@ pub fn to_rust(
                     )
                 }
             }
-            format!(
-                "{} {op}= {}",
-                to_rust(ast, children[0], indentation, info),
-                to_rust(ast, children[1], indentation, info)
-            )
+            if is_string_addition(ast, children[0], children[1], op) {
+                format!(
+                    "{} += &{}",
+                    to_rust(ast, children[0], indentation, info),
+                    to_rust(ast, children[1], indentation, info),
+                )
+            } else {
+                format!(
+                    "{} {op}= {}",
+                    to_rust(ast, children[0], indentation, info),
+                    to_rust(ast, children[1], indentation, info)
+                )
+            }
         }
         AstNode::Identifier(name) => { name.clone() },
         AstNode::Operator(op) => {
@@ -167,18 +175,12 @@ pub fn to_rust(
                     in_to_rust(ast, indentation, info, children),
                 OperatorType::NotIn =>
                     format!("!{}", in_to_rust(ast, indentation, info, children)),
-                _ if is_string_addition(ast, pos, op) => {
-                    let res = format!(
-                        "{} {op} {}",
+                _ if is_string_addition(ast, children[0], children[1], op) => {
+                    format!(
+                        "{} + &{}",
                         to_rust(ast, children[0], indentation, info),
                         to_rust(ast, children[1], indentation, info),
-                    );
-                    if let Some(Type { kind: TypeKind::Struct(t_name), .. }) = &ast[children[1]].typ {
-                        if *t_name == TypName::Static("String") {
-                            return format!("{res}.as_str()")
-                        }
-                    }
-                    res
+                    )
                 }
                 _ => {
                     format!(
@@ -238,7 +240,7 @@ pub fn to_rust(
                 )
             }
             format!(
-                "{}{base}, {index})",
+                "({}{base}, {index}))",
                 match ast[children[0]].typ.as_ref().unwrap().kind {
                     TypeKind::Pointer => "*_index(",
                     TypeKind::MutPointer => "*_index_mut(",
@@ -630,14 +632,18 @@ pub fn to_rust(
         AstNode::Case => {
             let parent_match = &ast[*ast[pos].parent.as_ref().unwrap()];
             let match_on = parent_match.ref_children()[0];
-            let is_one_of = matches!(&ast[match_on].typ, Some(Type { kind: TypeKind::OneOf, .. }));
-
+            let match_on = get_pointer_complete_inner(ast[match_on].typ.as_ref().unwrap());
+            let is_one_of = matches!(&match_on.kind, TypeKind::OneOf);
+            // println!("is_one_of: {is_one_of}, {:?}", &ast[match_on].typ);
             let condition_children = ast[children[0]].ref_children();
             let option_name = to_rust(ast, condition_children[0], indentation, info);
             let body = to_rust(ast, *children.last().unwrap(), indentation + 1, info);
             if option_name == "_" {
                 format!("_ => {{ {body} }}")
             } else if is_one_of {
+                if option_name.split_once("::").unwrap().1 == "_None" { //3 this is trash code
+                    return format!("{option_name} => {{ {body} }}")
+                }
                 format!(
                     "{option_name}({}) => {{ {body} }}",
                     if children.len() == 3 {
@@ -1028,15 +1034,10 @@ fn built_in_funcs(
     })
 }
 
-fn is_string_addition(ast: &[Ast], pos: usize, op: &OperatorType) -> bool{
-    if matches!(op, OperatorType::Plus) {
-        if let Some(Type { kind: TypeKind::Struct(nm), .. }) = &ast[pos].typ {
-            if *nm == TypName::Static("String") {
-                return true;
-            }
-        }
-    }
-    false
+fn is_string_addition(ast: &[Ast], pos1: usize, pos2: usize, op: &OperatorType) -> bool{
+    return matches!(op, OperatorType::Plus)
+    && matches!(&ast[pos1].typ, Some(Type { kind: TypeKind::Struct(nm), .. }) if nm == "String")
+    && matches!(&ast[pos2].typ, Some(Type { kind: TypeKind::Struct(nm), .. }) if nm == "String")
 }
 
 pub fn get_struct_and_func_name<'a>(ast: &'a [Ast], children: &[usize]) -> Option<(&'a TypName, &'a String)> {

@@ -119,7 +119,12 @@ pub fn clone_sub_tree(ast: &[Ast], head: usize, exclude_children: Option<usize>)
     res
 }
 
+#[track_caller]
 pub fn print_tree(ast: &[Ast], pos: usize){
+    let caller_location = std::panic::Location::caller();
+    let caller_file = caller_location.file();
+    let caller_line_number = caller_location.line();
+    println!("[{caller_file}:{caller_line_number}]");
     let ppt = {
         PrettyPrintTree::<(&[Ast], usize)>::new(
             Box::new(|(vc, pos)| {

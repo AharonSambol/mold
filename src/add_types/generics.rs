@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::add_types::utils::get_pointer_complete_inner;
 use crate::construct_ast::ast_structure::Param;
-use crate::types::{GenericType, Type, TypeKind, unwrap};
+use crate::types::{GenericType, print_type, Type, TypeKind, unwrap};
 
 //2 only generics whose children are also T
 //  as in [Generic(Of("T"))]
@@ -22,19 +22,31 @@ pub fn get_function_return_type(return_type: &Option<Type>, expected_inputs: &Op
 }
 
 pub fn map_generic_types(generic: &Type, t: &Type, res: &mut HashMap<String, Type>) {
-    if let TypeKind::Generic(GenericType::NoVal(name)) = &generic.kind {
-        if let Some(r) = res.get(name) {
-            if r != t {
-                panic!("expected `{}` and `{}` to be of the same type", r, t);
+    fn map_generic_types_inner(generic: &Type, t: &Type, res: &mut HashMap<String, Type>) -> Result<(), ()> {
+        if let TypeKind::Generic(GenericType::NoVal(name)) = &generic.kind {
+            if let Some(r) = res.get(name) {
+                if r != t {
+                    panic!("expected `{}` and `{}` to be of the same type", r, t);
+                }
+            } else {
+                res.insert(name.clone(), t.clone());
             }
-        } else {
-            res.insert(name.clone(), t.clone());
+        } else if let TypeKind::OneOf = &generic.kind {
+            // todo
+            return Ok(())
         }
+        let generic_children = unwrap(&generic.children);
+        let t_children = unwrap(&t.children);
+        for (child1, child2) in generic_children.iter().zip(t_children) {
+            if !matches!(child1.kind, TypeKind::Generic(GenericType::NoVal(_))) && child1.kind != child2.kind {
+                return Err(())
+            }
+            map_generic_types_inner(child1, child2, res)?
+        }
+        Ok(())
     }
-
-    // todo these should be of the same Type::kind
-    for (child1, child2) in unwrap(&generic.children).iter().zip(unwrap(&t.children)) {
-        map_generic_types(child1, child2, res);
+    if map_generic_types_inner(generic, t, res).is_err() {
+        panic!("expected `{}` but found `{}`", generic, t);
     }
 }
 
@@ -60,7 +72,6 @@ pub fn apply_generics_from_base(return_typ: &Option<Type>, base: &Type) -> Optio
 
 pub fn apply_map_to_generic_typ(typ: &Type, map: &HashMap<String, Type>) -> Type {
     if let TypeKind::Generic(GenericType::NoVal(name)) = &typ.kind {
-        println!("{name} not in {map:?}");
         map[name].clone()
     } else {
         Type {
