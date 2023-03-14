@@ -141,10 +141,17 @@ impl OperatorType {
             | OperatorType::Smaller
             | OperatorType::NEq
             | OperatorType::BEq
-            | OperatorType::SEq => 30,
+            | OperatorType::SEq
+            | OperatorType::In
+            | OperatorType::Is
+            | OperatorType::IsNot
+            | OperatorType::NotIn => 30,
             OperatorType::Not => 25,
             OperatorType::And => 20,
             OperatorType::Or => 10,
+
+
+
             _ => -100
         }
     }

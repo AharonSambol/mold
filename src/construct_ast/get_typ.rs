@@ -125,7 +125,9 @@ pub fn try_get_arg_typ(
                 let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call, inside_par);
                 *pos -= 1;
                 if let Some(t) = t {
+                    println!("T: {t}, TYP: {typ}");
                     res = Some(typ.add_option(t));
+                    println!("= {}   |    {:?}", res.as_ref().unwrap(), res.as_ref().unwrap().children.as_ref().unwrap().iter().map(|x| x.to_string()).collect::<Vec<_>>());
                     make_enums(res.as_ref().unwrap(), info.one_of_enums);
                 } else if panic { panic!() } else { return None };
             }
@@ -199,13 +201,16 @@ pub fn try_get_arg_typ(
             SolidToken::UnaryOperator(op_type @ (OperatorType::Pointer | OperatorType::MutPointer)) => {
                 *pos += 1;
                 let is_parenthesis = matches!(tokens[*pos], SolidToken::Parenthesis(IsOpen::True));
-                // if is_parenthesis {
-                //     *pos += 1;
-                // }
                 let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call, inside_par);
+
                 let inner = if let Some(t) = t {
                     if matches!(t.kind, TypeKind::OneOf) && !is_parenthesis {
                         //1 only make the first one a pointer
+                        // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                         res = Some(Type {
                             kind: TypeKind::OneOf,
                             children: Some(
@@ -218,6 +223,7 @@ pub fn try_get_arg_typ(
                                 ).collect()
                             )
                         });
+                        println!("&TYP: {}", res.as_ref().unwrap());
                         make_enums(res.as_ref().unwrap(), info.one_of_enums);
                         continue
                     } else {

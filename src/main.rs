@@ -83,6 +83,7 @@ pub struct OneOfEnumTypes {
 // lto = "fat"
 // codegen-units = 1
 // todo some things dont necessarily need to be made into a box (e.g. lst.len())
+// TODO it doesnt check the types passed to built ins (i think) but it needs to for some at least
 fn main() {
     // todo remove
     unsafe {
@@ -108,6 +109,7 @@ fn main() {
         /*1     6*/ "tests/lists.mo",
         /*1     7*/ "tests/algos.mo",
         /*1     8*/ "tests/unions.mo",
+        /*1     9*/ "tests/tictactoe.mo",
     ];
     if test {
         for p in paths {

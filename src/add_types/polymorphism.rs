@@ -88,17 +88,25 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize {
  */
 
 pub fn make_enums(typ: &Type, enums: &mut OneOfEnums) {
+    // todo sort here
     let types = unwrap(&typ.children);
     let mut generics = vec![];
-    types.iter().for_each(|x| if let Some(ch) = &x.children {
-        if let TypeKind::GenericsMap = &ch[0].kind {
-            for mut generic in unwrap(&ch[0].children) {
-                if let TypeKind::InnerType(_) = &generic.kind {
-                    generic = &generic.ref_children()[0];
-                }
-                if let TypeKind::Generic(GenericType::NoVal(name)) = &generic.kind {
-                    if !generics.contains(name) {
-                        generics.push(name.clone());
+    types.iter().for_each(|x| {
+        if let TypeKind::Generic(GenericType::NoVal(name)) = &x.kind {
+            if !generics.contains(name) {
+                generics.push(name.clone());
+            }
+        }
+        if let Some(ch) = &x.children {
+            if let TypeKind::GenericsMap = &ch[0].kind {
+                for mut generic in unwrap(&ch[0].children) {
+                    if let TypeKind::InnerType(_) = &generic.kind {
+                        generic = &generic.ref_children()[0];
+                    }
+                    if let TypeKind::Generic(GenericType::NoVal(name)) = &generic.kind {
+                        if !generics.contains(name) {
+                            generics.push(name.clone());
+                        }
                     }
                 }
             }

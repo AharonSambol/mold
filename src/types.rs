@@ -227,7 +227,7 @@ impl Display for Type {
 }
 
 impl Type {
-    // TODO dont have same one twice e.g. int | bool + bool | str != int | int | ...
+    // TODO dont have same one twice e.g. int | bool + bool | str != int | int | ... (BUT reserve who is first (for pointer))
     pub fn add_option(mut self, mut typ: Type) -> Type {
         if let TypeKind::OneOf = self.kind {
             if let TypeKind::OneOf = typ.kind {
@@ -238,10 +238,13 @@ impl Type {
                 }
             } else if let Some(vc) = &mut self.children {
                 vc.push(typ);
-            } else { panic!("an empty 'OneOf' type?"); }
+            } else { panic!("an empty 'OneOf' type?") }
             self
         } else if let TypeKind::OneOf = typ.kind {
-            typ.add_option(self)
+            if let Some(vc) = &mut typ.children {
+                vc.insert(0, self)
+            } else { panic!("an empty 'OneOf' type?") }
+            typ
         } else {
             Type {
                 kind: TypeKind::OneOf,

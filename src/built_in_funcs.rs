@@ -247,21 +247,21 @@ pub fn put_at_start(input: &str) -> String {
             args: vec!["Ok(T)", "Err(E)"],
             ignore: true,
         }),
-        //4 len
+        //4 len TODO does this work??
         BuiltIn::Func(BuiltInFunc {
             name: "len",
             generics: None,
             args: vec!["x: &__len__"],
             return_typ: Some("int"),
         }),
-        //4 min TODO add support for lambda
+        //4 min TODO add support for lambda and for min(1, 2)
         BuiltIn::Func(BuiltInFunc {
             name: "min",
             generics: Some(vec!["T"]),
             args: vec!["x: IntoIterator[Item=T]"],
             return_typ: Some("T"),
         }),
-        //4 max TODO add support for lambda
+        //4 max TODO add support for lambda and for max(1, 2)
         BuiltIn::Func(BuiltInFunc {
             name: "max",
             generics: Some(vec!["T"]),
@@ -286,14 +286,14 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "pow",
             generics: Some(vec!["T, G"]), // todo which i8 | i16 | i32 | i64 | i128 | isize | f32 | f64
-            args: vec!["base: T, pow: G, mod: G = 0"], //1 base, pow, mod?
+            args: vec!["base: T, pow: G, mod: G | None = None"], //1 base, pow, mod?
             return_typ: Some("T"),
         }),
         //4 range
         BuiltIn::Func(BuiltInFunc {
             name: "range",
             generics: None,
-            args: vec!["start: int", "end: int | bool = False", "step: int | bool = False"],
+            args: vec!["start: int", "end: int | None = None", "step: int | None = None"],
             // args: vec!["*args: int"], //1 so that the rust version can count how many args were supplied
             return_typ: Some("Iterator[Item=int]"),
         }),
@@ -331,6 +331,27 @@ pub fn put_at_start(input: &str) -> String {
             generics: Some(vec!["T"]),
             args: vec!["t: &T"],
             return_typ: Some("T"),
+        }),
+        //4 input
+        BuiltIn::Func(BuiltInFunc{
+            name: "input",
+            generics: None,
+            args: vec!["x: str | None = None"],
+            return_typ: Some("str"),
+        }),
+        //4 int
+        BuiltIn::Func(BuiltInFunc{
+            name: "int",
+            generics: None,
+            args: vec!["x: &str | float | bool, base: int | None = None"],
+            return_typ: Some("int"),
+        }),
+        //4 str
+        BuiltIn::Func(BuiltInFunc{
+            name: "str",
+            generics: None,
+            args: vec!["x: int | float | bool"],
+            return_typ: Some("str"),
         }),
         /* //1 Rev
         StructFunc::Struct(BuiltInStruct{

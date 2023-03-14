@@ -4,12 +4,12 @@ use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
-use crate::add_types::ast_add_types::{get_inner_type, SPECIFIED_NUM_TYPE_RE};
+use crate::add_types::ast_add_types::{get_inner_type, NUM_TYPES, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::apply_generics_from_base;
-use crate::add_types::utils::{get_pointer_complete_inner, is_float};
+use crate::add_types::utils::{get_pointer_complete_inner, get_pointer_inner, is_float};
 use crate::construct_ast::mold_ast::{Info};
 use crate::mold_tokens::OperatorType;
-use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, implements_trait};
+use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, implements_trait, print_type};
 
 //4 probably using a string builder would be much more efficient (but less readable IMO)
 pub fn to_rust(
@@ -883,29 +883,12 @@ fn built_in_funcs(
                 panic!("not enough args passed to `range` expected at least 1")
             }
 
-
-
             let mut optional_args = vec![];
             for i in args.iter().skip(1) {
-                /*if let Some(Type { kind: TypeKind::Enum(name), .. }) = &ast[*i].typ {
-                    if name == "i32__or__bool" {
-                        let func_call = ast[*i].ref_children()[1];
-                        let func_children = ast[func_call].ref_children();
-                        let opt_name = &ast[func_children[0]];
-                        if matches!(&opt_name.value, AstNode::Identifier(n) if n == "_i32") {
-                            let args_pos = &ast[func_children[1]];
-                            optional_args.push(args_pos.ref_children()[0]);
-                            continue
-                        }
-                    }
-                }*/
-                if let Some(Type { kind: TypeKind::Struct(name), .. }) = &ast[*i].typ {
-                    if name == "i32" {
-                        optional_args.push(*i);
-                        continue
-                    }
+                if let Some(Type { kind: TypeKind::Null, .. }) = &ast[*i].typ {
+                    break
                 }
-                break
+                optional_args.push(*i);
             }
             format!(
                 "{}{}{}",
@@ -1025,17 +1008,76 @@ fn built_in_funcs(
                 to_rust(ast, args[0], 0, info),
                 if is_float { "powf" } else { "pow" },
                 to_rust(ast, args[1], 0, info),
-                if !matches!(ast[args[2]].value, AstNode::UnaryOp(OperatorType::Minus)) {
+                if let AstNode::Null = ast[args[2]].value {
+                    EMPTY_STR
+                } else {
                     format!(" % ({})", to_rust(ast, args[2], 0, info))
+                }
+            )
+        }
+        "input" => {
+            format!( //1 pop removes the \n
+                "{{ let mut _res_ = String::new();\
+                {}\
+                std::io::stdin().read_line(&mut _res_)\
+                .ok().expect(\"Failed to read line\");\
+                _res_.pop();\
+                _res_\
+                }}",
+                if !args.is_empty() {
+                    format!(
+                        "print!(\"{{}}\", {}); \
+                        std::io::Write::flush(&mut std::io::stdout()).expect(\"io flush failed\");",
+                        to_rust(ast, args[0], indentation, info)
+                    )
                 } else { EMPTY_STR }
             )
+        }
+        "int" => {
+            let arg_typ = ast[args[0]].typ.as_ref().unwrap();
+            let base = ast[args[1]].typ.as_ref().unwrap();
+            let arg = to_rust(ast, args[0], indentation, info);
+            let TypeKind::Null = base.kind else {
+                let base = to_rust(ast, args[1], indentation, info);
+                if let TypeKind::Struct(name) = &arg_typ.kind {
+                    if name != "String" {
+                        panic!("int() can't convert non-string with explicit base");
+                    }
+                    return Some(format!("{{\
+                    let _arg_ = {arg};\
+                    let _base_ = {base};\
+                    i32::from_str_radix(_arg_, _base_ as u32).unwrap_or_else(|_| panic!(\"invalid literal for int() with base {{_base_}}: `{{_arg_}}`\"))\
+                    }}"))
+                }
+                panic!()
+            };
+            if let TypeKind::Struct(name) = &arg_typ.kind {
+                if NUM_TYPES.contains(name.get_str()) || name == "bool" {
+                    return Some(format!("({arg} as i32)"))
+                }
+            } else if let TypeKind::Pointer | TypeKind::MutPointer = &arg_typ.kind {
+                let inner = get_pointer_inner(arg_typ);
+                if let TypeKind::Struct(name) = &inner.kind {
+                    if name == "String" {
+                        return Some(format!("{{\
+                        let _arg_ = {arg};\
+                        _arg_.parse::<i32>().unwrap_or_else(|_| panic!(\"invalid literal for int() with base 10: `{{_arg_}}`\"))\
+                        }}"))
+                    }
+                }
+            }
+            print_type(&Some(arg_typ.clone()));
+            unreachable!()
+        }
+        "str" => {
+            format!("({}).to_string()", to_rust(ast, args[0], indentation, info))
         }
         _ => { return None }
     })
 }
 
 fn is_string_addition(ast: &[Ast], pos1: usize, pos2: usize, op: &OperatorType) -> bool{
-    return matches!(op, OperatorType::Plus)
+    matches!(op, OperatorType::Plus)
     && matches!(&ast[pos1].typ, Some(Type { kind: TypeKind::Struct(nm), .. }) if nm == "String")
     && matches!(&ast[pos2].typ, Some(Type { kind: TypeKind::Struct(nm), .. }) if nm == "String")
 }
