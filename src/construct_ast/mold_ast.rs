@@ -8,7 +8,7 @@ use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::{add_to_stack, get_from_stack};
 use crate::construct_ast::ast_structure::AstNode::As;
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
-use crate::types::{Type, unwrap_u};
+use crate::types::{Type, TypeKind, unwrap_u};
 use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
 use crate::construct_ast::get_typ::{get_arg_typ};
 use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait, make_enum};
@@ -32,6 +32,7 @@ pub type FuncTypes = HashMap<String, FuncType>;
 pub type TypeTypes = HashMap<String, Type>;
 
 pub trait STType {
+    fn get_associated_types(&self) -> &Option<Vec<String>>;
     fn get_generics(&self) -> &Option<Vec<String>>;
     fn get_generics_mut(&mut self) -> &mut Option<Vec<String>>;
     fn get_pos(&self) -> usize;
@@ -39,12 +40,14 @@ pub trait STType {
 #[derive(Clone, Debug)]
 pub struct TraitType {
     pub generics: Option<Vec<String>>,
+    pub associated_types: Option<Vec<String>>,
     pub pos: usize,
     pub parent_file: String,
 }
 #[derive(Clone, Debug)]
 pub struct StructType {
     pub generics: Option<Vec<String>>,
+    pub associated_types: Option<Vec<String>>,
     pub pos: usize,
     pub parent_file: String,
 }
@@ -55,16 +58,19 @@ pub struct EnumType {
     pub parent_file: String,
 }
 impl STType for StructType {
+    fn get_associated_types(&self) -> &Option<Vec<String>> { &self.associated_types }
     fn get_generics(&self) -> &Option<Vec<String>> { &self.generics }
     fn get_generics_mut(&mut self) -> &mut Option<Vec<String>> { &mut self.generics }
     fn get_pos(&self) -> usize { self.pos }
 }
 impl STType for TraitType {
+    fn get_associated_types(&self) -> &Option<Vec<String>> { &self.associated_types }
     fn get_generics(&self) -> &Option<Vec<String>> { &self.generics }
     fn get_generics_mut(&mut self) -> &mut Option<Vec<String>> { &mut self.generics }
     fn get_pos(&self) -> usize { self.pos }
 }
 impl STType for EnumType {
+    fn get_associated_types(&self) -> &Option<Vec<String>> { panic!() }
     fn get_generics(&self) -> &Option<Vec<String>> { &self.generics }
     fn get_generics_mut(&mut self) -> &mut Option<Vec<String>> { &mut self.generics }
     fn get_pos(&self) -> usize { self.pos }
@@ -88,7 +94,7 @@ pub struct Info<'a> {
     pub one_of_enums: &'a mut OneOfEnums,
     pub types: &'a mut TypeTypes,
     pub generics: &'a mut GenericTypes,
-    pub struct_inner_types: &'a mut HashSet<String>,
+    pub struct_associated_types: &'a mut HashSet<String>,
     pub cur_file_path: &'a mut PathBuf,
 }
 
@@ -114,7 +120,7 @@ pub fn construct_ast(tokens: &[SolidToken], pos: usize, info: &mut Info) -> Vec<
     *info.types = types;
     *info.enums = enums;
     *info.generics = vec![];
-    *info.struct_inner_types = HashSet::new();
+    *info.struct_associated_types = HashSet::new();
     make_ast_statement(
         tokens, pos, &mut ast, 0, 0,
         &mut vec![HashMap::new()], info
@@ -137,10 +143,34 @@ pub fn construct_ast(tokens: &[SolidToken], pos: usize, info: &mut Info) -> Vec<
 
 pub fn add_trait_to_struct(
     ast: &[Ast], struct_name: &str, funcs: &TraitFuncs, trt_name: &str, trt_funcs: &TraitFuncs,
-    info: &Info
+    trait_types: &Option<HashMap<String, Type>>, trait_generics: &Option<Vec<Type>>, info: &Info
 ) -> String {
+    let expected_generics = &info.traits[trt_name].generics;
+    let generics = if matches!(expected_generics, Some(vc) if !vc.is_empty()) {
+        assert_eq!(
+            trait_generics.as_ref().unwrap().len(),
+            expected_generics.as_ref().unwrap().len()
+        );
+        format!("<{}>", join(
+            trait_generics.as_ref().unwrap().iter().map(|x| x.to_string()),
+            ","
+        ))
+    } else {
+        assert!(trait_generics.is_none() || !trait_generics.as_ref().unwrap().iter().any(|x|
+            matches!(&x.kind, TypeKind::Generic(_))
+        ));
+        EMPTY_STR
+    };
+    let associated_types = if let Some(a_types) = trait_types {
+        join(
+            a_types.iter().map(|(name, typ)| format!("type {name} = {typ};")),
+            "\n"
+        )
+    } else {
+        EMPTY_STR
+    };
     format!(
-        "impl {trt_name} for {struct_name} {{ {} }}",
+        "impl {trt_name}{generics} for {struct_name} {{\n\t{associated_types}\n\t{}\n}}",
         join(trt_funcs.iter().map(
             |(func_name, _)| {
                 let new_func_name = format!("{trt_name}::{func_name}");
@@ -148,10 +178,10 @@ pub fn add_trait_to_struct(
                 if funcs.keys().any(|x| *x == new_func_name) { EMPTY_STR }
                 else {
                     let func = funcs.get(func_name).unwrap();
-                    to_rust(ast, func.0, 0, info).strip_prefix("pub ").unwrap().to_string()
+                    to_rust(ast, func.0, 1, info).strip_prefix("pub ").unwrap().to_string()
                 }
             }
-        ), "\n")
+        ), "\n\t")
     )
 }
 
@@ -195,8 +225,7 @@ pub fn make_ast_statement(
     vars: &mut VarTypes, info: &mut Info
 ) -> usize {
     while pos < tokens.len() {
-        let token = &tokens[pos];
-        match token {
+        match &tokens[pos] {
             SolidToken::Struct => {
                 vars.push(HashMap::new());
                 pos = make_struct(
@@ -390,6 +419,7 @@ pub fn make_ast_statement(
                         // }
                         info.structs.insert(name.unwrap_or_else(|| word.clone()), StructType {
                             generics: val.0.generics.clone(),
+                            associated_types: val.0.associated_types.clone(),
                             pos: index,
                             parent_file: module_path.clone()
                         });
@@ -398,6 +428,7 @@ pub fn make_ast_statement(
                         extend_tree(ast, 0, val.clone().1);
                         info.traits.insert(name.unwrap_or_else(|| word.clone()), TraitType {
                             generics: val.0.generics.clone(),
+                            associated_types: val.0.associated_types.clone(),
                             pos: index,
                             parent_file: module_path.clone()
                         });
@@ -501,7 +532,7 @@ pub fn make_ast_statement(
                 let body = add_to_tree(case, ast, Ast::new(AstNode::Body));
                 pos = make_ast_statement(tokens, pos, ast, body, indent + 1, vars, info) - 1;
             }
-            _ => panic!("unexpected token `{:?}`", token)
+            _ => panic!("unexpected token `{:?}`", tokens[pos])
         }
         pos += 1;
     }

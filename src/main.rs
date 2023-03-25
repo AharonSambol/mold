@@ -24,8 +24,8 @@ use lazy_static::lazy_static;
 use crate::add_types::polymorphism::escape_typ_chars;
 use crate::built_in_funcs::put_at_start;
 use crate::construct_ast::mold_ast;
-use crate::construct_ast::mold_ast::{FileInfo, Info};
-use crate::construct_ast::tree_utils::clone_sub_tree;
+use crate::construct_ast::mold_ast::{add_trait_to_struct, FileInfo, get_trt_strct_functions, Info, StructTypes};
+use crate::construct_ast::tree_utils::{clone_sub_tree, print_tree};
 use crate::copy_folder::{change_file_extensions, CopyFolder, delete_unused_files};
 use crate::mold_tokens::SolidToken;
 use crate::to_python::ToWrapVal;
@@ -66,10 +66,18 @@ struct ImplTraitsKey {
 }
 
 #[derive(Clone, Debug)]
-struct ImplTraitsVal {
+struct ImplTraitsVal { // TODO when adds a new Impl needs to not only check the name but also the generics
     trt_name: String,
-    implementation: Option<String>,
-    types: Option<HashMap<String, Type>>
+    implementation: Implementation,
+    types: Option<HashMap<String, Type>>,
+    generics: Option<Vec<Type>>
+}
+
+#[derive(Clone, Debug)]
+enum Implementation {
+    Is(String),
+    None,
+    Todo(String) //1 module
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +91,7 @@ pub struct OneOfEnumTypes {
 // lto = "fat"
 // codegen-units = 1
 // todo some things dont necessarily need to be made into a box (e.g. lst.len())
+// todo play with boxing stuff in the enums\structs to decrease their size
 // TODO it doesnt check the types passed to built ins (i think) but it needs to for some at least
 fn main() {
     // todo remove
@@ -91,14 +100,15 @@ fn main() {
     }
     let mut test = false;
     let mut path = None;
-    for argument in env::args() {
+    for argument in env::args().skip(1) {
         if argument == "compile"    { unsafe { IS_COMPILED = true; } }
         else if argument == "test"  { test = true; unsafe { DONT_PRINT = true; } }
         else if argument == "noprint" { unsafe { DONT_PRINT = true; }} // todo remove this
         else if path.is_none()      { path = Some(argument); }
         else { panic!("unexpected argument `{argument}`") }
     }
-    let path = path.unwrap_or_else(|| String::from(".")).as_str();
+    let path = path.unwrap_or_else(|| String::from("."));
+
     let paths = [
         /*1     0*/ "tests/input_program.mo",
         /*1     1*/ "tests/import_package/imports.mo",
@@ -113,6 +123,7 @@ fn main() {
     ];
     if test {
         for p in paths {
+            println!("\x1b[107m\x1b[1m\x1b[94m ################### {p} ################### \x1b[0m");
             run_on_path(p);
             unsafe {
                 IGNORE_TRAITS.clear();  IGNORE_STRUCTS.clear(); IGNORE_FUNCS.clear();
@@ -122,7 +133,7 @@ fn main() {
             }
         }
     } else {
-        run_on_path(paths[0]);
+        run_on_path(paths[8]);
     }
 }
 
@@ -322,8 +333,41 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
                     .open(path)
                     .unwrap();
                 for imp_trt in val {
-                    if let Some(implementation) = &imp_trt.implementation {
-                        writeln!(file, "{}", implementation).unwrap();
+                    match &imp_trt.implementation {
+                        Implementation::Is(implementation) =>
+                            writeln!(file, "{}", implementation).unwrap(),
+                        Implementation::Todo(module) => {
+                            //3 **** PLEASE DONT READ THIS BLOCK OF CODE ****
+                            //3 VERY VERY NOT EFFICIENT AT ALL !!!! (like not even a bit)
+                            //3 Please take this as an example of what NOT to do when writing code
+                            let file_info = PARSED_FILES.get(module).unwrap();
+                            let (_, trt_tree) = file_info.traits.get(&imp_trt.trt_name).unwrap();
+                            let (_, stct_tree) = file_info.structs.get(&key.name).unwrap();
+                            let trt_module = trt_tree[0].ref_children()[1];
+                            let stct_module = stct_tree[0].ref_children()[2];
+                            let trt_funcs = get_trt_strct_functions(trt_tree, &trt_tree[trt_module]);
+                            let stct_funcs = get_trt_strct_functions(stct_tree, &stct_tree[stct_module]);
+                            let fake_info = Info {
+                                funcs: &mut file_info.funcs.clone(),
+                                structs: &mut file_info.structs.iter().map(|(name, (typ, _))| (name.clone(), typ.clone())).collect(),
+                                traits: &mut file_info.traits.iter().map(|(name, (typ, _))| (name.clone(), typ.clone())).collect(),
+                                enums: &mut file_info.enums.iter().map(|(name, (typ, _))| (name.clone(), typ.clone())).collect(),
+                                one_of_enums: &mut Default::default(),
+                                types: &mut file_info.types.clone(),
+                                generics: &mut vec![],
+                                struct_associated_types: &mut Default::default(),
+                                cur_file_path: &mut Default::default(),
+                            };
+                            // dbg!(imp_trt);
+                            // panic!();
+                            let implementation = add_trait_to_struct(
+                                stct_tree, &key.name, &stct_funcs,
+                                &imp_trt.trt_name, &trt_funcs, &imp_trt.types, &imp_trt.generics, &fake_info
+                            );
+                            // println!("!!!!!!!!!! {}", implementation);
+                            writeln!(file, "{}", implementation).unwrap()
+                        }
+                        Implementation::None => unreachable!()
                     }
                 }
             }
@@ -360,7 +404,7 @@ fn parse_file(path: &String, one_of_enums: &mut OneOfEnums) {
         one_of_enums,
         types: &mut Default::default(),
         generics: &mut vec![],
-        struct_inner_types: &mut Default::default(),
+        struct_associated_types: &mut Default::default(),
         cur_file_path: &mut PathBuf::from(path), // todo windows \
     };
     let ast = mold_ast::construct_ast(&tokens, 0, &mut info);
@@ -385,11 +429,13 @@ use crate::{{ _index_mut, _index, clone, {} }};
             structs:
                 info.structs.iter().map(|(name, typ)|
                     (name.clone(), (typ.clone(), clone_sub_tree(
-                        &ast, typ.pos,None // todo exclude the body of the functions? Some(ast[typ.pos].ref_children()[2]) //1 the body
+                        &ast, typ.pos, None // todo exclude the body of the functions? Some(ast[typ.pos].ref_children()[2]) //1 the body
                     )))
                 ).collect(),
             traits: info.traits.iter().map(|(name, typ)|
-                (name.clone(), (typ.clone(), vec![ast[typ.pos].clone()]))
+                (name.clone(), (typ.clone(), clone_sub_tree(
+                    &ast, typ.pos, None // todo exclude the body of the functions? Some(ast[typ.pos].ref_children()[2]) //1 the body
+                )))
             ).collect(),
             enums: info.enums.iter().map(|(name, typ)|
                 (name.clone(), (typ.clone(), clone_sub_tree(
@@ -453,7 +499,9 @@ if __name__ == '__main__':
     main()"#,
         py
     ) };
-    println!("{py}");
+    if unsafe { !DONT_PRINT } {
+        println!("{py}");
+    }
     py
 }
 
@@ -467,7 +515,9 @@ fn compile(ast: &[Ast], info: &Info) -> (OneOfEnums, String) {
     );
     // let one_of_enums_st = join(one_of_enums.values(), "\n\n");
     // println!("\n{one_of_enums_st}\n{rs}");
-    println!("{rs}");
+    if unsafe { !DONT_PRINT } {
+        println!("{rs}");
+    }
     /*
     if !Path::new("/out").exists() {
         Command::new("cargo")

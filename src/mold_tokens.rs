@@ -38,6 +38,7 @@ enum Token {
     Tab, NewLine
 }
 
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SolidToken {
     Brace(IsOpen), Bracket(IsOpen), Parenthesis(IsOpen),
@@ -159,7 +160,7 @@ impl OperatorType {
 
 enum Comment { None, Normal, Multiline(i8) }
 
-pub fn tokenize(input_code: &str) -> Vec<SolidToken> {
+pub fn tokenize(input_code: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut skip = 0;
     let mut is_str = false;

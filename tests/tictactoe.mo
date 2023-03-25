@@ -1,4 +1,3 @@
-
 def print_board(board: &List[str]):
 	res = ""
 	for x in range(9):
@@ -47,5 +46,5 @@ def main():
     	winner = get_winner(&board)
     	if winner != "":
     		print(winner, "won!")
-    		return
+    		exit()
     print("it's a draw")

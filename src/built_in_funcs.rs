@@ -8,7 +8,8 @@ struct BuiltInStruct {
     name: &'static str,
     generics: Option<Vec<&'static str>>,
     methods: Vec<&'static str>,
-    types: Option<Vec<&'static str>>,
+    methods_with_impl: Vec<&'static str>,
+    // types: Option<Vec<&'static str>>,
     traits: Option<Vec<&'static str>>,
 }
 struct BuiltInTrait {
@@ -45,7 +46,6 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Struct(BuiltInStruct{
             name: "String",
             generics: None,
-            types: None,
             methods: vec![
                 "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]",
                 "clone(self) -> str", // todo do automatically?
@@ -69,6 +69,7 @@ pub fn put_at_start(input: &str) -> String {
                 // todo is(digit\numeric\ascii...)
                 // todo "join(lst: List[T]) -> int",
             ],
+            methods_with_impl: vec![],
             traits: Some(vec!["Debug", "Display"]),
         }),
         // Iter / IterMut
@@ -106,75 +107,63 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Struct(BuiltInStruct{
             name: "Box",
             generics: Some(vec!["T"]),
-            types: None,
             methods: vec![
-                "__init__(self)",
                 "new(t: T) -> Box[T]",
             ],
+            methods_with_impl: vec!["def __init__(self, x: T):\n\t\tself.x = x"],
             traits: Some(vec!["Debug"]),
         }),
         //1 Vec
         BuiltIn::Struct(BuiltInStruct{
             name: "Vec",
             generics: Some(vec!["T"]),
-            types: Some(vec![
-                "IntoIterator.Item = T"
-            ]),
             methods: vec![
                 "__len__(self: &Self) -> int",
-                "__init__(self)",
                 "into_iter(self) -> IntoIterator[Item=T]",
                 "append(self, t: T)",
                 "index(self, pos: usize) -> T",
                 "Debug::fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]",
             ],
-            traits: Some(vec!["Debug"]),
+            methods_with_impl: vec!["def __init__(self, x: T):\n\t\tself.x = x"],
+            traits: Some(vec!["Debug", "IntoIterator[Item=T]"]),
         }),
         //1 HashSet
         BuiltIn::Struct(BuiltInStruct{
             name: "HashSet",
             generics: Some(vec!["T"]),
-            types: Some(vec![
-                "IntoIterator.Item = T"
-            ]),
             methods: vec![ // todo
                 "__len__(self: &Self) -> int",
-                "__init__(self)",
                 "add(self, t: T)",
                 "into_iter(self) -> IntoIterator[Item=T]",
             ],
-            traits: Some(vec!["Debug"]),
+            methods_with_impl: vec!["def __init__(self, x: T):\n\t\tself.x = x"],
+            traits: Some(vec!["Debug", "IntoIterator[Item=T]"]),
         }),
         //1 HashMap
         BuiltIn::Struct(BuiltInStruct{
             name: "HashMap",
             generics: Some(vec!["K", "V"]),
-            types: Some(vec![
-                "IntoIterator.Item = K"
-            ]),
             methods: vec![
-                "__init__(self)",
                 "__len__(self: &Self) -> int",
                 "into_iter(self) -> IntoIterator[Item=K]",
             ], // todo
-            traits: Some(vec!["Debug"]),
+            methods_with_impl: vec!["def __init__(self, k: K, v: V):\n\t\tself.k = k\n\t\tself.v = v"],
+            traits: Some(vec!["Debug", "IntoIterator[Item=K]"]),
         }),
         //1 Formatter
         BuiltIn::Struct(BuiltInStruct{
             name: "Formatter",
             generics: Some(vec!["'_"]),
-            types: None,
-            methods: vec![
-                "__init__(self)",
-            ],
+            methods: vec![],
+            methods_with_impl: vec!["def __init__(self, x: '_):\n\t\tself.x = x"],
             traits: None,
         }),
         //1 Error
         BuiltIn::Struct(BuiltInStruct{
             name: "Error",
             generics: None,
-            types: None,
             methods: vec!["__init__(self)"],
+            methods_with_impl: vec![],
             traits: None,
         }),
         //2 __len__
@@ -197,7 +186,7 @@ pub fn put_at_start(input: &str) -> String {
                 "into_iter(self) -> IntoIterator[Item=Item]",
                 "next(self: &mut Self) -> Option[Item]"
             ],
-            types: Some(vec!["Item"]),
+            types: Some(vec!["Item=None"]),
             ignore: true
         }),
         //2 Display
@@ -230,7 +219,7 @@ pub fn put_at_start(input: &str) -> String {
             methods: vec![
                 "into_iter(self) -> Iterator[Item=Item]"
             ],
-            types: Some(vec!["Item"]),
+            types: Some(vec!["Item=None"]),
             ignore: true,
         }),
         //3 Option
@@ -254,6 +243,7 @@ pub fn put_at_start(input: &str) -> String {
             args: vec!["x: &__len__"],
             return_typ: Some("int"),
         }),
+        // what if you can pass it a __len__ obj and itll (cast to trait) and add the pointer automatically
         //4 min TODO add support for lambda and for min(1, 2)
         BuiltIn::Func(BuiltInFunc {
             name: "min",
@@ -353,6 +343,13 @@ pub fn put_at_start(input: &str) -> String {
             args: vec!["x: int | float | bool"],
             return_typ: Some("str"),
         }),
+        //4 exit
+        BuiltIn::Func(BuiltInFunc{
+            name: "exit",
+            generics: None,
+            args: vec!["code: int = 0"],
+            return_typ: None,
+        }),
         /* //1 Rev
         StructFunc::Struct(BuiltInStruct{
             name: "Rev",
@@ -379,15 +376,22 @@ pub fn put_at_start(input: &str) -> String {
                 } else {
                     write!(data, "TRAIT {}", trt.name).unwrap();
                 }
+
                 if let Some(generics) = trt.generics {
-                    write!(data, "<{}>", generics.join(",")).unwrap();
+                    if let Some(typs) = trt.types {
+                        write!(data, "[{}, {}]", generics.join(","), typs.join(",")).unwrap();
+                    } else {
+                        write!(data, "[{}]", generics.join(",")).unwrap();
+                    }
+                } else if let Some(typs) = trt.types {
+                    write!(data, "[{}]", typs.join(",")).unwrap();
                 }
                 write!(data, ":").unwrap();
-                if let Some(typs) = trt.types {
-                    for typ in typs {
-                        write!(data, "\n\ttype {typ}").unwrap();
-                    }
-                }
+                // if let Some(typs) = trt.types {
+                //     for typ in typs {
+                //         write!(data, "\n\ttype {typ}").unwrap();
+                //     }
+                // }
                 for func in trt.methods {
                     write!(data, "\n\tdef {}", func).unwrap();
                 }
@@ -398,7 +402,7 @@ pub fn put_at_start(input: &str) -> String {
                     IGNORE_STRUCTS.insert(stct.name);
                 }
                 if let Some(generics) = stct.generics {
-                    write!(data, "struct {}<{}>", stct.name, generics.join(",")).unwrap();
+                    write!(data, "struct {}[{}]", stct.name, generics.join(",")).unwrap();
                 } else {
                     write!(data, "struct {}", stct.name).unwrap();
                 }
@@ -407,13 +411,11 @@ pub fn put_at_start(input: &str) -> String {
                 } else {
                     write!(data, ":").unwrap();
                 }
-                if let Some(types) = stct.types {
-                    for typ in types {
-                        write!(data, "\n\ttype {typ}").unwrap();
-                    }
-                }
                 for func in stct.methods {
                     write!(data, "\n\tdef {func}:").unwrap();
+                }
+                for func in stct.methods_with_impl {
+                    write!(data, "\n\t{func}").unwrap();
                 }
                 writeln!(data).unwrap();
             },
@@ -428,7 +430,7 @@ pub fn put_at_start(input: &str) -> String {
                     EMPTY_STR
                 };
                 let generics = if let Some(generics) = func.generics {
-                    format!("<{}>", generics.join(","))
+                    format!("[{}]", generics.join(","))
                 } else {
                     EMPTY_STR
                 };
@@ -440,7 +442,7 @@ pub fn put_at_start(input: &str) -> String {
                 }
                 let args = enm.args.join("\n\t");
                 let generics = if let Some(generics) = enm.generics {
-                    format!("<{}>", generics.join(","))
+                    format!("[{}]", generics.join(","))
                 } else {
                     EMPTY_STR
                 };

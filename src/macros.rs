@@ -39,7 +39,7 @@
                 // "__str__(self: &Self) -> str",
                 "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]"
             ],
-            types: None,
+            methods_with_impl: vec![],
             traits: Some(vec![
                 "Debug", "Display"
             ]),
@@ -56,6 +56,24 @@
                     path: $info.structs[$struct_name.get_str()].parent_file.clone(),
                 }
             )
+        }
+    }
+}
+
+#[macro_export] macro_rules! add_trait {
+    ($key: expr, $val: expr) => {
+        unsafe {
+            if let Some(vc) = IMPL_TRAITS.get_mut(&$key) {
+                if let Some(trt) = vc.iter().find(|x| x.trt_name == $val.trt_name && x.generics == $val.generics) {
+                    if trt.types != $val.types {
+                        panic!("cant implement same trait twice with different associated types")
+                    }
+                } else {
+                    vc.push($val);
+                }
+            } else {
+                IMPL_TRAITS.insert($key, vec![$val]);
+            }
         }
     }
 }

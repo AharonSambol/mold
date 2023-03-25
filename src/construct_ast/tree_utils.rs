@@ -38,6 +38,24 @@ pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNod
     index
 }
 
+pub fn add_as_first_child(ast: &mut Vec<Ast>, parent: usize, value: AstNode) -> usize {
+    let new_node = Ast {
+        value,
+        children: None,
+        parent: Some(parent),
+        typ: None,
+        is_mut: false,
+    };
+    ast.push(new_node);
+    let pos = ast.len() - 1;
+    if let Some(children) = &mut ast[parent].children {
+        children.insert(0, pos)
+    } else {
+        ast[parent].children = some_vec![pos]
+    }
+    pos
+}
+
 pub fn insert_as_parent_of(ast: &mut Vec<Ast>, node: usize, value: AstNode) -> usize {
     let parent = ast[node].parent.unwrap();
     let index_in_parent = ast[parent].ref_children().iter()
@@ -51,6 +69,10 @@ pub fn insert_as_parent_of(ast: &mut Vec<Ast>, node: usize, value: AstNode) -> u
         typ: None,
         is_mut: true
     });
+    ast[node].parent = Some(ast.len() - 1);
+    print_tree(ast, node);
+    print_tree(ast, ast[node].parent.unwrap());
+    // panic!("******");
     ast.len() - 1
 }
 

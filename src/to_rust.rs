@@ -3,11 +3,12 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join};
 use std::fmt::Write;
 use std::iter::zip;
-use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, unwrap_enum};
-use crate::add_types::ast_add_types::{get_inner_type, NUM_TYPES, SPECIFIED_NUM_TYPE_RE};
+use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, typ_with_child, unwrap_enum, some_vec};
+use crate::add_types::ast_add_types::{get_associated_type, NUM_TYPES, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::apply_generics_from_base;
 use crate::add_types::utils::{get_pointer_complete_inner, get_pointer_inner, is_float};
 use crate::construct_ast::mold_ast::{Info};
+use crate::construct_ast::tree_utils::print_tree;
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, implements_trait, print_type};
 
@@ -441,20 +442,29 @@ pub fn to_rust(
             }
             res
         },
-        AstNode::StructInit => {
-            let arg_vals = unwrap_u(&ast[children[1]].children);
-            let arg_names = unwrap_u(&ast[children[2]].children);
+        // AstNode::StructInit => {
+        //     let arg_vals = unwrap_u(&ast[children[1]].children);
+        //     format!(
+        //         "{}::new({})",
+        //         ast[pos].typ.clone().unwrap(),
+        //         join(
+        //             arg_vals.iter().map(|x|
+        //                 to_rust(ast, *x, indentation, info),
+        //             ),
+        //             ", "
+        //         )
+        //     )
+        // }
+        AstNode::RustStructInit => {
+            let args = unwrap_u(&ast[children[1]].children);
             format!(
                 "{}{{ {} }}",
                 ast[pos].typ.clone().unwrap(),
                 join(
-                    zip(arg_vals, arg_names).map(|(val, name)|
-                        format!(
-                            "{}: {}",
-                            to_rust(ast, *name, indentation, info),
-                            to_rust(ast, *val, indentation, info)
-                        )
-                    ),
+                    args.iter().map(|x| {
+                        let name = unwrap_enum!(&ast[*x].value, AstNode::Identifier(name), name);
+                        format!("{name}: _self_{name}_")
+                    }),
                     ", "
                 )
             )
@@ -469,9 +479,10 @@ pub fn to_rust(
             }
             let generics_ast = &ast[children[0]];
             let generic = format_generics(generics_ast);
+            let a_types = format_associated_types(generics_ast);
             let functions = unwrap_u(&ast[children[1]].children);
 
-            let mut res = format!("pub trait {name}{generic} {{");
+            let mut res = format!("pub trait {name}{generic} {{ \n\t{a_types}");
             for func in functions {
                 // todo type
                 let func = &ast[*func];
@@ -535,9 +546,9 @@ pub fn to_rust(
             format!(
                 "{}{}{}{}({});{}res}}",
                 /*1 initialize*/ match &ast[pos].value {
-                    AstNode::ListComprehension => "{{let mut res = vec![];",
-                    AstNode::SetComprehension => "{{let mut res = HashSet::new();",
-                    AstNode::DictComprehension => "{{let mut res = HashMap::new();",
+                    AstNode::ListComprehension => "{let mut res = vec![];",
+                    AstNode::SetComprehension => "{let mut res = HashSet::new();",
+                    AstNode::DictComprehension => "{let mut res = HashMap::new();",
                     _ => unreachable!()
                 },
                 /*1 loops*/ loops.iter().map(|r#loop| {
@@ -632,6 +643,7 @@ pub fn to_rust(
         AstNode::Case => {
             let parent_match = &ast[*ast[pos].parent.as_ref().unwrap()];
             let match_on = parent_match.ref_children()[0];
+            print_tree(ast, match_on);
             let match_on = get_pointer_complete_inner(ast[match_on].typ.as_ref().unwrap());
             let is_one_of = matches!(&match_on.kind, TypeKind::OneOf);
             // println!("is_one_of: {is_one_of}, {:?}", &ast[match_on].typ);
@@ -929,9 +941,23 @@ fn built_in_funcs(
                     };
                     typ = &children.as_ref().unwrap()[0];
                 }
-                if implements_trait(typ, "Display", ast, info) {
+                let display = typ_with_child! {
+                    TypeKind::Trait(TypName::Static("Display")),
+                    Type {
+                        kind: TypeKind::GenericsMap,
+                        children: None
+                    }
+                };
+                let debug = typ_with_child! {
+                    TypeKind::Trait(TypName::Static("Debug")),
+                    Type {
+                        kind: TypeKind::GenericsMap,
+                        children: None
+                    }
+                };
+                if implements_trait(typ, &display, ast, info).is_some() {
                     write!(formats, "{pointers}{{}} ").unwrap();
-                } else if implements_trait(typ, "Debug", ast, info) {
+                } else if implements_trait(typ, &debug, ast, info).is_some() {
                     write!(formats, "{pointers}{{:?}} ").unwrap();
                 } else {
                     todo!()
@@ -966,13 +992,13 @@ fn built_in_funcs(
             )
         }
         "len" => {
-            format!("({}.len() as i32)", to_rust(ast, args[0], 0, info))
+            format!("(({}).len() as i32)", to_rust(ast, args[0], 0, info))
         }
         "abs" => {
             format!("({}).abs()", to_rust(ast, args[0], 0, info))
         }
         "sum" => {
-            let inner_typ = get_inner_type(
+            let inner_typ = get_associated_type(
                 ast[args[0]].typ.as_ref().unwrap(),
                 vec!["IntoIterator", "Iterator"], "Item", info
             ).expect("`sum` on non `Iterator | IntoIterator`");
@@ -1039,15 +1065,18 @@ fn built_in_funcs(
             let arg = to_rust(ast, args[0], indentation, info);
             let TypeKind::Null = base.kind else {
                 let base = to_rust(ast, args[1], indentation, info);
-                if let TypeKind::Struct(name) = &arg_typ.kind {
-                    if name != "String" {
-                        panic!("int() can't convert non-string with explicit base");
+                if let TypeKind::Pointer | TypeKind::MutPointer = &arg_typ.kind {
+                    let arg_typ = get_pointer_inner(arg_typ);
+                    if let TypeKind::Struct(name) = &arg_typ.kind {
+                        if name != "String" {
+                            panic!("int() can't convert non-string with explicit base");
+                        }
+                        return Some(format!("{{\
+                        let _arg_ = {arg};\
+                        let _base_ = {base};\
+                        i32::from_str_radix(_arg_, _base_ as u32).unwrap_or_else(|_| panic!(\"invalid literal for int() with base {{_base_}}: `{{_arg_}}`\"))\
+                        }}"))
                     }
-                    return Some(format!("{{\
-                    let _arg_ = {arg};\
-                    let _base_ = {base};\
-                    i32::from_str_radix(_arg_, _base_ as u32).unwrap_or_else(|_| panic!(\"invalid literal for int() with base {{_base_}}: `{{_arg_}}`\"))\
-                    }}"))
                 }
                 panic!()
             };
@@ -1071,6 +1100,9 @@ fn built_in_funcs(
         }
         "str" => {
             format!("({}).to_string()", to_rust(ast, args[0], indentation, info))
+        }
+        "exit" => {
+            format!("std::process::exit({});", to_rust(ast, args[0], indentation, info))
         }
         _ => { return None }
     })
@@ -1097,12 +1129,32 @@ pub fn get_struct_and_func_name<'a>(ast: &'a [Ast], children: &[usize]) -> Optio
 
 fn format_generics(generics_ast: &Ast) -> String {
     if let Some(Type{ children: Some(generics), .. }) = &generics_ast.typ {
-        format!("<{}>", join(generics.iter().map(|x|
-            unwrap_enum!(&x.kind, TypeKind::Generic(GenericType::Declaration(name)), name)
-        ), ","))
-    } else {
-        EMPTY_STR
-    }
+        let generics: Vec<_> = generics.iter().filter_map(|x|
+            if let TypeKind::Generic(GenericType::Declaration(name)) = &x.kind {
+                Some(name.clone())
+            } else { None }
+        ).collect();
+        if generics.is_empty() { EMPTY_STR } else {
+            format!("<{}>", generics.join(","))
+        }
+    } else { EMPTY_STR }
+}
+
+fn format_associated_types(generics_ast: &Ast) -> String {
+    if let Some(Type{ children: Some(generics), .. }) = &generics_ast.typ {
+        let generics: Vec<_> = generics.iter().filter_map(|x|
+            if let TypeKind::AssociatedType(name) = &x.kind {
+                if let Some(children) = &x.children {
+                    Some(format!("type {} = {};", name.clone(), children[0]))
+                } else {
+                    Some(format!("type {};", name.clone()))
+                }
+            } else { None }
+        ).collect();
+        if generics.is_empty() { EMPTY_STR } else {
+            generics.join("\n\t")
+        }
+    } else { EMPTY_STR }
 }
 
 

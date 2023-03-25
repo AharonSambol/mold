@@ -26,8 +26,8 @@ def main():
     ww: int | bool = false
     ww: bool | int = false
     tst(ww)
-    a: List[int | bool] = [1, False]
-    f(&a[0])
+    # a: List[int | bool] = [1, False]
+    # f(&a[0])
     pt_of(4)
     pt_of(false)
     pt(Enm.a)

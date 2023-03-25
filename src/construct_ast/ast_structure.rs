@@ -14,7 +14,7 @@ pub struct Ast {
 
 impl Ast {
     pub fn new(value: AstNode) -> Ast {
-        Ast {
+        Self {
             value,
             typ: None,
             children: None,
@@ -23,7 +23,7 @@ impl Ast {
         }
     }
     pub fn new_w_typ(value: AstNode, typ: Option<Type>) -> Ast {
-        Ast {
+        Self {
             value,
             typ,
             children: None,
@@ -83,7 +83,8 @@ pub enum AstNode {
     StaticFunction(String), // children[0] = args, children[1] = returnType, children[2] = body
     String { val: String, mutable: bool, },
     Struct(String), // children[0] = generics, children[1] = args, children[2] = body, children[3] = traits
-    StructInit, // children[0] = struct, children[1] = Args, // TODO dont think this is right...
+    // StructInit, // children[0] = struct, children[1] = Args, // TODO dont think this is right...
+    RustStructInit, // children[0] = struct, children[1] = Args,
     Ternary, // children[0] = val if true, children[1] = condition, children[2] = val if false
     Trait { name: String, strict: bool },  // children[0] = Module (functions)
     // Traits,
@@ -101,7 +102,8 @@ impl AstNode {
         match self {
             AstNode::Identifier(_)
             | AstNode::FunctionCall(_)
-            | AstNode::StructInit
+            | AstNode::RustStructInit
+            // | AstNode::StructInit
             | AstNode::Property
             | AstNode::Ternary
             | AstNode::Tuple
@@ -163,6 +165,7 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            AstNode::RustStructInit => write!(f, "RUST_STRUCT_INIT"),
             AstNode::Tuple => write!(f, "(TUPLE)"),
             AstNode::Null => write!(f, "None"),
             AstNode::Case => write!(f, "[CASE]"),
@@ -188,7 +191,7 @@ impl Display for AstNode {
             AstNode::FunctionCall(s) => {
                 write!(f, "{}", if *s { "STATIC_FUNC_CALL" } else { "FUNC_CALL" })
             }
-            AstNode::StructInit => write!(f, "STRUCT_INIT"),
+            // AstNode::StructInit => write!(f, "STRUCT_INIT"),
             AstNode::OpAssignment(op) => write!(f, "{op}="),
             AstNode::Assignment => write!(f, "="),
             AstNode::FirstAssignment => write!(f, ":="),

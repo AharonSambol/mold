@@ -30,14 +30,8 @@ pub fn get_params(
                     name: wrd.clone(),
                     typ: if is_args {
                         typ_with_child! {
-                            TypeKind::Struct(TypName::Static("Vec")),
-                            typ_with_child!{
-                                TypeKind::GenericsMap,
-                                typ_with_child!{
-                                    TypeKind::Generic(GenericType::WithVal(String::from("T"))),
-                                    typ
-                                }
-                            }
+                            TypeKind::Args,
+                            typ
                         }
                     } else { typ },
                     is_mut,
@@ -125,9 +119,7 @@ pub fn try_get_arg_typ(
                 let t = try_get_arg_typ(tokens, pos, info, panic, is_top_call, inside_par);
                 *pos -= 1;
                 if let Some(t) = t {
-                    println!("T: {t}, TYP: {typ}");
                     res = Some(typ.add_option(t));
-                    println!("= {}   |    {:?}", res.as_ref().unwrap(), res.as_ref().unwrap().children.as_ref().unwrap().iter().map(|x| x.to_string()).collect::<Vec<_>>());
                     make_enums(res.as_ref().unwrap(), info.one_of_enums);
                 } else if panic { panic!() } else { return None };
             }
@@ -137,13 +129,12 @@ pub fn try_get_arg_typ(
                 }
                 let wrd = clean_type(wrd.clone()).to_string();
                 if !is_top_call && matches!(tokens[*pos + 1], SolidToken::Operator(OperatorType::Eq)) {
-                    res = Some(Type {
-                        kind: TypeKind::InnerType(wrd),
-                        children: some_vec![{
-                            *pos += 2;
-                            if let Some(t) = try_get_arg_typ(tokens, pos, info, panic, false, inside_par)
-                            { t } else if panic { panic!() } else { return None }
-                        }],
+                    *pos += 2;
+                    let typ = try_get_arg_typ(tokens, pos, info, panic, false, inside_par);
+                    let typ = if let Some(t) = typ { t } else if panic { panic!() } else { return None };
+                    res = Some(typ_with_child! {
+                        TypeKind::AssociatedType(wrd),
+                        typ
                     });
                     break
                 }
@@ -191,9 +182,9 @@ pub fn try_get_arg_typ(
                         kind: TypeKind::Generic(GenericType::NoVal(wrd.clone())),
                         children: None
                     })
-                } else if info.struct_inner_types.contains(&wrd) {
+                } else if info.struct_associated_types.contains(&wrd) {
                     Some(Type {
-                        kind: TypeKind::InnerType(wrd),
+                        kind: TypeKind::AssociatedType(wrd),
                         children: None
                     })
                 } else if panic { panic!("unexpected type `{wrd}`") } else { return None };
@@ -206,11 +197,6 @@ pub fn try_get_arg_typ(
                 let inner = if let Some(t) = t {
                     if matches!(t.kind, TypeKind::OneOf) && !is_parenthesis {
                         //1 only make the first one a pointer
-                        // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                        // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                        // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                        // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                        // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                         res = Some(Type {
                             kind: TypeKind::OneOf,
                             children: Some(
@@ -223,7 +209,6 @@ pub fn try_get_arg_typ(
                                 ).collect()
                             )
                         });
-                        println!("&TYP: {}", res.as_ref().unwrap());
                         make_enums(res.as_ref().unwrap(), info.one_of_enums);
                         continue
                     } else {
@@ -303,12 +288,8 @@ fn get_inside_bracket_types(
         } else if let Some(c @ Type{ kind: TypeKind::Tuple, .. }) = res {
             (&mut no_name, c)
         } else { unreachable!() };
-
     *pos += 1;
     let add_child = |t: Type, i: &mut usize, info: &mut Info| {
-        if let TypeKind::InnerType(_) = &t.kind {
-            return t
-        }
         fn get_generics<'a, T: STType>(hm: &'a HashMap<String, T>, name: &TypName) -> Option<&'a Vec<String>> {
             if let Some(s) = hm.get(name.get_str()) {
                 s.get_generics().as_ref()
@@ -316,6 +297,14 @@ fn get_inside_bracket_types(
                 panic!("cannot find struct `{name}`")
             }
         }
+        fn get_a_types<'a, T: STType>(hm: &'a HashMap<String, T>, name: &TypName) -> Option<&'a Vec<String>> {
+            if let Some(s) = hm.get(name.get_str()) {
+                s.get_associated_types().as_ref()
+            } else {
+                panic!("cannot find struct `{name}`")
+            }
+        }
+        let none = vec![];
         let generics = match structs_or_traits {
             StructTraitEnumOrTuple::Struct => get_generics(info.structs, struct_name),
             StructTraitEnumOrTuple::Trait => get_generics(info.traits, struct_name),
@@ -324,13 +313,24 @@ fn get_inside_bracket_types(
                 *i += 1;
                 return t
             }
-        }.unwrap();
-        if *i >= generics.len() {
-            panic!("too many generics passed, expected only `{}`", generics.len())
+        }.unwrap_or(&none);
+        let a_types = match structs_or_traits {
+            StructTraitEnumOrTuple::Struct => get_a_types(info.structs, struct_name),
+            StructTraitEnumOrTuple::Trait => get_a_types(info.traits, struct_name),
+            StructTraitEnumOrTuple::Enum => None,
+            StructTraitEnumOrTuple::Tuple => {
+                *i += 1;
+                return t
+            }
+        }.unwrap_or(&none);
+        if *i >= generics.len() + a_types.len() {
+            panic!("too many generics passed, expected only `{}`", generics.len() + a_types.len())
         }
-        let res = typ_with_child! {
-            TypeKind::Generic(GenericType::WithVal(generics[*i].clone())),
-            t
+        let res = if let TypeKind::AssociatedType(_) = &t.kind { t } else {
+            typ_with_child! {
+                TypeKind::Generic(GenericType::WithVal(generics[*i].clone())),
+                t
+            }
         };
         *i += 1;
         res

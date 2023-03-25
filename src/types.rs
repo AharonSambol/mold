@@ -1,9 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use pretty_print_tree::{Color, PrettyPrintTree};
 use crate::construct_ast::ast_structure::{Ast, join, Param};
-use crate::{EMPTY_STR, get_traits, IMPL_TRAITS, ImplTraitsKey, ImplTraitsVal};
+use crate::{add_trait, EMPTY_STR, IMPL_TRAITS, Implementation, ImplTraitsKey, ImplTraitsVal, typ_with_child, some_vec, unwrap_enum};
+use crate::add_types::generics::apply_generics_from_base;
 use crate::add_types::polymorphism::escape_typ_chars;
 use crate::add_types::utils::get_pointer_complete_inner;
 use crate::construct_ast::mold_ast::{add_trait_to_struct, get_trt_strct_functions, Info, TraitFuncs};
@@ -29,7 +30,6 @@ pub const CHAR_TYPE: TypeKind = TypeKind::Struct(TypName::Static("char"));
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GenericType {
     Declaration(String),
-    // Of(String),
     NoVal(String),
     WithVal(String)
 }
@@ -74,9 +74,8 @@ pub enum TypeKind {
     Generics,
     GenericsMap,
     OneOf,
-    _Tuple,
-    InnerType(String), // e.g. Iterator[Inner=i32]
-    _Args,
+    AssociatedType(String), // e.g. Iterator[Inner=i32]
+    Args,
     Trait(TypName),
     Enum(TypName),
     Unknown,
@@ -177,9 +176,6 @@ impl Display for Type {
                 children.sort();
                 write!(f, "{}", children.join("__or__"))
             },
-            TypeKind::_Tuple => {
-                write!(f, "({})", join(unwrap(&self.children).iter(), ","))
-            },
             TypeKind::Generic(c) => {
                 match c {
                     GenericType::WithVal(_) =>
@@ -194,7 +190,7 @@ impl Display for Type {
             TypeKind::Generics => write!(
                 f, "GENERICS({})", join(unwrap(&self.children).iter(), ",")
             ),
-            TypeKind::_Args => {
+            TypeKind::Args => {
                 write!(f, "ARGS({})", unwrap(&self.children)[0])
             },
             TypeKind::Trait(name) => {
@@ -215,7 +211,7 @@ impl Display for Type {
             }
             TypeKind::Pointer => write!(f, "&{}", unwrap(&self.children)[0]),
             TypeKind::MutPointer => write!(f, "&mut {}", unwrap(&self.children)[0]),
-            TypeKind::InnerType(name) => {
+            TypeKind::AssociatedType(name) => {
                 if self.children.is_none() {
                     write!(f, "Self::{name}")
                 } else {
@@ -321,11 +317,10 @@ pub fn clean_type(st: String) -> TypName {
     )
 }
 
-pub fn implements_trait(
-    mut typ: &Type, expected_trait: &str, ast: &[Ast], info: &Info
-) -> bool { //, Option<HashMap<String, Type>>) {
-    #[inline] fn struct_matches_trait(trt_funcs: &TraitFuncs, funcs: &TraitFuncs, trait_name: &str) -> Option<HashMap<String, Type>> {
-        let mut hm = HashMap::new();
+pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info: &Info) -> Option<Type> {
+    #[inline] fn struct_matches_trait(trt_funcs: &TraitFuncs, funcs: &TraitFuncs, trait_name: &str) -> Option<(HashMap<String, Type>, HashMap<String, Type>)> {
+        let mut a_types_hm = HashMap::new();
+        let mut generics_hm = HashMap::new();
         'trait_func_loop: for (trt_f_name, (_, trt_f_types)) in trt_funcs {
             let mut func_types = funcs.get(trt_f_name);
             if func_types.is_none() {
@@ -356,181 +351,351 @@ pub fn implements_trait(
                     }
                 }
 
-                for (trt_fnc, fnc) in trt_f_all_types.iter().zip(func_all_types) {
-                    if trt_fnc.name == fnc.name && trt_fnc.typ == fnc.typ {
-                        continue
-                    }
-                    if let TypeKind::InnerType(typ_name) = &trt_fnc.typ.kind {
-                        if let Some(expected_typ) = hm.get(typ_name) {
-                            if fnc.typ != *expected_typ {
-                                return None
-                            }
-                        } else {
-                            hm.insert(typ_name.clone(), fnc.typ);
-                        }
-                    } else {
-                        return None
-                    }
+                if types_match(
+                    &mut a_types_hm, &mut generics_hm,
+                    &mut func_all_types.iter().map(|x| &x.typ),
+                    &mut trt_f_all_types.iter().map(|x| &x.typ)
+                ) {
+                    continue 'trait_func_loop
                 }
-                continue 'trait_func_loop
             }
             return None
         }
-        Some(hm)
+        Some((generics_hm, a_types_hm))
+    }
+    #[inline] fn types_match<'a>(
+        mut a_types_hm: &'a mut HashMap<String, Type>,
+        mut generics_hm: &'a mut HashMap<String, Type>,
+        got_types: &mut dyn Iterator<Item=&Type>,
+        exp_types: &mut dyn Iterator<Item=&Type>
+    ) -> bool {
+        for (exp, got) in exp_types.zip(got_types) {
+            if exp == got {
+                continue
+            }
+            let (name, hm) = match &exp.kind {
+                TypeKind::AssociatedType(typ_name) => (typ_name, &mut a_types_hm),
+                TypeKind::Generic(GenericType::NoVal(name)) => (name, &mut generics_hm),
+                _ => return false
+            };
+            if let Some(expected_typ) = hm.get(name) {
+                if got != expected_typ {
+                    return false
+                }
+            } else {
+                (*hm).insert(name.clone(), got.clone());
+            }
+        }
+        true
     }
 
+    let expected_trait_name = unwrap_enum!(&expected_trait.kind, TypeKind::Trait(trt), trt.get_str());
     if let TypeKind::Generic(GenericType::WithVal(_)) = &typ.kind {
         typ = &unwrap(&typ.children)[0];
     }
+
     if let TypeKind::Pointer | TypeKind::MutPointer = &typ.kind {
-        if expected_trait == "Debug" { // TODO this probably has to do with dereferencing or smthing
+        if expected_trait_name == "Debug" { // TODO this probably has to do with dereferencing or smthing
             typ = get_pointer_complete_inner(typ);
         }
     }
-    if let TypeKind::OneOf = &typ.kind {
-        let res = typ.ref_children().iter().all(
-            |typ| implements_trait(typ, expected_trait, ast, info)
-        );
-        if !res {
-            return false
-        }
 
-        // TODO when implementing Display for a one_of_enum needs an actual fn impl
-        // TODO ignore some implementations (IGNORE_STRUCT/ IGNORE_TRAIT)
-        let key = ImplTraitsKey {
-            name: typ.to_string(),
-            path: String::from("out/src/main.rs"),
-        };
-        unsafe {
-            if let Some(vc) = IMPL_TRAITS.get_mut(&key) {
-                if vc.iter().any(|x| x.trt_name == expected_trait) {
-                    return true
-                }
-            }
-
-            let trt_pos = info.traits[expected_trait].pos;
-            let trt_file = &info.traits[expected_trait].parent_file
-                .strip_prefix("out/src/").unwrap()
-                .rsplit_once('.').unwrap().0
-                .replace('/', "::"); // todo \ for windows
-            let trt_module = ast[trt_pos].ref_children()[1];
-            let trt_funcs = get_trt_strct_functions(ast, &ast[trt_module]);
-
-            let one_of_enum = info.one_of_enums.get(
-                typ.to_string().as_str()
-            ).unwrap();
-            let generics = if one_of_enum.needs_lifetime {
-                if one_of_enum.generics.is_empty() {
-                    String::from("<'b_i_lifetime>")
-                } else {
-                    one_of_enum.generics.replacen('<', "<'b_i_lifetime, ", 1)
-                }
-            } else {
-                one_of_enum.generics.clone()
-            };
-
-            let implementation = format!(
-                "impl{generics} {trt_file}::{expected_trait} for {typ}{generics} {{ \n\t{} \n}}",
-                join( // TODO generics !!!!!!
-                    trt_funcs.iter().map(|(func_name, (_, func_typ))| {
-                        let none = vec![];
-                        let inputs = func_typ.input.as_ref().unwrap_or(&none);
-                        let param = join(inputs.iter(), ", ");
-                        let args = join(
-                            inputs.iter()
-                                .skip(1) //1 self // todo what if isnt self
-                                .map(|x| &x.name),
-                            ", "
-                        );
-                        let rtrn = if let Some(rtn) = &func_typ.output {
-                            format!(" -> {rtn}")
-                        } else { EMPTY_STR };
-                        let typ_str = escape_typ_chars(&typ.to_string());
-                        format!(
-                            "fn {func_name}({param}) {rtrn} {{ \n\t\tmatch self {{\n\t\t\t{}\n\t\t}}\n\t}}",
-                            join(typ.ref_children().iter().map(|t|
-                                format!(
-                                    "{typ_str}::_{}(x) => {trt_file}::{expected_trait}::{func_name}(x, {args}),",
-                                    escape_typ_chars(&t.to_string())
-                                )
-                            ), "\n\t\t\t")
-                        )
-                    }),
-                      "\n"
-                ),
-
-            );
-            let val = ImplTraitsVal {
-                trt_name: String::from(expected_trait),
-                implementation: Some(implementation),
-                types: None, // TODO !!!!!!!!!!!!!!!
-            };
-            if let Some(vc) = IMPL_TRAITS.get_mut(&key) {
-                vc.push(val);
-            } else {
-                IMPL_TRAITS.insert(key, vec![val]);
-            }
-        }
-        return true
+    if typ == expected_trait {
+        return Some(typ.clone())
     }
 
+    if let TypeKind::OneOf = &typ.kind {
+        return one_of_implements_trait(typ, expected_trait, ast, info, expected_trait_name)
+    }
+
+    // TODO this probably needs a bunch more work  D:
     match &typ.kind {
-        TypeKind::Trait(name) => name == expected_trait,
+        TypeKind::Trait(name) => {
+            if name != expected_trait_name {
+                return None
+            }
+
+            let (got_generics, got_a_types) = get_generics_and_a_types(typ);
+            let (expected_generics, expected_a_types) = get_generics_and_a_types_optional(expected_trait);
+
+            for a_typ in got_a_types.keys() {
+                let got_typ = &got_a_types[a_typ.as_str()];
+                let expected_typ = &expected_a_types[a_typ.as_str()];
+
+                if let Some(expected_typ) = expected_typ {
+                    if got_typ == expected_typ {
+                        continue
+                    }
+                } else {
+                    continue
+                }
+            }
+            for (got_gen, exp_gen) in got_generics.iter().zip(expected_generics) {
+                let got_name = unwrap_enum!(&got_gen.kind, TypeKind::Generic(GenericType::WithVal(n)), n);
+                let exp_name = unwrap_enum!(&exp_gen.kind, TypeKind::Generic(GenericType::WithVal(n)), n);
+                if got_name != exp_name {
+                    return None
+                }
+                if let Some(children) = exp_gen.children {
+                    if got_gen.ref_children()[0] == children[0] {
+                        continue
+                    }
+                    return None
+                } else {
+                    continue
+                }
+            }
+            return Some(typ.clone())
+        },
         TypeKind::Struct(struct_name) => {
+            let (expected_generics, expected_a_types) = get_generics_and_a_types_optional(expected_trait);
+
             let key = ImplTraitsKey {
                 name: struct_name.to_string(),
                 path: info.structs[struct_name.get_str()].parent_file.clone(),
             };
-            unsafe { IMPL_TRAITS.get(&key) }.unwrap_or(&vec![]).iter().any(
-                |x| x.trt_name == expected_trait
-            ) || {
-                let strct_def = info.structs[struct_name.get_str()].pos;
-                let strct_module = ast[strct_def].ref_children()[2];
-                let strct_funcs = get_trt_strct_functions(ast, &ast[strct_module]);
-                let trt_pos = info.traits[expected_trait].pos;
-                let trt_module = ast[trt_pos].ref_children()[1];
-                let trt_funcs = get_trt_strct_functions(ast, &ast[trt_module]);
-                // if let AstNode::Trait { strict: true, .. } = ast[trt_pos].value {
-                //     // TODO if implements
-                //     //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                //     //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                //     return false
-                // }
-                if let Some(types_hm) = struct_matches_trait(
-                    &trt_funcs, &strct_funcs, expected_trait
-                ) {
-                    let implementation = add_trait_to_struct(
-                        ast, struct_name.get_str(), &strct_funcs,
-                        expected_trait, &trt_funcs, info
+            unsafe {
+                if let Some(vc) = IMPL_TRAITS.get(&key) {
+                    let expected_all_types = join_generics_and_types(
+                        &Some(expected_generics),
+                        &mut expected_a_types.iter().map(|(name, typ)|
+                            (name, typ.as_ref().unwrap())
+                        )
                     );
-                    unsafe {
-                        let val = ImplTraitsVal {
-                            trt_name: String::from(expected_trait),
-                            implementation: Some(implementation),
-                            types: if types_hm.is_empty() { None } else { Some(types_hm) },
-                        };
-                        if let Some(vc) = IMPL_TRAITS.get_mut(&key) {
-                            vc.push(val);
-                        } else {
-                            IMPL_TRAITS.insert(
-                                key,
-                                vec![val]
-                            );
+                    for trt in vc.iter().filter(|x| x.trt_name == expected_trait_name) {
+                        let mut a_types_hm = HashMap::new();
+                        let mut generics_hm = HashMap::new();
+                        let trt_all_types = join_generics_and_types(
+                            &trt.generics, &mut trt.types.as_ref().unwrap_or(&HashMap::new()).iter(),
+                        );
+
+                        if types_match(
+                            &mut a_types_hm, &mut generics_hm,
+                            &mut expected_all_types.iter(),
+                            &mut trt_all_types.iter()
+                        ) {
+                            let res = Some(typ_with_child! {
+                                TypeKind::Trait(TypName::Str(String::from(expected_trait_name))),
+                                Type {
+                                    kind: TypeKind::GenericsMap,
+                                    children: if trt_all_types.is_empty() { None } else { Some(trt_all_types) }
+                                }
+                            });
+                            if let Some(res) = apply_generics_from_base(&res, typ) {
+                                return Some(res)
+                            }
+                            return res
                         }
                     }
-                    true
-                } else { false }
+                }
             }
-            // let struct_def = &ast[info.structs[struct_name.get_str()].pos];
-            // let traits = &ast[unwrap_u(&struct_def.children)[3]];
 
-            // unwrap_u(&traits.children).iter().any(|trt|
-            //     matches!(&ast[*trt].value, AstNode::Identifier(name) if expected_trait == name)
-            // )
+            let trait_generics = &info.traits[expected_trait_name].generics;
+            if matches!(trait_generics, Some(vc) if !vc.is_empty()) {
+                return None //1 doesnt (yet) support duck typing for traits with generics
+            }
+
+            let strct_def = info.structs[struct_name.get_str()].pos;
+            let strct_module = ast[strct_def].ref_children()[2];
+            let strct_funcs = get_trt_strct_functions(ast, &ast[strct_module]);
+            let trt_pos = info.traits[expected_trait_name].pos;
+            let trt_module = ast[trt_pos].ref_children()[1];
+            let trt_funcs = get_trt_strct_functions(ast, &ast[trt_module]);
+
+            let types_hm = struct_matches_trait(
+                &trt_funcs, &strct_funcs, expected_trait_name
+            );
+            types_hm.as_ref()?;
+            let (generics_hm, a_types_hm) = types_hm.unwrap();
+            let generics_vec = if generics_hm.is_empty() { None } else { Some(generics_hm.values().cloned().collect()) };
+            let a_types_hm = if a_types_hm.is_empty() { None } else { Some(a_types_hm) };
+            let implementation = add_trait_to_struct(
+                ast, struct_name.get_str(), &strct_funcs,
+                expected_trait_name, &trt_funcs, &a_types_hm, &generics_vec,
+                info
+            );
+            let val = ImplTraitsVal {
+                trt_name: String::from(expected_trait_name),
+                implementation: Implementation::Is(implementation),
+                types: a_types_hm.clone(),
+                generics: generics_vec.clone()
+            };
+            add_trait!(key, val);
+            let mut children = unwrap(&generics_vec).clone();
+            children.extend(a_types_hm.unwrap_or_default().iter().map(
+                |(name, val)| Type {
+                    kind: TypeKind::AssociatedType(name.clone()),
+                    children: Some(vec![val.clone()])
+                }
+            ));
+
+            Some(typ_with_child! {
+                TypeKind::Trait(TypName::Str(String::from(expected_trait_name))),
+                Type {
+                    kind: TypeKind::GenericsMap,
+                    children: if children.is_empty() { None } else { Some(children) }
+                }
+            })
         }
         TypeKind::Tuple => {
-            ["Debug"].contains(&expected_trait)
+            if ["Debug"].contains(&expected_trait_name) {
+                Some(expected_trait.clone())
+            } else { None }
         }
-        _ => false
+        _ => None
     }
+}
+
+fn one_of_implements_trait(typ: &Type, expected_trait: &Type, ast: &[Ast], info: &Info, expected_trait_name: &str) -> Option<Type> {
+    let mut options = typ.ref_children().iter();
+    let first = implements_trait(options.next().unwrap(), expected_trait, ast, info);
+    if first.is_none() || options.any(|typ| implements_trait(typ, expected_trait, ast, info) != first) {
+        return None
+    }
+    let first = first.unwrap();
+
+    let (trt_generics, trt_a_types) = get_generics_and_a_types(&first);
+
+    let trt_generics = if trt_generics.is_empty() { None } else { Some(trt_generics) };
+    let trt_a_types = if trt_a_types.is_empty() { None } else { Some(trt_a_types) };
+    // TODO when implementing Display for a one_of_enum needs an actual fn impl
+    // TODO ignore some implementations (IGNORE_STRUCT/ IGNORE_TRAIT)
+    let key = ImplTraitsKey {
+        name: typ.to_string(),
+        path: String::from("out/src/main.rs"),
+    };
+    if let Some(vc) = unsafe { IMPL_TRAITS.get_mut(&key) } {
+        if let Some(trt) = vc.iter().find(|x| x.trt_name == expected_trait_name && x.generics == trt_generics) {
+            if trt.types != trt_a_types {
+                panic!("cant impl same trait twice with different associated types (I dont think this should ever happen..)")
+            }
+            return Some(first)
+            // let mut children = unwrap(&trt.generics).clone();
+            // children.extend(
+            //     trt.types.unwrap_or_default().iter().map(
+            //         |(name, typ)| typ_with_child! {
+            //             TypeKind::InnerType(name.clone()),
+            //             typ.clone()
+            //         }
+            //     )
+            // );
+            // return Some(typ_with_child! {
+            //     TypeKind::Trait(TypName::Str(String::from(expected_trait))),
+            //     Type {
+            //         kind: TypeKind::GenericsMap,
+            //         children: if children.is_empty() { None } else { Some(children) },
+            //     }
+            // })
+        }
+    }
+
+    let trt_pos = info.traits[expected_trait_name].pos;
+    let trt_file = &info.traits[expected_trait_name].parent_file
+        .strip_prefix("out/src/").unwrap()
+        .rsplit_once('.').unwrap().0
+        .replace('/', "::"); // todo \ for windows
+    let trt_module = ast[trt_pos].ref_children()[1];
+    let trt_funcs = get_trt_strct_functions(ast, &ast[trt_module]);
+
+    let one_of_enum = info.one_of_enums.get(
+        typ.to_string().as_str()
+    ).unwrap();
+
+    let generics = if one_of_enum.needs_lifetime {
+        if one_of_enum.generics.is_empty() {
+            String::from("<'b_i_lifetime>")
+        } else {
+            one_of_enum.generics.replacen('<', "<'b_i_lifetime, ", 1)
+        }
+    } else {
+        one_of_enum.generics.clone()
+    };
+
+    let implementation = format!(
+        "impl{generics} {trt_file}::{expected_trait} for {typ}{generics} {{ \n\t{} \n}}",
+        join(
+            trt_funcs.iter().map(|(func_name, (_, func_typ))| {
+                let none = vec![];
+                let inputs = func_typ.input.as_ref().unwrap_or(&none);
+                let param = join(inputs.iter(), ", ");
+                let args = join(
+                    inputs.iter()
+                        .skip(1) //1 self // todo what if isnt self
+                        .map(|x| &x.name),
+                    ", "
+                );
+                let rtrn = if let Some(rtn) = &func_typ.output {
+                    format!(" -> {rtn}")
+                } else { EMPTY_STR };
+                let typ_str = escape_typ_chars(&typ.to_string());
+                format!(
+                    "fn {func_name}({param}) {rtrn} {{ \n\t\tmatch self {{\n\t\t\t{}\n\t\t}}\n\t}}",
+                    join(typ.ref_children().iter().map(|t|
+                        format!(
+                            "{typ_str}::_{}(x) => {trt_file}::{expected_trait}::{func_name}(x, {args}),",
+                            escape_typ_chars(&t.to_string())
+                        )
+                    ), "\n\t\t\t")
+                )
+            }),
+            "\n"
+        ),
+    );
+    let val = ImplTraitsVal {
+        trt_name: String::from(expected_trait_name),
+        implementation: Implementation::Is(implementation),
+        types: trt_a_types,
+        generics: trt_generics,
+    };
+    add_trait!(key, val);
+    Some(first)
+}
+
+fn get_generics_and_a_types(typ: &Type) -> (Vec<Type>, HashMap<String, Type>){
+    let mut trt_generics = vec![];
+    let mut trt_a_types = HashMap::new();
+
+    let generics_map = &typ.children.as_ref().unwrap()[0];
+    for child in generics_map.children.clone().unwrap_or_default() {
+        match &child.kind {
+            TypeKind::Generic(GenericType::WithVal(_)) => trt_generics.push(child),
+            TypeKind::AssociatedType(name) => {
+                trt_a_types.insert(name.clone(), child.ref_children()[0].clone());
+            },
+            _ => unreachable!()
+        }
+    }
+    (trt_generics, trt_a_types)
+}
+
+
+fn get_generics_and_a_types_optional(expected_trait: &Type) -> (Vec<Type>, HashMap<String, Option<Type>>) {
+    let mut expected_generics = vec![];
+    let mut expected_a_types = HashMap::new();
+
+    let generics_map = &expected_trait.children.as_ref().unwrap()[0];
+    for child in unwrap(&generics_map.children) {
+        match &child.kind {
+            TypeKind::Generic(GenericType::WithVal(_)) => expected_generics.push(child.clone()),
+            TypeKind::AssociatedType(name) =>
+                if let Some(children) = &child.children {
+                    expected_a_types.insert(name.clone(), Some(children[0].clone()));
+                } else {
+                    expected_a_types.insert(name.clone(), None);
+                },
+            _ => unreachable!()
+        }
+    }
+    (expected_generics, expected_a_types)
+}
+fn join_generics_and_types(generics: &Option<Vec<Type>>, a_types: &mut dyn Iterator<Item=(&String, &Type)>) -> Vec<Type> {
+    let mut res = generics.clone().unwrap_or_default();
+    res.extend(a_types.map(|(name, typ)|
+        typ_with_child! {
+            TypeKind::AssociatedType(name.clone()),
+            typ.clone()
+        }
+    ));
+
+    res
 }

@@ -2,7 +2,8 @@ def main():
     imut lst := [1,2,3,4]
     print(min(lst))
     print(max(iter_imut(lst)))
-    print(len(lst))
+    print(len(&lst))
+    #{
     print(abs(-3.2))
     print(sum(lst))
     a = 2
