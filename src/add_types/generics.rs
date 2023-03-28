@@ -7,6 +7,7 @@ use crate::construct_ast::ast_structure::{Ast, join, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::{IMPL_TRAITS, ImplTraitsKey};
 use crate::types::{GenericType, implements_trait, print_type, print_type_b, Type, TypeKind, unwrap};
+use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 
 //2 only generics whose children are also T
 //  as in [Generic(Of("T"))]
@@ -35,11 +36,6 @@ pub fn get_function_return_type(
 }
 
 pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, Type>, ast: &mut Vec<Ast>, info: &mut Info) {
-    println!("===========================\nEXPECTED:");
-    print_type(&Some(template.clone()));
-    println!("GOT:");
-    print_type(&Some(got.clone()));
-
     // let cast_to_trait = |trt: &Type| if matches!(&trt.kind, TypeKind::Trait(_)) && !matches!(&got.kind, TypeKind::Trait(_)) {
     //     let res = implements_trait(got, trt, ast, info);
     //     if res.is_some() { Ok(res) } else { Err(format!("expected `{template}` but found `{got}`")) }
@@ -67,24 +63,20 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, 
                 return;
             }
         }
-        panic!(
-            "expected: `{}` but found `{got}`",
-            join(template.ref_children().iter(), "` or `")
+        throw!(
+            "expected: `{}` but found `{}`",
+            join(template.ref_children().iter(), "` or `"), // todo join all with `,` and only the last one with `or`
+            got
         );
     }
-    // let temp_got = cast_to_trait(template).unwrap_or_else(|err| panic!("{err}"));
+    // let temp_got = cast_to_trait(template).unwrap_or_else(|err| throw!("{err}"));
     // let got = if let Some(g) = &temp_got { g } else { got };
 
     let got = box_no_side_effects(template.clone(), got, ast, info);
-    println!("NEW GOT:");
-    print_type(&Some(got.clone()));
     // if !matches_template(template.clone(), &got, ast, info) {
-    //     panic!("(5) expected `{template}` but got `{got}`")
+    //     throw!("(5) expected `{template}` but got `{got}`")
     // }
     fn map_generic_types_inner(template: &Type, got: &Type, res: &mut HashMap<String, Type>) -> Result<(), String> {
-        println!("Comparing: Template:");
-        print_type_b(&Some(template.clone()), Color::Black);
-        print_type_b(&Some(got.clone()), Color::Black);
         if let TypeKind::Generic(GenericType::NoVal(name)) = &template.kind {
             if let Some(r) = res.get(name) {
                 if r != got {
@@ -148,7 +140,7 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, 
         unsafe {
             println!("{:?}", IMPL_TRAITS.iter().find(|(k, v)| k.name == "Vec").unwrap().1)
         }
-        panic!("{err}")
+        throw!("{}", err)
     }
 }
 

@@ -55,6 +55,7 @@ dependencies = [
  "fancy-regex",
  "lazy_static",
  "once_cell",
+ "panic-message",
  "pretty-print-tree",
  "regex",
 ]
@@ -64,6 +65,12 @@ name = "once_cell"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86f0b0d4bf799edbc74508c1e8bf170ff5f41238e5f8225603ca7caaae2b7860"
+
+[[package]]
+name = "panic-message"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "384e52fd8fbd4cbe3c317e8216260c21a0f9134de108cea8a4dd4e7e152c472d"
 
 [[package]]
 name = "pretty-print-tree"

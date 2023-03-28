@@ -451,7 +451,6 @@ pub fn put_at_start(input: &str) -> String {
         }
     }
     write!(data, "\n{input}").unwrap();
-    // println!("{data}");
     data
 }
 

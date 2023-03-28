@@ -3,16 +3,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use lazy_static::lazy_static;
 use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
-use crate::{DONT_PRINT, EMPTY_STR, IS_COMPILED, OneOfEnums, parse_file, PARSED_FILES, unwrap_enum};
+use crate::{DONT_PRINT, EMPTY_STR, IS_COMPILED, PARSED_FILES, CUR_LINE, CUR_COL, SRC_CODE, CUR_PATH, MODULE_PATH, LINE_DIFF};
+use crate::{OneOfEnums, parse_file, unwrap_enum, throw};
 use crate::add_types::ast_add_types::add_types;
-use crate::add_types::utils::{add_to_stack, get_from_stack};
-use crate::construct_ast::ast_structure::AstNode::As;
-use crate::mold_tokens::{IsOpen, OperatorType, SolidToken};
+use crate::add_types::utils::{add_new_line, add_to_stack, get_from_stack, update_pos_from_token};
+use crate::mold_tokens::{IsOpen, OperatorType, Pos, SolidToken, SolidTokenWPos};
 use crate::types::{Type, TypeKind, unwrap_u};
 use crate::construct_ast::get_functions_and_types::{get_struct_and_func_names};
 use crate::construct_ast::get_typ::{get_arg_typ};
 use crate::construct_ast::make_func_struct_trait::{make_struct, make_func, make_trait, make_enum};
-use crate::construct_ast::tree_utils::{add_to_tree, extend_tree, get_last, insert_as_parent_of_prev, print_tree};
+use crate::construct_ast::tree_utils::{add_to_tree, extend_tree, get_last, insert_as_parent_of_prev, print_tree, update_pos_from_tree_node};
 use crate::to_rust::to_rust;
 
 // todo this shouldn't work: a = [1 2 3 4]
@@ -70,7 +70,7 @@ impl STType for TraitType {
     fn get_pos(&self) -> usize { self.pos }
 }
 impl STType for EnumType {
-    fn get_associated_types(&self) -> &Option<Vec<String>> { panic!() }
+    fn get_associated_types(&self) -> &Option<Vec<String>> { unreachable!() }
     fn get_generics(&self) -> &Option<Vec<String>> { &self.generics }
     fn get_generics_mut(&mut self) -> &mut Option<Vec<String>> { &mut self.generics }
     fn get_pos(&self) -> usize { self.pos }
@@ -110,10 +110,10 @@ pub struct FileInfo {
 }
 
 
-pub fn construct_ast(tokens: &[SolidToken], pos: usize, info: &mut Info) -> Vec<Ast> {
+pub fn construct_ast(tokens: &[SolidTokenWPos], pos: usize, info: &mut Info) -> Vec<Ast> {
     let (structs, funcs, traits, types, enums)
         = get_struct_and_func_names(tokens, info.cur_file_path.to_str().unwrap());
-    let mut ast = vec![Ast::new(AstNode::Module)];
+    let mut ast = vec![Ast::new(AstNode::Module, Pos::default())];
     *info.funcs = funcs;
     *info.structs = structs;
     *info.traits = traits;
@@ -221,11 +221,13 @@ pub fn get_trt_strct_functions(ast: &[Ast], module: &Ast) -> TraitFuncs {
 }
 
 pub fn make_ast_statement(
-    tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
+    tokens: &[SolidTokenWPos], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
     vars: &mut VarTypes, info: &mut Info
 ) -> usize {
     while pos < tokens.len() {
-        match &tokens[pos] {
+        update_pos_from_token(&tokens[pos]);
+
+        match &tokens[pos].tok {
             SolidToken::Struct => {
                 vars.push(HashMap::new());
                 pos = make_struct(
@@ -268,27 +270,28 @@ pub fn make_ast_statement(
                         true, tokens, pos + 1, ast, last, indent,
                         vars, info
                     );
-                } else { panic!("elif to unknown if") }
+                } else { throw!("elif to unknown if") }
             },
             SolidToken::Else => {
-                if let SolidToken::Colon = tokens[pos + 1] {
+                if let SolidToken::Colon = tokens[pos + 1].tok {
                     pos += 1;
                 } else {
-                    panic!("expected colon")
+                    update_pos_from_token(&tokens[pos + 1]);
+                    throw!("expected colon")
                 }
                 let last = get_last(&ast[parent].children);
                 if let AstNode::IfStatement = ast[last].value {
-                    let body_pos = add_to_tree(last, ast, Ast::new(AstNode::Body));
+                    let body_pos = add_to_tree(last, ast, Ast::new_no_pos(AstNode::Body));
                     vars.push(HashMap::new());
                     pos = make_ast_statement(
                         tokens, pos + 1, ast, body_pos, indent + 1,
                         vars, info
                     ) - 1;
                     vars.pop();
-                } else { panic!("else to unknown if") }
+                } else { throw!("else to unknown if") }
             },
             SolidToken::Pass => {
-                add_to_tree(parent, ast, Ast::new(AstNode::Pass));
+                add_to_tree(parent, ast, Ast::new(AstNode::Pass, tokens[pos].pos.clone()));
             },
             SolidToken::Word(st) => {
                 pos = word_tok(
@@ -298,36 +301,35 @@ pub fn make_ast_statement(
             }
             SolidToken::NewLine => {
                 let tabs = tokens.iter().skip(pos + 1)
-                    .take_while(|&x| matches!(x, SolidToken::Tab)).count();
+                    .take_while(|&x| matches!(x.tok, SolidToken::Tab)).count();
                 match tabs.cmp(&indent) {
                     std::cmp::Ordering::Less => return pos,
-                    std::cmp::Ordering::Greater =>  panic!(
-                        "unexpected indentation, expected `{indent}` found `{tabs}`"
-                    ),
+                    std::cmp::Ordering::Greater => {
+                        update_pos_from_token(&tokens[pos + 1 + indent]);
+                        throw!("unexpected indentation, expected `{}` found `{}`", indent, tabs)
+                    },
                     _ => ()
                 }
                 pos += tabs;
             },
             SolidToken::Return => {
                 let return_pos = add_to_tree(
-                    parent, ast, Ast::new(AstNode::Return)
+                    parent, ast, Ast::new(AstNode::Return, tokens[pos].pos.clone())
                 );
-                if let SolidToken::NewLine = tokens[pos + 1] {
-
-                } else {
+                if !matches!(tokens[pos + 1].tok, SolidToken::NewLine) {
                     pos = make_ast_expression(
                         tokens, pos + 1, ast, return_pos, vars, info
                     ) - 1;
                 }
             },
             SolidToken::Continue => {
-                add_to_tree(parent, ast, Ast::new(AstNode::Continue));
+                add_to_tree(parent, ast, Ast::new(AstNode::Continue, tokens[pos].pos.clone()));
             },
             SolidToken::Break => {
-                add_to_tree(parent, ast, Ast::new(AstNode::Break));
+                add_to_tree(parent, ast, Ast::new(AstNode::Break, tokens[pos].pos.clone()));
             }
             SolidToken::IMut => {
-                let st = unwrap_enum!(&tokens[pos + 1], SolidToken::Word(st), st);
+                let st = unwrap_enum!(&tokens[pos + 1].tok, SolidToken::Word(st), st);
                 pos = word_tok(
                     tokens, pos + 1, ast, parent, indent,
                     vars, info, st, false
@@ -340,7 +342,8 @@ pub fn make_ast_statement(
             }
             SolidToken::UnaryOperator(OperatorType::Dereference) => {
                 let deref_pos = add_to_tree(parent, ast, Ast::new(
-                    AstNode::UnaryOp(OperatorType::Dereference)
+                    AstNode::UnaryOp(OperatorType::Dereference),
+                    tokens[pos].pos.clone()
                 ));
                 pos = make_ast_statement(
                     tokens, pos + 1, ast, deref_pos, indent,
@@ -351,7 +354,7 @@ pub fn make_ast_statement(
                 todo!()
             }
             SolidToken::Type => {
-                while !matches!(tokens[pos], SolidToken::NewLine) {
+                while !matches!(tokens[pos].tok, SolidToken::NewLine) {
                     pos += 1;
                 }
             }
@@ -359,17 +362,21 @@ pub fn make_ast_statement(
                 pos = make_enum(tokens, pos + 1, ast, parent, indent, info);
             }
             SolidToken::From => {
-                let import_pos = add_to_tree(parent, ast, Ast::new(AstNode::Import));
-                let from_pos = add_to_tree(import_pos, ast, Ast::new(AstNode::From));
+                let import_pos = add_to_tree(parent, ast, Ast::new_no_pos(AstNode::Import));
+                let from_pos = add_to_tree(import_pos, ast, Ast::new(AstNode::From, tokens[pos].pos.clone()));
                 let mut module = vec![];
-                while module.is_empty() || matches!(tokens[pos], SolidToken::Period) {
+                while module.is_empty() || matches!(tokens[pos].tok, SolidToken::Period) {
                     pos += 1;
+                    update_pos_from_token(&tokens[pos]);
                     let word = unwrap_enum!(
-                        &tokens[pos], SolidToken::Word(word), word,
+                        &tokens[pos].tok, SolidToken::Word(word), word,
                         "invalid import module, expected `word`"
                     );
                     module.push(word);
-                    add_to_tree(from_pos, ast, Ast::new(AstNode::Identifier(word.clone())));
+                    add_to_tree(from_pos, ast, Ast::new(
+                        AstNode::Identifier(word.clone()),
+                        tokens[pos].pos.clone()
+                    ));
                     pos += 1;
                 }
                 let last = if unsafe { IS_COMPILED } {
@@ -381,7 +388,7 @@ pub fn make_ast_statement(
                 let module_name = join(module.iter(), ".");
                 let module = find_module(
                     &module, info.cur_file_path.parent().unwrap()
-                ).unwrap_or_else(|| panic!("couldn't find module `{module_name}`"));
+                ).unwrap_or_else(|| throw!("couldn't find module `{}`", module_name));
                 let module_path = module.to_str().unwrap().to_string();
                 let file_info = if let Some(info) =  unsafe {
                     PARSED_FILES.get(&module_name)
@@ -392,26 +399,30 @@ pub fn make_ast_statement(
                     unsafe { PARSED_FILES.get(&module_path).unwrap() }
                 };
 
-                unwrap_enum!(tokens[pos], SolidToken::Import, false, "expected `import`");
+                update_pos_from_token(&tokens[pos]);
+                unwrap_enum!(tokens[pos].tok, SolidToken::Import, false, "expected `import`");
+                ast[import_pos].pos = Some(tokens[pos].pos.clone());
 
                 pos += 1;
                 loop {
+                    update_pos_from_token(&tokens[pos]);
                     let word = unwrap_enum!(
-                        &tokens[pos], SolidToken::Word(word), word,
+                        &tokens[pos].tok, SolidToken::Word(word), word,
                         "invalid import name, expected `word`"
                     );
-                    add_to_tree(import_pos, ast, Ast::new(AstNode::Identifier(word.clone())));
+                    add_to_tree(import_pos, ast, Ast::new(AstNode::Identifier(word.clone()), tokens[pos].pos.clone()));
                     pos += 1;
-                    let name = if let SolidToken::As = tokens[pos] {
-                        Some(unwrap_enum!(&tokens[pos + 1], SolidToken::Word(word), word.clone()))
+                    let name = if let SolidToken::As = tokens[pos].tok {
+                        Some(unwrap_enum!(&tokens[pos + 1].tok, SolidToken::Word(word), word.clone()))
                     } else {
                         None
                     };
 
+                    // todo not sure what this does...
                     if let Some(val) = file_info.funcs.get(word) {
                         info.funcs.insert(name.unwrap_or_else(|| word.clone()), val.clone());
                     } else if let Some(val) = file_info.structs.get(word) {
-                        let ignore = add_to_tree(0, ast, Ast::new(AstNode::Ignore));
+                        let ignore = add_to_tree(0, ast, Ast::new_no_pos(AstNode::Ignore));
                         let index = ast.len();
                         extend_tree(ast, ignore, val.clone().1);
                         // if let Some(name) = &name {
@@ -443,96 +454,133 @@ pub fn make_ast_statement(
                     } else if let Some(val) = file_info.types.get(word) {
                         info.types.insert(name.unwrap_or_else(|| word.clone()), val.clone());
                     }
-                    match &tokens[pos] {
+                    match &tokens[pos].tok {
                         SolidToken::Comma => pos += 1,
                         SolidToken::As => {
                             pos += 1; //1 the new name
                             insert_as_parent_of_prev(ast, import_pos, AstNode::As(
-                                unwrap_enum!(&tokens[pos], SolidToken::Word(w), w.clone())
-                            ));
+                                unwrap_enum!(&tokens[pos].tok, SolidToken::Word(w), w.clone())
+                            ), Some(tokens[pos].pos.clone()));
                             pos += 1;
-                            match tokens[pos] {
+                            match tokens[pos].tok {
                                 SolidToken::Comma => pos += 1,
                                 SolidToken::NewLine => break,
-                                _ => panic!("expected comma or end of line but found `{:?}`", tokens[pos])
+                                _ => {
+                                    update_pos_from_token(&tokens[pos]);
+                                    throw!("expected ',' or '\n' but found `{}`", tokens[pos].tok)
+                                }
                             }
                         },
                         SolidToken::NewLine => break,
-                        _ => panic!("expected comma, found {:?}", tokens[pos])
+                        _ => {
+                            update_pos_from_token(&tokens[pos]);
+                            throw!("expected ',' but found `{}`", tokens[pos].tok)
+                        }
                     }
                 }
+
+                // ast[import_pos].pos = Some(Pos {
+                //     start_line: ast[from_pos].pos.as_ref().unwrap().start_line,
+                //     start_col: ast[from_pos].pos.as_ref().unwrap().start_col,
+                //     end_line: ast.last().unwrap().pos.as_ref().unwrap().end_line,
+                //     end_col: ast.last().unwrap().pos.as_ref().unwrap().end_col,
+                // })
             }
             SolidToken::Import => todo!(),
             SolidToken::Match => {
                 vars.push(HashMap::new());
 
-                let match_pos = add_to_tree(parent, ast, Ast::new(AstNode::Match));
+                let match_pos = add_to_tree(parent, ast, Ast::new(AstNode::Match, tokens[pos].pos.clone()));
                 pos = make_ast_expression(tokens, pos+1, ast, match_pos, vars, info);
 
-                if let SolidToken::Colon = tokens[pos] {
+                if let SolidToken::Colon = tokens[pos].tok {
                     pos += 1;
-                } else { panic!("expected `:`, found `{:?}`", tokens[pos]) }
+                } else {
+                    update_pos_from_token(&tokens[pos]);
+                    throw!("expected `:`, found `{}`", tokens[pos].tok)
+                }
 
                 pos = make_ast_statement(tokens, pos, ast, match_pos, indent + 1, vars, info) - 1;
                 vars.pop();
             }
             SolidToken::Case => {
-                let case = add_to_tree(parent, ast, Ast::new(AstNode::Case));
-                let expression = add_to_tree(case, ast, Ast::new(AstNode::Body));
+                let case = add_to_tree(parent, ast, Ast::new(AstNode::Case, tokens[pos].pos.clone()));
+                let expression = add_to_tree(case, ast, Ast::new_no_pos(AstNode::Body));
 
                 // pos = make_ast_expression(tokens, pos + 1, ast, case, vars, info);
                 pos += 1;
-                if let SolidToken::Word(wrd) = &tokens[pos] {
-                    add_to_tree(expression, ast, Ast::new(AstNode::Identifier(wrd.clone())));
-                } else if let SolidToken::Null = &tokens[pos] {
-                    add_to_tree(expression, ast, Ast::new(AstNode::Null));
+                if let SolidToken::Word(wrd) = &tokens[pos].tok {
+                    add_to_tree(expression, ast, Ast::new(AstNode::Identifier(wrd.clone()), tokens[pos].pos.clone()));
+                } else if let SolidToken::Null = &tokens[pos].tok {
+                    add_to_tree(expression, ast, Ast::new(AstNode::Null, tokens[pos].pos.clone()));
                 } else {
-                    panic!("expected identifier")
+                    update_pos_from_token(&tokens[pos]);
+                    throw!("expected identifier")
                 }
                 // let idf = unwrap_enum!(&tokens[pos], SolidToken::Word(wrd), wrd.clone(), "expected identifier");
                 // add_to_tree(expression, ast, Ast::new(AstNode::Identifier(idf)));
 
                 pos += 1;
-                while let SolidToken::Period = tokens[pos] {
+                while let SolidToken::Period = tokens[pos].tok {
                     pos += 1;
-                    let idf = unwrap_enum!(&tokens[pos], SolidToken::Word(wrd), wrd.clone(), "expected identifier");
-                    let prop = insert_as_parent_of_prev(ast, expression, AstNode::Property);
-                    add_to_tree(prop, ast, Ast::new(AstNode::Identifier(idf)));
+                    update_pos_from_token(&tokens[pos]);
+                    let idf = unwrap_enum!(&tokens[pos].tok, SolidToken::Word(wrd), wrd.clone(), "expected identifier");
+                    let prop = insert_as_parent_of_prev(
+                        ast, expression, AstNode::Property,
+                        Some(tokens[pos - 1].pos.clone())
+                    );
+                    add_to_tree(prop, ast, Ast::new(AstNode::Identifier(idf), tokens[pos].pos.clone()));
                     pos += 1;
                 }
-                if let SolidToken::Parenthesis(IsOpen::True) = tokens[pos] {
+                if let SolidToken::Parenthesis(IsOpen::True) = tokens[pos].tok {
                     // todo allow this too:  `case opt1(a, int(b)):`
-                    let parn = add_to_tree(expression, ast, Ast::new(AstNode::Parentheses));
+                    let parn = add_to_tree(expression, ast, Ast::new(AstNode::Parentheses, tokens[pos].pos.clone()));
                     loop {
                         pos += 1;
-                        let name = unwrap_enum!(&tokens[pos], SolidToken::Word(wrd), wrd.clone(), "expected identifier");
-                        add_to_tree(parn, ast, Ast::new(AstNode::Identifier(name)));
+                        update_pos_from_token(&tokens[pos]);
+                        let name = unwrap_enum!(&tokens[pos].tok, SolidToken::Word(wrd), wrd.clone(), "expected identifier");
+                        add_to_tree(parn, ast, Ast::new(AstNode::Identifier(name), tokens[pos].pos.clone()));
                         pos += 1;
-                        if !matches!(tokens[pos], SolidToken::Comma) { break }
+                        if !matches!(tokens[pos].tok, SolidToken::Comma) { break }
                     }
-                    if let SolidToken::Parenthesis(IsOpen::False) = tokens[pos] {
+                    if let SolidToken::Parenthesis(IsOpen::False) = tokens[pos].tok {
                         pos += 1;
-                    } else { panic!("expected `)`, found `{:?}`", tokens[pos]) }
+                    } else {
+                        update_pos_from_token(&tokens[pos]);
+                        throw!("expected `)` but found `{}`", tokens[pos].tok)
+                    }
                 }
-                if let SolidToken::Colon = tokens[pos] {
+                if let SolidToken::Colon = tokens[pos].tok {
                     pos += 1;
-                } else if let SolidToken::As = tokens[pos] {
+                } else if let SolidToken::As = tokens[pos].tok {
                     pos += 1;
                     add_to_tree(
-                        case, ast, Ast::new(AstNode::Identifier(
-                            unwrap_enum!(&tokens[pos], SolidToken::Word(wrd), wrd.clone())
-                        ))
+                        case, ast, Ast::new(
+                            AstNode::Identifier(
+                                unwrap_enum!(&tokens[pos].tok, SolidToken::Word(wrd), wrd.clone())
+                            ),
+                            tokens[pos].pos.clone()
+                        )
                     );
                     pos += 1;
-                    if let SolidToken::Colon = tokens[pos] {
+                    if let SolidToken::Colon = tokens[pos].tok {
                         pos += 1;
-                    } else { panic!("expected `:`, found `{:?}`", tokens[pos]) }
-                } else { panic!("expected `:`, found `{:?}`", tokens[pos])  }
+                    } else {
+                        update_pos_from_token(&tokens[pos]);
+                        throw!("expected `:` but found `{}`", tokens[pos].tok)
+                    }
+                } else {
+                    update_pos_from_token(&tokens[pos]);
+                    throw!("expected `:` but found `{}`", tokens[pos].tok)
+                }
 
-                let body = add_to_tree(case, ast, Ast::new(AstNode::Body));
+                let body = add_to_tree(case, ast, Ast::new_no_pos(AstNode::Body));
                 pos = make_ast_statement(tokens, pos, ast, body, indent + 1, vars, info) - 1;
             }
-            _ => panic!("unexpected token `{:?}`", tokens[pos])
+            _ => {
+                update_pos_from_token(&tokens[pos]);
+                throw!("unexpected token `{}`", tokens[pos].tok)
+            }
         }
         pos += 1;
     }
@@ -540,20 +588,22 @@ pub fn make_ast_statement(
 }
 
 pub fn make_ast_expression(
-    tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
+    tokens: &[SolidTokenWPos], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
     vars: &mut VarTypes, info: &mut Info
 ) -> usize {
     // println!("{}\n".to_str(&(tree.clone(), 0)));
     let mut amount_of_open = 0;
     while pos < tokens.len() {
-        let token = &tokens[pos];
+        update_pos_from_token(&tokens[pos]);
+
+        let token = &tokens[pos].tok;
         let token = if let SolidToken::In = token {
             &SolidToken::Operator(OperatorType::In)
         } else { token };
         match token {
             SolidToken::Parenthesis(IsOpen::True) => {
                 amount_of_open += 1;
-                let par_pos = add_to_tree(parent, ast, Ast::new(AstNode::Parentheses));
+                let par_pos = add_to_tree(parent, ast, Ast::new(AstNode::Parentheses, tokens[pos].pos.clone()));
                 pos = make_ast_expression(
                     tokens, pos + 1, ast, par_pos, vars, info
                 ) - 1;
@@ -564,9 +614,11 @@ pub fn make_ast_expression(
                 | SolidToken::Bracket(IsOpen::False)
                 | SolidToken::Brace(IsOpen::False)
                 | SolidToken::Str { .. }
-                | SolidToken::Word(_) = &tokens[pos - 1] {
+                | SolidToken::Word(_) = &tokens[pos - 1].tok {
                     //1 index
-                    let index = insert_as_parent_of_prev(ast, parent, AstNode::Index);
+                    let index = insert_as_parent_of_prev(
+                        ast, parent, AstNode::Index, Some(tokens[pos].pos.clone())
+                    );
                     pos = make_ast_expression(
                         tokens, pos + 1, ast, index, vars, info
                     ) - 1;
@@ -581,9 +633,9 @@ pub fn make_ast_expression(
                     pos -= 1;
                 } else {
                     //1 list literal
-                    let list_parent = add_to_tree(parent, ast, Ast::new(AstNode::ListLiteral));
+                    let list_parent = add_to_tree(parent, ast, Ast::new(AstNode::ListLiteral, tokens[pos].pos.clone()));
                     let starting_pos = pos;
-                    while matches!(&tokens[pos], SolidToken::Comma) || pos == starting_pos {
+                    while matches!(&tokens[pos].tok, SolidToken::Comma) || pos == starting_pos {
                         pos = make_ast_expression(
                             tokens, pos + 1, ast, list_parent, vars, info
                         );
@@ -616,21 +668,21 @@ pub fn make_ast_expression(
                     ComprehensionType::None => {
                         //1 set\dict literal
                         //3                                                                | this is a placeholder |
-                        let list_parent = add_to_tree(parent, ast, Ast::new(AstNode::SetLiteral));
+                        let list_parent = add_to_tree(parent, ast, Ast::new(AstNode::SetLiteral, tokens[pos].pos.clone()));
                         let starting_pos = pos;
-                        if let SolidToken::Brace(IsOpen::False) = tokens[pos + 1] {
+                        if let SolidToken::Brace(IsOpen::False) = tokens[pos + 1].tok {
                             ast[list_parent].value = AstNode::DictLiteral;
                         } else {
-                            while matches!(&tokens[pos], SolidToken::Comma | SolidToken::Colon) || pos == starting_pos {
-                                if let SolidToken::Colon = tokens[pos] {
+                            while matches!(&tokens[pos].tok, SolidToken::Comma | SolidToken::Colon) || pos == starting_pos {
+                                if let SolidToken::Colon = tokens[pos].tok {
                                     if let AstNode::DictLiteral = ast[list_parent].value {
-                                        if unwrap_u(&ast[list_parent].children).len() % 2 != 1 { panic!() }
+                                        if unwrap_u(&ast[list_parent].children).len() % 2 != 1 { throw!() } // todo throw message
                                     } else {
-                                        if unwrap_u(&ast[list_parent].children).len() != 1 { panic!() }
+                                        if unwrap_u(&ast[list_parent].children).len() != 1 { throw!() } // todo throw message
                                         ast[list_parent].value = AstNode::DictLiteral;
                                     }
                                 } else if let AstNode::DictLiteral = ast[list_parent].value {
-                                    if unwrap_u(&ast[list_parent].children).len() % 2 == 1 { panic!() }
+                                    if unwrap_u(&ast[list_parent].children).len() % 2 == 1 { throw!() } // todo throw message
                                 }
                                 pos = make_ast_expression(
                                     tokens, pos + 1, ast, list_parent, vars, info
@@ -651,30 +703,31 @@ pub fn make_ast_expression(
             SolidToken::Comma => {
                 if matches!(ast[parent].value, AstNode::Parentheses | AstNode::Tuple) {
                     ast[parent].value = AstNode::Tuple;
-                    while let SolidToken::Comma = tokens[pos] {
+                    while let SolidToken::Comma = tokens[pos].tok {
                         pos = make_ast_expression(tokens, pos + 1, ast, parent, vars, info) - 1;
                     }
                 } else { break }
             }
             SolidToken::Colon => break,
             SolidToken::Num(num) => {
-                add_to_tree(parent, ast, Ast::new(AstNode::Number(num.clone())));
+                add_to_tree(parent, ast, Ast::new(AstNode::Number(num.clone()), tokens[pos].pos.clone()));
             },
             SolidToken::Str { val: str, mutable } => {
                 add_to_tree(
                     parent, ast, Ast::new(
-                        AstNode::String{ val: str.clone(), mutable: *mutable }
+                        AstNode::String{ val: str.clone(), mutable: *mutable },
+                        tokens[pos].pos.clone()
                     )
                 );
             },
             SolidToken::Char(ch) => {
-                add_to_tree(parent, ast, Ast::new(AstNode::Char(ch.clone())));
+                add_to_tree(parent, ast, Ast::new(AstNode::Char(ch.clone()), tokens[pos].pos.clone()));
             },
             SolidToken::Bool(bl) => {
-                add_to_tree(parent, ast, Ast::new(AstNode::Bool(*bl)));
+                add_to_tree(parent, ast, Ast::new(AstNode::Bool(*bl), tokens[pos].pos.clone()));
             },
             SolidToken::Null => {
-                add_to_tree(parent, ast, Ast::new(AstNode::Null));
+                add_to_tree(parent, ast, Ast::new(AstNode::Null, tokens[pos].pos.clone()));
             },
             SolidToken::Word(wrd) => {
                 pos = word_tok(
@@ -684,7 +737,7 @@ pub fn make_ast_expression(
             },
             SolidToken::UnaryOperator(op) => {
                 let index = add_to_tree(
-                    parent, ast, Ast::new(AstNode::UnaryOp(op.clone()))
+                    parent, ast, Ast::new(AstNode::UnaryOp(op.clone()), tokens[pos].pos.clone())
                 );
                 pos = make_ast_expression(
                     tokens, pos + 1, ast, index, vars, info
@@ -698,7 +751,10 @@ pub fn make_ast_expression(
                         && prev_op.get_priority() < op.get_priority() { break }
                     parent = ast[parent].parent.unwrap();
                 }
-                let index = insert_as_parent_of_prev(ast, parent, AstNode::Operator(op.clone()));
+                let index = insert_as_parent_of_prev(
+                    ast, parent, AstNode::Operator(op.clone()),
+                    Some(tokens[pos].pos.clone())
+                );
                 pos = make_ast_expression(
                     tokens, pos + 1, ast, index, vars, info
                 ) - 1;
@@ -711,7 +767,9 @@ pub fn make_ast_expression(
             SolidToken::Cast => {
                 pos += 1;
                 let typ= get_arg_typ(tokens, &mut pos, info);
-                let cast = insert_as_parent_of_prev(ast, parent, AstNode::Cast);
+                let cast = insert_as_parent_of_prev(
+                    ast, parent, AstNode::Cast, Some(tokens[pos].pos.clone())
+                );
                 ast[cast].typ = Some(typ);
                 pos -= 1;
             }
@@ -720,10 +778,12 @@ pub fn make_ast_expression(
                 while ast[parent].value.is_expression() {
                     parent = ast[parent].parent.unwrap();
                 }
-                let index = insert_as_parent_of_prev(ast, parent, AstNode::Ternary);
+                let index = insert_as_parent_of_prev(
+                    ast, parent, AstNode::Ternary, Some(tokens[pos].pos.clone())
+                );
                 let mut amount_of_open = 0;
                 for (i, tok) in tokens.iter().enumerate().skip(pos) {
-                    match tok {
+                    match tok.tok {
                         SolidToken::Brace(IsOpen::True) | SolidToken::Bracket(IsOpen::True)
                         | SolidToken::Parenthesis(IsOpen::True) => amount_of_open += 1,
                         SolidToken::Brace(IsOpen::False) | SolidToken::Bracket(IsOpen::False)
@@ -740,7 +800,7 @@ pub fn make_ast_expression(
                 }
                 make_ast_expression(tokens, pos, ast, index, vars, info);
             }
-            _ => panic!("unexpected token {:?}", token)
+            _ => throw!("unexpected token {:?}", token)
         }
         pos += 1;
     }
@@ -750,11 +810,11 @@ pub fn make_ast_expression(
 enum ComprehensionType {
     ListSet, Dict, None
 }
-fn get_comprehension_typ(tokens: &[SolidToken], pos: usize) -> ComprehensionType {
+fn get_comprehension_typ(tokens: &[SolidTokenWPos], pos: usize) -> ComprehensionType {
     let mut is_dict = false;
     let mut amount_of_open = 0;
     for tok in tokens.iter().skip(pos) {
-        match tok {
+        match tok.tok {
             SolidToken::Bracket(IsOpen::True)
             | SolidToken::Brace(IsOpen::True)
             | SolidToken::Parenthesis(IsOpen::True)
@@ -777,33 +837,33 @@ fn get_comprehension_typ(tokens: &[SolidToken], pos: usize) -> ComprehensionType
 }
 
 fn comprehension(
-    tokens: &[SolidToken], pos: &mut usize, vars: &mut VarTypes, info: &mut Info,
+    tokens: &[SolidTokenWPos], pos: &mut usize, vars: &mut VarTypes, info: &mut Info,
     open_b_b_p: SolidToken, close_b_b_p: SolidToken, comprehension_typ: AstNode
 ) -> Vec<Ast> {
     let mut amount_of_open = 0;
-    let mut toks = vec![];
-    let mut comprehension = vec![Ast::new(comprehension_typ)];
+    let mut toks: Vec<SolidTokenWPos> = vec![];
+    let mut comprehension = vec![Ast::new(comprehension_typ, tokens[*pos].pos.clone())];
     let stmt_mod = add_to_tree(
-        0, &mut comprehension, Ast::new(AstNode::Module)
+        0, &mut comprehension, Ast::new_no_pos(AstNode::Module)
     );
     vars.push(HashMap::new());
     //1 statement
     loop {
         *pos += 1;
-        match tokens[*pos] {
+        match tokens[*pos].tok {
             SolidToken::Bracket(IsOpen::True)
             | SolidToken::Brace(IsOpen::True)
             | SolidToken::Parenthesis(IsOpen::True) =>
-                if tokens[*pos] == open_b_b_p { amount_of_open += 1 },
+                if tokens[*pos].tok == open_b_b_p { amount_of_open += 1 },
             SolidToken::Bracket(IsOpen::False)
             | SolidToken::Brace(IsOpen::False)
             | SolidToken::Parenthesis(IsOpen::False ) =>
-                if tokens[*pos] == close_b_b_p {
+                if tokens[*pos].tok == close_b_b_p {
                     if amount_of_open == 0 { break }
                     amount_of_open -= 1
                 },
             SolidToken::Colon if amount_of_open == 0 => {
-                toks.push(SolidToken::NewLine);
+                add_new_line(&mut toks);
                 make_ast_expression(
                     &toks, 0, &mut comprehension, stmt_mod, vars, info
                 );
@@ -811,7 +871,7 @@ fn comprehension(
                 continue
             }
             SolidToken::For if amount_of_open == 0 => {
-                toks.push(SolidToken::NewLine);
+                add_new_line(&mut toks);
                 make_ast_expression(
                     &toks, 0, &mut comprehension, stmt_mod, vars, info
                 );
@@ -821,21 +881,21 @@ fn comprehension(
         }
         toks.push(tokens[*pos].clone());
     }
-    let loops_mod = add_to_tree(0, &mut comprehension, Ast::new(AstNode::Module));
+    let loops_mod = add_to_tree(0, &mut comprehension, Ast::new_no_pos(AstNode::Module));
     //1 loops
-    while *pos < tokens.len() && matches!(tokens[*pos], SolidToken::For) { //1 loops
+    while *pos < tokens.len() && matches!(tokens[*pos].tok, SolidToken::For) { //1 loops
         *pos += 1;
         let loop_pos = add_to_tree(
-            loops_mod, &mut comprehension, Ast::new(AstNode::ForStatement)
+            loops_mod, &mut comprehension, Ast::new(AstNode::ForStatement, tokens[*pos - 1].pos.clone())
         );
         let pars_pos = add_to_tree(
-            loop_pos, &mut comprehension, Ast::new(AstNode::ColonParentheses)
+            loop_pos, &mut comprehension, Ast::new_no_pos(AstNode::ColonParentheses)
         );
         let vars_pos = add_to_tree(
-            pars_pos, &mut comprehension, Ast::new(AstNode::ForVars)
+            pars_pos, &mut comprehension, Ast::new_no_pos(AstNode::ForVars)
         );
         let iter_pos = add_to_tree(
-            pars_pos, &mut comprehension, Ast::new(AstNode::ForIter)
+            pars_pos, &mut comprehension, Ast::new_no_pos(AstNode::ForIter)
         );
         vars.push(HashMap::new());
         //4 vars:
@@ -844,17 +904,17 @@ fn comprehension(
         amount_of_open = 0;
         toks.clear();
         loop { //1 statement
-            match tokens[*pos] {
+            match tokens[*pos].tok {
                 SolidToken::Bracket(IsOpen::True)
                 | SolidToken::Brace(IsOpen::True)
                 | SolidToken::Parenthesis(IsOpen::True) =>
-                    if tokens[*pos] == open_b_b_p { amount_of_open += 1 },
+                    if tokens[*pos].tok == open_b_b_p { amount_of_open += 1 },
                 SolidToken::Bracket(IsOpen::False)
                 | SolidToken::Brace(IsOpen::False)
                 | SolidToken::Parenthesis(IsOpen::False) =>
-                    if tokens[*pos] == close_b_b_p {
+                    if tokens[*pos].tok == close_b_b_p {
                         if amount_of_open == 0 {
-                            toks.push(SolidToken::NewLine);
+                            add_new_line(&mut toks);
                             make_ast_expression(
                                 &toks, 0, &mut comprehension, iter_pos, vars, info
                             );
@@ -863,7 +923,7 @@ fn comprehension(
                         amount_of_open -= 1
                     },
                 SolidToken::For | SolidToken::If if amount_of_open == 0 => {
-                    toks.push(SolidToken::NewLine);
+                    add_new_line(&mut toks);
                     make_ast_expression(
                         &toks, 0, &mut comprehension, iter_pos, vars, info
                     );
@@ -877,21 +937,21 @@ fn comprehension(
         vars.pop();
     }
     //1 condition
-    let condition_mod = add_to_tree(0, &mut comprehension, Ast::new(AstNode::Module));
-    if *pos < tokens.len() && matches!(tokens[*pos], SolidToken::If) {
+    let condition_mod = add_to_tree(0, &mut comprehension, Ast::new_no_pos(AstNode::Module));
+    if *pos < tokens.len() && matches!(tokens[*pos].tok, SolidToken::If) {
         amount_of_open = 0;
         toks.clear();
         loop {
             *pos += 1;
-            match tokens[*pos] {
+            match tokens[*pos].tok {
                 SolidToken::Bracket(IsOpen::True)
                 | SolidToken::Brace(IsOpen::True)
                 | SolidToken::Parenthesis(IsOpen::True) =>
-                    if tokens[*pos] == open_b_b_p { amount_of_open += 1 },
+                    if tokens[*pos].tok == open_b_b_p { amount_of_open += 1 },
                 SolidToken::Bracket(IsOpen::False)
                 | SolidToken::Brace(IsOpen::False)
                 | SolidToken::Parenthesis(IsOpen::False ) =>
-                    if tokens[*pos] == close_b_b_p {
+                    if tokens[*pos].tok == close_b_b_p {
                         if amount_of_open == 0 { break }
                         amount_of_open -= 1
                     },
@@ -899,7 +959,7 @@ fn comprehension(
             }
             toks.push(tokens[*pos].clone());
         }
-        toks.push(SolidToken::NewLine);
+        add_new_line(&mut toks);
         make_ast_expression(&toks, 0, &mut comprehension, condition_mod, vars, info);
     }
     vars.pop();
@@ -907,16 +967,16 @@ fn comprehension(
 }
 
 fn word_tok(
-    tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
+    tokens: &[SolidTokenWPos], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
     vars: &mut VarTypes, info: &mut Info, st: &String, is_expression: bool
 ) -> usize {
     let mut identifier_pos = add_to_tree(
         parent, ast,
-        Ast::new(AstNode::Identifier(st.clone()))
+        Ast::new(AstNode::Identifier(st.clone()), tokens[pos].pos.clone())
     );
     loop {
         pos += 1;
-        match &tokens[pos] {
+        match &tokens[pos].tok {
             SolidToken::NewLine => { return pos - 1 },
             SolidToken::Operator(OperatorType::Eq) => {
                 if is_expression { return pos - 1 }
@@ -925,7 +985,10 @@ fn word_tok(
                 while ast[parent].value.is_expression() {
                     parent = ast[parent].parent.unwrap();
                 }
-                let index = insert_as_parent_of_prev(ast, parent, AstNode::Assignment);
+                let index = insert_as_parent_of_prev(
+                    ast, parent, AstNode::Assignment,
+                    Some(tokens[pos].pos.clone())
+                );
                 if get_from_stack(vars, st).is_none() {
                     ast[index].value = AstNode::FirstAssignment;
                     add_to_stack(vars, st.clone(), usize::MAX)
@@ -942,54 +1005,71 @@ fn word_tok(
                     parent = ast[parent].parent.unwrap();
                 }
 
-                let index = insert_as_parent_of_prev(ast, parent, AstNode::FirstAssignment);
+                let index = insert_as_parent_of_prev(ast, parent, AstNode::FirstAssignment, None);
                 identifier_pos += 1;
                 add_to_stack(vars, st.clone(), identifier_pos);
                 pos += 1;
-                if !matches!(tokens[pos], SolidToken::Operator(OperatorType::Eq)) {
+                if !matches!(tokens[pos].tok, SolidToken::Operator(OperatorType::Eq)) {
                     ast[index].typ = Some(get_arg_typ(tokens, &mut pos, info));
+                    update_pos_from_token(&tokens[pos]);
+                    unwrap_enum!(
+                        tokens[pos].tok, SolidToken::Operator(OperatorType::Eq), None::<bool>,
+                        "expected `=` but found `{}`", tokens[pos].tok
+                    );
                 }
+
+                ast[index].pos = Some(tokens[pos].pos.clone());
                 return make_ast_expression(
                     tokens, pos + 1, ast, index, vars, info
                 ) - 1;
             },
-            SolidToken::Brace(IsOpen::True)
-            | SolidToken::Parenthesis(IsOpen::True) => {
-                let word = unwrap_enum!(&tokens[pos - 1], SolidToken::Word(w), w);
+            SolidToken::Parenthesis(IsOpen::True) => {
+                let word = unwrap_enum!(&tokens[pos - 1].tok, SolidToken::Word(w), w);
                 // if unsafe { IS_COMPILED } && word == "len" {
                 //     turn_len_func_to_method(tokens, &mut pos, ast, parent, vars, info, word);
                 //     continue
                 // }
                 let index = if info.structs.contains_key(word) && word != "str" {
                     let prop_pos = insert_as_parent_of_prev(
-                        ast, parent, AstNode::Property
+                        ast, parent, AstNode::Property, Some(tokens[pos].pos.clone())
                     );
-                    let index = add_to_tree(prop_pos, ast, Ast::new(AstNode::FunctionCall(true)));
+                    let index = add_to_tree(prop_pos, ast, Ast::new(
+                        AstNode::FunctionCall(true),
+                        tokens[pos].pos.clone()
+                    ));
 
                     add_to_tree(index, ast, Ast::new(
-                        AstNode::Identifier(String::from("__init__"))
+                        AstNode::Identifier(String::from("__init__")),
+                        tokens[pos].pos.clone()
                     ));
                     index
                 } else {
-                    insert_as_parent_of_prev(ast, parent, AstNode::FunctionCall(false))
+                    insert_as_parent_of_prev(
+                        ast, parent, AstNode::FunctionCall(false),
+                        Some(tokens[pos].pos.clone())
+                    )
                 };
                 // let index = insert_as_parent_of_prev(ast, parent, type_call);
-                let last = add_to_tree(index, ast, Ast::new(AstNode::Args));
+                let last = add_to_tree(index, ast, Ast::new(
+                    AstNode::Args, tokens[pos].pos.clone()
+                ));
                 pos = make_ast_expression(
                     tokens, pos + 1, ast, last, vars, info
                 );
-                while let SolidToken::Comma = tokens[pos] {
-                    if let SolidToken::Word(name) = &tokens[pos + 1] { //1 if is named arg
-                        if let SolidToken::Operator(OperatorType::Eq) = &tokens[pos + 2] {
-                            let named_arg_pos = add_to_tree(
-                                last, ast,
-                                Ast::new(AstNode::NamedArg(name.clone()))
-                            );
-                            pos = make_ast_expression(
-                                tokens, pos + 3, ast, named_arg_pos, vars, info
-                            );
-                            continue
-                        }
+                while let SolidToken::Comma = tokens[pos].tok {
+                    if let (SolidToken::Word(name), SolidToken::Operator(OperatorType::Eq))
+                        = (&tokens[pos + 1].tok, &tokens[pos + 2].tok) { //1 if is named arg
+                        let named_arg_pos = add_to_tree(
+                            last, ast,
+                            Ast::new(
+                                AstNode::NamedArg(name.clone()),
+                                tokens[pos + 1].pos.clone()
+                            )
+                        );
+                        pos = make_ast_expression(
+                            tokens, pos + 3, ast, named_arg_pos, vars, info
+                        );
+                        continue
                     }
                     pos = make_ast_expression(
                         tokens, pos + 1, ast, last, vars, info
@@ -997,7 +1077,9 @@ fn word_tok(
                 }
             },
             SolidToken::Bracket(IsOpen::True) => {
-                let index = insert_as_parent_of_prev(ast, parent, AstNode::Index);
+                let index = insert_as_parent_of_prev(
+                    ast, parent, AstNode::Index, Some(tokens[pos].pos.clone())
+                );
                 pos = make_ast_expression(
                     tokens, pos + 1, ast, index, vars, info
                 );
@@ -1014,20 +1096,23 @@ fn word_tok(
                 while ast[parent].value.is_expression() {
                     parent = ast[parent].parent.unwrap();
                 }
-                let index = insert_as_parent_of_prev(ast, parent, AstNode::OpAssignment(*op.clone()));
+                let index = insert_as_parent_of_prev(
+                    ast, parent, AstNode::OpAssignment(*op.clone()),
+                    Some(tokens[pos].pos.clone())
+                );
 
                 return make_ast_expression(
                     tokens, pos + 1, ast, index, vars, info
                 ) - 1;
             }
             _ if is_expression => return pos - 1,
-            _ => panic!("Unexpected token {:?}", tokens[pos]),
+            _ => throw!("Unexpected token `{}`", tokens[pos].tok),
         }
     }
 }
 
 /*fn turn_len_func_to_method(
-    tokens: &[SolidToken], pos: &mut usize, ast: &mut Vec<Ast>, parent: usize,
+    tokens: &[SolidTokenWPos], pos: &mut usize, ast: &mut Vec<Ast>, parent: usize,
     vars: &mut VarTypes, info: &mut Info, word: &str
 ) {
     let is_property = matches!(&ast[parent].value, AstNode::Property);
@@ -1057,34 +1142,40 @@ fn word_tok(
 }*/
 
 fn add_property(
-    tokens: &[SolidToken], pos: usize, ast: &mut Vec<Ast>, indent: usize,
+    tokens: &[SolidTokenWPos], pos: usize, ast: &mut Vec<Ast>, indent: usize,
     vars: &mut VarTypes, info: &mut Info, is_expression: bool, mut parent: usize
 ) -> usize {
     while let AstNode::Property = ast[parent].value {
         parent = ast[parent].parent.unwrap();
     }
-    let index = insert_as_parent_of_prev(ast, parent, AstNode::Property);
-    let st = unwrap_enum!(&tokens[pos + 1], SolidToken::Word(st), st, "expected word after period");
+    let index = insert_as_parent_of_prev(
+        ast, parent, AstNode::Property, Some(tokens[pos].pos.clone())
+    );
+    update_pos_from_token(&tokens[pos]);
+    let st = unwrap_enum!(&tokens[pos + 1].tok, SolidToken::Word(st), st, "expected word after period");
     word_tok(
         tokens, pos + 1, ast, index, indent, vars, info, st, is_expression
     )
 }
 
 fn if_while_statement(
-    is_if: bool, tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
+    is_if: bool, tokens: &[SolidTokenWPos], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
     indent: usize, vars: &mut VarTypes, info: &mut Info,
 ) -> usize {
     let stmt_pos = add_to_tree(parent, ast, Ast::new(
-        if is_if { AstNode::IfStatement } else { AstNode::WhileStatement }
+        if is_if { AstNode::IfStatement } else { AstNode::WhileStatement },
+        tokens[pos - 1].pos.clone()
     ));
     //4 condition:
-    let colon_par = add_to_tree(stmt_pos, ast, Ast::new(AstNode::ColonParentheses));
+    let colon_par = add_to_tree(
+        stmt_pos, ast, Ast::new_no_pos(AstNode::ColonParentheses)
+    );
     pos = make_ast_expression(
         tokens, pos, ast, colon_par, vars, info
     );
     // todo check that there is colon after the condition? (for statement too)
     //4 body:
-    let body_pos = add_to_tree(stmt_pos, ast, Ast::new(AstNode::Body));
+    let body_pos = add_to_tree(stmt_pos, ast, Ast::new_no_pos(AstNode::Body));
     vars.push(HashMap::new());
     pos = make_ast_statement(
         tokens, pos + 1, ast, body_pos, indent + 1,
@@ -1095,14 +1186,16 @@ fn if_while_statement(
 }
 
 fn for_statement(
-    tokens: &[SolidToken], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
+    tokens: &[SolidTokenWPos], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
     indent: usize, vars: &mut VarTypes, info: &mut Info
 ) -> usize {
-    let loop_pos = add_to_tree(parent, ast, Ast::new(AstNode::ForStatement));
-    let pars_pos = add_to_tree(loop_pos, ast, Ast::new(AstNode::ColonParentheses));
-    let vars_pos = add_to_tree(pars_pos, ast, Ast::new(AstNode::ForVars));
-    let iter_pos = add_to_tree(pars_pos, ast, Ast::new(AstNode::ForIter));
-    let body_pos = add_to_tree(loop_pos, ast, Ast::new(AstNode::Body));
+    let loop_pos = add_to_tree(parent, ast, Ast::new(
+        AstNode::ForStatement, tokens[pos - 1].pos.clone()
+    ));
+    let pars_pos = add_to_tree(loop_pos, ast, Ast::new_no_pos(AstNode::ColonParentheses));
+    let vars_pos = add_to_tree(pars_pos, ast, Ast::new_no_pos(AstNode::ForVars));
+    let iter_pos = add_to_tree(pars_pos, ast, Ast::new_no_pos(AstNode::ForIter));
+    let body_pos = add_to_tree(loop_pos, ast, Ast::new_no_pos(AstNode::Body));
     vars.push(HashMap::new());
     //4 vars:
     get_for_loop_vars(tokens, &mut pos, ast, vars, vars_pos);
@@ -1120,21 +1213,25 @@ fn for_statement(
 }
 
 fn get_for_loop_vars(
-    tokens: &[SolidToken], pos: &mut usize, ast: &mut Vec<Ast>,
+    tokens: &[SolidTokenWPos], pos: &mut usize, ast: &mut Vec<Ast>,
     vars: &mut VarTypes, vars_pos: usize
 ) {
     loop {
-        let name = unwrap_enum!(&tokens[*pos], SolidToken::Word(x), x, "expected identifier");
+        update_pos_from_token(&tokens[*pos]);
+        let name = unwrap_enum!(&tokens[*pos].tok, SolidToken::Word(x), x, "expected identifier");
         let i = add_to_tree(
             vars_pos, ast,
-            Ast::new(AstNode::Identifier(name.clone()))
+            Ast::new(AstNode::Identifier(name.clone()), tokens[*pos].pos.clone())
         );
         add_to_stack(vars, name.clone(), i);
         *pos += 2;
-        match &tokens[*pos - 1] {
+        match &tokens[*pos - 1].tok {
             SolidToken::Comma => continue,
             SolidToken::In => break,
-            _ => panic!("expected `in` or `,`")
+            _ => {
+                update_pos_from_token(&tokens[*pos - 1]);
+                throw!("expected `in` or `,`")
+            }
         }
     }
 }

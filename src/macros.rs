@@ -6,7 +6,10 @@
         if let $pattern = $var { $result } else { unreachable!() }
     };
     ($var:expr, $pattern:pat, $result:expr, $msg:expr) => {
-        if let $pattern = $var { $result } else { panic!($msg) }
+        if let $pattern = $var { $result } else { throw!($msg) }
+    };
+    ($var:expr, $pattern:pat, $result:expr, $msg:expr, $($arg:tt)*) => {
+        if let $pattern = $var { $result } else { throw!($msg, $($arg)*) }
     };
 }
 
@@ -60,13 +63,150 @@
     }
 }
 
+#[macro_export]
+macro_rules! throw { // todo repeating code
+    () => {
+        { #[allow(unused_unsafe)] unsafe {
+            if *LINE_DIFF.last().unwrap() > CUR_LINE {
+                let ln1 = CUR_LINE.to_string().len();
+                let ln2 = CUR_COL.to_string().len();
+                let padding = ln1.max(ln2);
+                panic!(
+                    concat!(
+                        "[{}:{}:{}]\x1b[94m\x1b[1m ***INTERNAL ERROR***:\x1b[0m \n\
+                        \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
+                        \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
+                    ),
+                    CUR_PATH.last().unwrap().strip_prefix("out/src/").unwrap(),
+                    CUR_LINE + 1, CUR_COL + 1,
+                    CUR_LINE + 1,
+                    SRC_CODE.last().unwrap().split('\n').nth(CUR_LINE).unwrap(),
+                    CUR_COL,
+                    " ".repeat(CUR_COL),
+                    width = padding,
+                )
+            }
+            let line = CUR_LINE - LINE_DIFF.last().unwrap();
+            let ln1 = line.to_string().len();
+            let ln2 = CUR_COL.to_string().len();
+            let padding = ln1.max(ln2);
+
+            panic!(
+                concat!(
+                    "[{}:{}:{}]\x1b[94m\x1b[1m error:\x1b[0m \n\
+                    \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
+                    \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
+                ),
+                // MODULE_PATH.as_ref().unwrap().to_str().unwrap(),
+                CUR_PATH.last().unwrap().strip_prefix("out/src/").unwrap(),
+                line + 1, CUR_COL + 1,
+                line + 1,
+                SRC_CODE.last().unwrap().split('\n').nth(CUR_LINE).unwrap(),
+                CUR_COL,
+                " ".repeat(CUR_COL),
+                width = padding,
+            )
+        }}
+    };
+    ($st:tt) => {
+        { #[allow(unused_unsafe)] unsafe {
+            if *LINE_DIFF.last().unwrap() > CUR_LINE {
+                let ln1 = CUR_LINE.to_string().len();
+                let ln2 = CUR_COL.to_string().len();
+                let padding = ln1.max(ln2);
+                panic!(
+                    concat!(
+                        "\x1b[1m\x1b[91m", $st, "\x1b[0m\n\
+                        [{}:{}:{}]\x1b[94m\x1b[1m ***INTERNAL ERROR***:\x1b[0m \n\
+                        \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
+                        \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
+                    ),
+                    CUR_PATH.last().unwrap().strip_prefix("out/src/").unwrap(),
+                    CUR_LINE + 1, CUR_COL + 1,
+                    CUR_LINE + 1,
+                    SRC_CODE.last().unwrap().split('\n').nth(CUR_LINE).unwrap(),
+                    CUR_COL,
+                    " ".repeat(CUR_COL),
+                    width = padding,
+                )
+            }
+            let line = CUR_LINE - LINE_DIFF.last().unwrap();
+            let ln1 = line.to_string().len();
+            let ln2 = CUR_COL.to_string().len();
+            let padding = ln1.max(ln2);
+
+            panic!(
+                concat!(
+                    "\x1b[1m\x1b[91m", $st, "\x1b[0m\n\
+                    [{}:{}:{}]\x1b[94m\x1b[1m error:\x1b[0m \n\
+                    \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
+                    \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
+                ),
+                // MODULE_PATH.as_ref().unwrap().to_str().unwrap(),
+                CUR_PATH.last().unwrap().strip_prefix("out/src/").unwrap(),
+                line + 1, CUR_COL + 1,
+                line + 1,
+                SRC_CODE.last().unwrap().split('\n').nth(CUR_LINE).unwrap(),
+                CUR_COL,
+                " ".repeat(CUR_COL),
+                width = padding,
+            )
+        }}
+    };
+    ($format:tt, $($arg:tt)*) => {
+        { #[allow(unused_unsafe)] unsafe {
+            if *LINE_DIFF.last().unwrap() > CUR_LINE {
+                let ln1 = CUR_LINE.to_string().len();
+                let ln2 = CUR_COL.to_string().len();
+                let padding = ln1.max(ln2);
+                panic!(
+                    concat!(
+                        "\x1b[1m\x1b[91m", $format, "\x1b[0m\n\
+                        [{}:{}:{}]\x1b[94m\x1b[1m ***INTERNAL ERROR***:\x1b[0m \n\
+                        \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
+                        \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
+                    ),
+                    $($arg)*,
+                    CUR_PATH.last().unwrap().strip_prefix("out/src/").unwrap(),
+                    CUR_LINE + 1, CUR_COL + 1,
+                    CUR_LINE + 1,
+                    SRC_CODE.last().unwrap().split('\n').nth(CUR_LINE).unwrap(),
+                    CUR_COL,
+                    " ".repeat(CUR_COL),
+                    width = padding,
+                )
+            }
+            let line = CUR_LINE - LINE_DIFF.last().unwrap();
+            let ln1 = line.to_string().len();
+            let ln2 = CUR_COL.to_string().len();
+            let padding = ln1.max(ln2);
+
+            panic!(
+                concat!(
+                    "\x1b[1m\x1b[91m", $format, "\x1b[0m\n\
+                    [{}:{}:{}]\x1b[94m\x1b[1m error:\x1b[0m \n\
+                    \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
+                    \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
+                ),
+                $($arg)*,
+                CUR_PATH.last().unwrap().strip_prefix("out/src/").unwrap(),
+                line + 1, CUR_COL + 1,
+                line + 1,
+                SRC_CODE.last().unwrap().split('\n').nth(CUR_LINE).unwrap(),
+                CUR_COL,
+                " ".repeat(CUR_COL),
+                width = padding,
+            );
+        }}
+    };
+}
 #[macro_export] macro_rules! add_trait {
     ($key: expr, $val: expr) => {
         unsafe {
             if let Some(vc) = IMPL_TRAITS.get_mut(&$key) {
                 if let Some(trt) = vc.iter().find(|x| x.trt_name == $val.trt_name && x.generics == $val.generics) {
                     if trt.types != $val.types {
-                        panic!("cant implement same trait twice with different associated types")
+                        throw!("cant implement same trait twice with different associated types")
                     }
                 } else {
                     vc.push($val);

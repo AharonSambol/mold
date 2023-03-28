@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
+use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, implements_trait, print_type, clean_type, print_type_b};
 use lazy_static::lazy_static;
@@ -8,10 +8,11 @@ use regex::Regex;
 use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS, IMPL_TRAITS, ImplTraitsKey, get_traits};
 use crate::add_types::generics::{apply_generics_from_base, apply_map_to_generic_typ, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::{box_if_needed, box_no_side_effects, make_enums, matches_template};
-use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_complete_inner, get_pointer_inner, is_float};
-use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of, print_tree};
+use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_complete_inner, get_pointer_inner, is_float, update_pos_from_token};
+use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of, print_tree, update_pos_from_tree_node};
 use crate::mold_tokens::OperatorType;
 use crate::to_rust::to_rust;
+use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 
 lazy_static! {
     pub static ref SPECIFIED_NUM_TYPE_RE: Regex = Regex::new(r"(?:[iu](?:8|16|32|64|128|size)|f32|f64)$").unwrap();
@@ -29,6 +30,8 @@ pub fn add_types(
     ast: &mut Vec<Ast>, pos: usize, vars: &mut VarTypes, info: &mut Info,
     parent_struct: &Option<HashMap<String, usize>>,
 ) {
+    update_pos_from_tree_node(&ast[pos]);
+
     let children = ast[pos].children.clone().unwrap_or_default();
     match &ast[pos].value {
         AstNode::Tuple => {
@@ -76,8 +79,11 @@ pub fn add_types(
                 let enm = &ast[info.enums[&enum_name.to_string()].pos];
                 let enm_module = &ast[enm.ref_children()[1]];
                 unwrap_u(&enm_module.children).len()
-            } else {
+            } else if let TypeKind::OneOf = &match_on.kind {
                 info.one_of_enums[&match_on.to_string()].options.len()
+            } else {
+                throw!("only matches on enums are currently supported (got `{}`), \
+                please use if/elif/else instead", match_on)
             };
 
             let mut covered = HashSet::new();
@@ -86,7 +92,8 @@ pub fn add_types(
                 let name_pos = ast[ast[*child].ref_children()[0]].ref_children()[0];
                 let case_str = to_rust(ast, name_pos,0, info);
                 if covered.contains(&case_str) {
-                    panic!("same case twice `{case_str}`")
+                    update_pos_from_tree_node(&ast[*child]);
+                    throw!("same case twice `{}`", case_str)
                 }
                 covered.insert(case_str);
             }
@@ -94,7 +101,10 @@ pub fn add_types(
             if !has_default && covered.len() != amount_of_options {
                 if covered.len() > amount_of_options {
                     unreachable!()
-                } else { panic!("not all cases covered") } // todo should say which arent
+                } else {
+                    update_pos_from_tree_node(&ast[pos]);
+                    throw!("not all cases covered") // todo should say which arent
+                }
             }
             vars.pop();
         }
@@ -110,7 +120,7 @@ pub fn add_types(
 
                 let option = match &ast[expression_children[0]].value {
                     AstNode::Identifier(_) => {
-                        panic!("expected property, please prefix this with the enum e.g. `Color.red`");
+                        throw!("expected property, please prefix this with the enum e.g. `Color.red`");
                         /*
                         let prop = insert_as_parent_of(ast, expression_children[0], AstNode::Property);
                         add_to_tree(prop, ast, Ast::new(AstNode::Identifier(enum_name.clone())));
@@ -125,11 +135,11 @@ pub fn add_types(
                         let left = unwrap_enum!(&ast[sides[0]].value, AstNode::Identifier(name), name, "expected identifier"); // todo this is a bad exception
                         let right = unwrap_enum!(&ast[sides[1]].value, AstNode::Identifier(name), name, "expected identifier"); // todo this is a bad exception
                         if *left != enum_name {
-                            panic!("expected `{enum_name}` but found `{left}`");
+                            throw!("expected `{}` but found `{}`", enum_name, left);
                         }
                         right
                     }
-                    _ => panic!("expected identifier but found `{}`", ast[expression_children[0]].value)
+                    _ => throw!("expected identifier but found `{}`", ast[expression_children[0]].value)
                 };
                 if option == "_" {
                     vars.push(HashMap::new());
@@ -142,7 +152,10 @@ pub fn add_types(
                 let enm_module = &ast[enm.ref_children()[1]];
                 let opt_pos = unwrap_u(&enm_module.children).iter().find(
                     |opt| matches!(&ast[**opt].value, AstNode::Identifier(idf) if idf == option)
-                ).unwrap_or_else(|| panic!("couldnt find `{option}` in enum `{enum_name}`"));
+                ).unwrap_or_else(|| {
+                    update_pos_from_tree_node(&ast[ast[expression_children[0]].ref_children()[1]]);
+                    throw!("couldn't find `{}` in enum `{}`", option, enum_name)
+                });
                 let enum_types = unwrap_u(&ast[*opt_pos].children).clone();
 
                 vars.push(HashMap::new());
@@ -151,7 +164,8 @@ pub fn add_types(
                     let par = &ast[expression_children[1]];
                     let par_children = unwrap_u(&par.children).clone();
                     if par_children.len() != enum_types.len() {
-                        panic!("incorrect amount of elements, expected `{}` but found `{}`", enum_types.len(), par_children.len())
+                        update_pos_from_tree_node(par);
+                        throw!("incorrect amount of elements, expected `{}` but found `{}`", enum_types.len(), par_children.len())
                     }
                     for (elem, typ) in par_children.iter().zip(enum_types) {
                         add_to_stack(
@@ -166,7 +180,8 @@ pub fn add_types(
                 vars.pop();
             } else if let TypeKind::OneOf = &match_type.kind {
                 if expression_children.len() == 2 {
-                    panic!("unexpected parenthesis")
+                    update_pos_from_tree_node(&ast[expression_children[1]]);
+                    throw!("unexpected parenthesis")
                 }
                 let one_of_enums_name = match_type.to_string();
                 let option_name = if let AstNode::Identifier(idf) = &ast[expression_children[0]].value {
@@ -184,13 +199,17 @@ pub fn add_types(
                     ast[expression_children[0]].value = AstNode::Identifier(String::from("_None"));
                     TypName::Static("None")
                 } else {
-                    panic!("expected identifier but found `{}`", ast[expression_children[0]].value)
+                    throw!("expected identifier but found `{}`", ast[expression_children[0]].value)
                 };
-                let property = insert_as_parent_of(ast, expression_children[0], AstNode::Property);
+                let property = insert_as_parent_of(
+                    ast, expression_children[0], AstNode::Property, ast[expression_children[0]].pos.clone()
+                );
                 //1 needs to update it cuz the tree just changed
                 expression_children = ast[children[0]].children.clone().unwrap();
 
-                add_to_tree(property, ast, Ast::new(AstNode::Identifier(one_of_enums_name.clone())));
+                add_to_tree(property, ast, Ast::new_no_pos(
+                    AstNode::Identifier(one_of_enums_name.clone())
+                ));
                 ast[property].children.as_mut().unwrap().reverse();
 
                 vars.push(HashMap::new());
@@ -206,17 +225,18 @@ pub fn add_types(
                 let typ = enm.options.iter().find(
                     |opt| opt.to_string() == option_name.get_str()
                 ).unwrap_or_else(
-                    || panic!("couldn't find `{option_name}` in `{one_of_enums_name}`")
+                    || {
+                        print_tree(ast, expression_children[0]);
+                        update_pos_from_tree_node(&ast[expression_children[0]]);
+                        throw!("couldn't find `{}` in `{}`", option_name, one_of_enums_name)
+                    }
                 );
 
                 ast[expression_children[0]].typ = Some(typ.clone());
 
                 add_types(ast, *children.last().unwrap(), vars, info, parent_struct); //1 body
                 vars.pop();
-            } else {
-                panic!("only matches on enums are currently supported (got `{}`), \
-                please use if/elif/else instead", match_type)
-            };
+            } else { unreachable!() };
         }
         AstNode::Module | AstNode::Body | AstNode::ReturnType
         | AstNode::GenericsDeclaration | AstNode::ColonParentheses
@@ -275,7 +295,7 @@ pub fn add_types(
                 } else if info.enums.contains_key(name) | info.one_of_enums.contains_key(name) {
                     TypeKind::Enum(TypName::Str(name.clone()))
                 } else {
-                    panic!("used `{name}` before assignment") //todo // 5 unreachable!
+                    throw!("used `{}` before assignment", name) //todo // 5 unreachable!
                 },
                 children: None,
             });
@@ -287,7 +307,7 @@ pub fn add_types(
                     let should_be = ast[i].typ.clone().unwrap();
                     box_if_needed(should_be, ast, children[1], info);
                     // if ast[children[1]].typ != *check_for_boxes(should_be, children[1], info, vars) {
-                    //     panic!(
+                    //     throw!(
                     //         "expected `{}` but found `{}`. variables can't change type, if you want to override use `:=`",
                     //         should_be.as_ref().unwrap(),
                     //         ast[children[1]].typ.as_ref().unwrap()
@@ -307,16 +327,15 @@ pub fn add_types(
             add_types(ast, children[1], vars, info, parent_struct);
             if ast[pos].typ.is_some() {
                 ast[children[0]].typ = ast[pos].typ.clone();
-                // panic!("\ne: {:?}\ng: {:?}", ast[pos].typ.clone().unwrap(), ast[children[1]].typ.clone().unwrap());
+                // throw!("\ne: {:?}\ng: {:?}", ast[pos].typ.clone().unwrap(), ast[children[1]].typ.clone().unwrap());
                 box_if_needed(
                     ast[pos].typ.clone().unwrap(), ast, children[1], info
                 );
-                // panic!("!{:?}", ast[children[0]].typ);
+                // throw!("!{:?}", ast[children[0]].typ);
             } else {
                 let typ = ast[children[1]].typ.clone();
                 if typ.is_none() {
-                    print_tree(ast, 0);
-                    panic!("`{}` needs a type annotation", ast[children[0]].value)
+                    throw!("`{}` needs a type annotation", ast[children[0]].value)
                 }
                 ast[children[0]].typ = typ;
             }
@@ -332,8 +351,9 @@ pub fn add_types(
             add_types(ast, children[1], vars, info, parent_struct);
             let t1 = ast[children[0]].typ.as_ref().unwrap();
             let t2 = ast[children[1]].typ.as_ref().unwrap();
+            update_pos_from_tree_node(&ast[pos]);
             if t1 != t2 {
-                panic!(
+                throw!(
                     "Can't {}",
                     match op {
                         OperatorType::Plus => format!("add `{t2}` to `{t1}`"),
@@ -349,7 +369,7 @@ pub fn add_types(
             }
             if let OperatorType::Div = op {
                 if !is_float(&t1.kind) {
-                    panic!("can't div `{}`s only `f32` or `f64`, did you mean floor div `//`?", t1)
+                    throw!("can't div `{}`s only `f32` or `f64`, did you mean floor div `//`?", t1)
                 }
             }
             ast[pos].typ = Some(t1.clone());
@@ -453,13 +473,14 @@ pub fn add_types(
                             TypeKind::Generic(GenericType::WithVal(of)) => {
                                 let children = unwrap_enum!(
                                     &typ.children, Some(c), c,
-                                    "generic type `{of}` cannot be dereferenced"
+                                    "generic type `{}` cannot be dereferenced", of
                                 );
                                 dref(&children[0])
                             }
-                            _ => panic!("type `{}` cannot be dereferenced", typ),
+                            _ => throw!("type `{}` cannot be dereferenced", typ),
                         }
                     }
+                    update_pos_from_tree_node(&ast[pos]);
                     dref(ast[children[0]].typ.as_ref().unwrap())
                 }
                 _ => ast[children[0]].typ.clone()
@@ -521,7 +542,8 @@ pub fn add_types(
             ast[pos].typ = find_index_typ(ast, info, children[0], pos);
             ast[pos].is_mut = ast[children[0]].is_mut; // todo if it doesnt need to be mut then maybe not?
             if ast[pos].typ.is_none() {
-                panic!();
+                update_pos_from_tree_node(&ast[pos]);
+                throw!("can't infer type");
             }
         }
         AstNode::Struct(name) => {
@@ -551,10 +573,12 @@ pub fn add_types(
                 &ast[children[1]].typ.as_ref().unwrap().kind,
                 TypeKind::Struct(name) if name == "bool"
             ) {
-                panic!("condition isn't bool") //todo truthy falsy
+                update_pos_from_tree_node(&ast[pos]);
+                throw!("condition isn't bool") //todo truthy falsy
             }
             if ast[children[0]].typ != ast[children[2]].typ {
-                panic!(
+                update_pos_from_tree_node(&ast[pos]);
+                throw!(
                     "`if` and `else` have incompatible types. expected `{}`, found `{}`",
                     ast[children[0]].typ.as_ref().unwrap(),
                     ast[children[2]].typ.as_ref().unwrap()
@@ -579,17 +603,18 @@ fn add_type_operator(
     let t2 = ast[children[1]].typ.as_ref().unwrap();
     let t1 = get_pointer_complete_inner(t1);
     let t2 = get_pointer_complete_inner(t2);
+    update_pos_from_tree_node(&ast[pos]);
     let t1_name = unwrap_enum!(
-        &t1.kind, TypeKind::Struct(t), t, "operator not valid for this type"
+        &t1.kind, TypeKind::Struct(t), t, "`{}` not valid for `{}`", op, t1
     );
     let t2_name = unwrap_enum!(
-        &t2.kind, TypeKind::Struct(t), t, "operator not valid for this type"
+        &t2.kind, TypeKind::Struct(t), t, "`{}` not valid for `{}`", op, t2
     );
     if *t1_name != *t2_name
         && !(*t1_name == TypName::Static("String") && *t2_name == TypName::Static("str"))
         && !matches!(op, OperatorType::In | OperatorType::NotIn)
     {
-        panic!("`{op}` not implemented for `{t1_name}` and `{t2_name}`")
+        throw!("`{}` not implemented for `{}` and `{}`", op, t1_name, t2_name)
     }
     ast[pos].typ = match op {
         OperatorType::And | OperatorType::Or | OperatorType::Bigger
@@ -621,7 +646,7 @@ fn add_type_operator(
                     &t1.kind,
                     TypeKind::Struct(name) if NUM_TYPES.contains(&name.get_str())
                 ) { unwrap_enum!(&t1.kind, TypeKind::Struct(name), name.clone()) }
-                else { panic!() }
+                else { throw!("`//` not implemented for `{}`", t1) }
             ),
             Type {
                 kind: TypeKind::GenericsMap,
@@ -632,14 +657,16 @@ fn add_type_operator(
     };
 }
 
+
 fn add_type_property(
     ast: &mut Vec<Ast>, pos: usize, vars: &mut VarTypes, info: &mut Info,
     parent_struct: &Option<HashMap<String, usize>>, children: &[usize]
 ) {
     add_types(ast, children[0], vars, info, parent_struct);
-    let left_kind = ast[children[0]].typ.clone().unwrap_or_else(||
-        panic!("{:?}", ast[children[0]].value)
-    );
+    let left_kind = ast[children[0]].typ.clone().unwrap_or_else(|| {
+        update_pos_from_tree_node(&ast[pos]);
+        throw!("{:?}", ast[children[0]].value) // todo better message
+    });
     let left_kind = get_pointer_complete_inner(&left_kind);
     match &left_kind.kind {
         TypeKind::Struct(struct_name) => {
@@ -706,7 +733,10 @@ fn add_type_property(
             }
             ast[pos].typ = get_enum_property_typ(ast, info, children, enm_name);
         }
-        _ => panic!("{:?}", left_kind)
+        _ => {
+            update_pos_from_tree_node(&ast[pos]);
+            throw!("expected `struct`, `trait` or `enum` but got `{}`", left_kind)
+        }
     }
 }
 
@@ -726,7 +756,7 @@ fn add_type_property(
 //                 let init_args = ast[ast[*func].ref_children()[1]].children.clone().unwrap_or_default();
 //                 let supplied_vec = ast[children[1]].children.clone().unwrap_or_default();
 //                 if init_args.len() != supplied_vec.len() {
-//                     panic!("expected `{}` arguments but found `{}`", init_args.len(), supplied_vec.len())
+//                     throw!("expected `{}` arguments but found `{}`", init_args.len(), supplied_vec.len())
 //                 }
 //                 for (arg, supplied) in init_args.iter().zip(supplied_vec) {
 //                     map_generic_types(
@@ -747,7 +777,7 @@ fn add_type_property(
 //                 kind: TypeKind::GenericsMap,
 //                 children: if generics_map.is_empty() {
 //                     if info.structs[name].generics.is_some() && !info.structs[name].generics.as_ref().unwrap().is_empty() {
-//                         panic!(
+//                         throw!(
 //                             "unresolved generic\\s in innit of `{name}`: `{}`",
 //                             info.structs[name].generics.as_ref().unwrap().join(", ")
 //                         )
@@ -762,7 +792,7 @@ fn add_type_property(
 //                                         TypeKind::Generic(GenericType::WithVal(name.clone())),
 //                                         generics_map.remove(name).unwrap()
 //                                     })
-//                                 } else { panic!("unresolved generic in innit `{name}`") }
+//                                 } else { throw!("unresolved generic in innit `{name}`") }
 //                             }
 //                         ).collect()
 //                     )
@@ -842,13 +872,14 @@ fn add_type_func_call(
     //1 children[1] is the args
     add_types(ast, children[1], vars, info, parent_struct);
 
+    update_pos_from_tree_node(&ast[children[0]]);
     let name = unwrap_enum!(
         &ast[children[0]].value, AstNode::Identifier(x), x.clone(), "function without identifier?"
     );
     println!("FUNC_NAME: {name}");
     let expected_input = if let Some(fnc) = info.funcs.get(&name) {
         fnc.input.clone()
-    } else { panic!("unrecognized function `{name}`") };
+    } else { throw!("unrecognized function `{}`", name) };
     ast[pos].typ = format_args_and_get_return_typ(
         expected_input, &ast[children[1]].children.clone(),
         &name, ast, children, info, vars, None, pos
@@ -868,20 +899,22 @@ fn format_args_and_get_return_typ(
         if expected_input.is_some() && !expected_input.as_ref().unwrap().is_empty() {
             let expected_args = expected_input.as_ref().unwrap();
             // if args.is_none() {
-            //     panic!("expected `{}` args but found `0`", expected_args.len())
+            //     throw!("expected `{}` args but found `0`", expected_args.len())
             // }
             let mut args = args.clone().unwrap_or_default();
             put_args_in_vec(ast, children, &mut args, expected_args, info, vars);
             add_optional_args(ast, children, &mut args, expected_args);
             if args.len() != expected_args.len() {
-                panic!(
-                    "`{func_name}` expected `{}` arguments, but got `{}`",
-                    expected_args.len(), args.len()
+                update_pos_from_tree_node(&ast[ast[children[0]].parent.unwrap()]);
+                throw!(
+                    "`{}` expected `{}` arguments, but got `{}`",
+                    func_name, expected_args.len(), args.len()
                 )
             }
             return Some(args)
         } else if args.is_some() && !args.as_ref().unwrap().is_empty() {
-            panic!("wasn't expecting any args")
+            update_pos_from_tree_node(&ast[ast[children[0]].parent.unwrap()]);
+            throw!("wasn't expecting any args")
         }
         None
     }
@@ -906,7 +939,7 @@ fn format_args_and_get_return_typ(
     //             if !is_castable(
     //                 &exp.typ, ast[*got].typ.as_ref().unwrap(), ast, info, is_built_in
     //             ) {
-    //                 panic!("expected `{}` got `{}`", exp.typ, *ast[*got].typ.as_ref().unwrap())
+    //                 throw!("expected `{}` got `{}`", exp.typ, *ast[*got].typ.as_ref().unwrap())
     //             }
     //             ast[*got].typ.clone().unwrap()
     //         }
@@ -917,7 +950,8 @@ fn format_args_and_get_return_typ(
         if let Some(vc) = &mut expected_input {
             let typ = get_pointer_complete_inner(&vc[0].typ);
             if !matches!(&typ.kind, TypeKind::Struct(name) if name == "Self") {
-                panic!("used static function as a method")
+                update_pos_from_tree_node(&ast[pos]);
+                throw!("used static function as a method")
             }
             // vc.remove(0);
 
@@ -948,7 +982,8 @@ fn format_args_and_get_return_typ(
                 |(exp, got)| {
                     let got_typ = ast[*got].typ.as_ref().unwrap().clone();
                     if !matches_template(exp.typ.clone(), &got_typ, ast, info) {
-                        panic!("expected `{}` but got `{got_typ}`", &exp.typ)
+                        update_pos_from_tree_node(&ast[pos]); // todo not sure if correct node
+                        throw!("expected `{}` but got `{}`", &exp.typ, got_typ)
                     }
                     got_typ
                 }
@@ -968,7 +1003,10 @@ fn format_args_and_get_return_typ(
                 TypeKind::Struct(name) => &info.structs[name.get_str()].generics,
                 TypeKind::Trait(name) => &info.traits[name.get_str()].generics,
                 TypeKind::Enum(name) => &info.enums[name.get_str()].generics,
-                _ => panic!()
+                _ => {
+                    update_pos_from_tree_node(&ast[ast[pos].ref_children()[0]]);
+                    throw!("expected `struct`, `trait` or `enum` but found {}", class_typ.as_ref().unwrap())
+                }
             };
             class_typ.as_mut().unwrap().children = some_vec![Type {
                 kind: TypeKind::GenericsMap,
@@ -1005,7 +1043,10 @@ fn format_args_and_get_return_typ(
                     ast, info.traits, name.get_str(), func_name
                 ).unwrap()
             },
-            _ => panic!()
+            _ => {
+                update_pos_from_tree_node(&ast[ast[pos].ref_children()[0]]);
+                throw!("expected `struct`, `trait` or `enum` but found {}", base)
+            }
         };
 
         let return_pos = ast[func_pos].ref_children()[1];
@@ -1033,7 +1074,7 @@ fn format_args_and_get_return_typ(
 pub fn is_castable(exp: &Type, got: &Type, ast: &[Ast], info: &Info, is_built_in: bool) -> bool {
     match &exp.kind {
         TypeKind::Generic(GenericType::NoVal(_)) => true,
-        TypeKind::Generic(_) => panic!("huh? (not sure why I wrote this...)"),
+        TypeKind::Generic(_) => throw!("huh? (not sure why I wrote this...)"),
         TypeKind::OneOf => {
             exp.ref_children().iter().any(|opt|
                 is_castable(opt, got, ast, info, is_built_in)
@@ -1111,7 +1152,8 @@ fn add_optional_args( //3 not optimized // todo can't use name for positional ar
             amount_of_pushed += 1;
             to_add.push(ast_len - 1 + amount_of_pushed);
         } else {
-            panic!("not all positional args supplied")
+            update_pos_from_tree_node(&ast[children[1]]);
+            throw!("not all positional args supplied")
         }
     }
     let args_children = ast[children[1]].children.as_mut().unwrap();
@@ -1154,6 +1196,7 @@ fn put_args_in_vec(
                     inner_typ
                 }),
                 is_mut: false,
+                pos: None
             }
         );
         let amount_of_arg_in_args = unwrap_u(&ast[vec_pos].children).len();
@@ -1173,34 +1216,88 @@ fn put_args_in_vec(
 pub fn get_enum_property_typ(
     ast: &mut Vec<Ast>, info: &mut Info, children: &[usize], enm_name: &TypName
 ) -> Option<Type> {
-    let generics = if let Some(enm) = info.enums.get(enm_name.get_str()) {
-        enm.generics.clone()
+    let enum_is_normal = info.enums.get(enm_name.get_str());
+    if let Some(enm) = enum_is_normal {
+        let enm_ast = &ast[enm.pos];
+        let enm_module = &ast[enm_ast.ref_children()[1]];
+        if let AstNode::Identifier(name) = &ast[children[1]].value {
+            if let Some(opt) = unwrap_u(&enm_module.children).iter().find(|&child| {
+                matches!(&ast[*child].value, AstNode::Identifier(n2) if name == n2)
+            }) {
+                if ast[*opt].children.is_some() {
+                    update_pos_from_tree_node(&ast[children[1]]);
+                    let inner_types = ast[*opt].ref_children().iter().map(|x| ast[*x].typ.as_ref().unwrap());
+                    throw!(
+                        "`{}.{}` has inner value{} supplied: `{}`",
+                        enm_name, name,
+                        if inner_types.len() == 1 { " which wasn't" } else { "s which weren't" },
+                        join(inner_types, "`, `")
+                    )
+                }
+            } else {
+                update_pos_from_tree_node(&ast[children[1]]);
+                throw!("couldn't find `{}` in enum `{}`", name, enm_name)
+            }
+        } else {
+            #[inline] fn get_name(ast: &[Ast], pos: usize) -> &String {
+                unwrap_enum!(&ast[ast[pos].ref_children()[0]].value, AstNode::Identifier(n), n)
+            }
+            unwrap_enum!(&ast[children[1]].value, AstNode::FunctionCall(_));
+            let got_types = ast[ast[children[1]].ref_children()[1]].ref_children();
+            let name = get_name(ast, children[1]);
+            if let Some(opt) = unwrap_u(&enm_module.children).iter().find(|&child| {
+                matches!(&ast[*child].value, AstNode::Identifier(n) if n == name)
+            }) {
+                //1 check that all the types are the same
+                if matches!(&ast[*opt].children, Some(chld) if chld.len() == got_types.len()) {
+                    let exp_children = ast[*opt].ref_children()
+                        .iter().map(|i| ast[*i].typ.as_ref().unwrap());
+                    let got_children = got_types.iter().map(|i| ast[*i].typ.as_ref().unwrap());
+                    if !exp_children.clone().zip(got_children.clone()).all(
+                        |(a, b)| a == b
+                    ) {
+                        update_pos_from_tree_node(&ast[children[1]]);
+                        throw!(
+                            "incorrect types given to `{}.{}`, expected `{}` but found `{}`",
+                            enm_name, name, join(exp_children, "`, `"), join(got_children, "`, `")
+                        )
+                    }
+                } else {
+                    update_pos_from_tree_node(&ast[children[1]]);
+                    throw!(
+                        "not all values supplied to `{}.{}`, expected `{}` but found `{}`",
+                        enm_name, name, unwrap_u(&ast[*opt].children).len(), got_types.len()
+                    )
+                }
+            } else {
+                update_pos_from_tree_node(&ast[children[1]]);
+                throw!("couldn't find `{}` in enum `{}`", name, enm_name)
+            }
+
+        };
+
+    } else {
+        todo!()
+        // info.one_of_enums[&match_on.to_string()].options.len()
+    }
+
+    let generics = if let Some(enm) = enum_is_normal {
+        if matches!(&enm.generics, Some(vc) if vc.is_empty()) {
+            None
+        } else { enm.generics.clone() }
     } else {
         let generics = &info.one_of_enums[enm_name.get_str()].generics;
-        if generics.is_empty() {
-            None
-        } else {
+        if generics.is_empty() { None } else {
             Some(generics.split(',').map(|x| x.to_string()).collect::<Vec<_>>())
         }
     };
     // let generics = &info.enums[enm_name.get_str()].generics;
-    let len = if let Some(g) = &generics {
-        g.len()
-    } else { 0 };
-    if len == 0 {
-        Some(typ_with_child! {
-            TypeKind::Enum(enm_name.clone()),
-            Type {
-                kind: TypeKind::GenericsMap,
-                children: None
-            }
-        })
-    } else {
+
+    if let Some(generics) = generics {
         let mut generics_map = HashMap::new();
         let args = &ast[children[1]];
         if let AstNode::FunctionCall(_) = &args.value {
             let args = &ast[unwrap_u(&args.children)[1]];
-            let generics = generics.unwrap();
             let zip = generics
                 .iter()
                 .zip(unwrap_u(&args.children).clone());
@@ -1227,6 +1324,14 @@ pub fn get_enum_property_typ(
                 )
             }
         })
+    } else {
+        Some(typ_with_child! {
+            TypeKind::Enum(enm_name.clone()),
+            Type {
+                kind: TypeKind::GenericsMap,
+                children: None
+            }
+        })
     }
 }
 
@@ -1251,12 +1356,12 @@ fn get_into_iter_return_typ(ast: &[Ast], info: &Info, iter: &Ast) -> Option<Type
             TypeKind::Struct(struct_name) => {
                 let inner_typ = get_associated_type(
                     typ, vec!["IntoIterator", "Iterator"], "Item", info
-                ).unwrap_or_else(|| panic!("`{struct_name}` doesn't implement `IntoIterator` or `Iterator`"));
+                ).unwrap_or_else(|| throw!("`{}` doesn't implement `IntoIterator` or `Iterator`", struct_name));
                 apply_generics_from_base(&Some(inner_typ), typ)
             },
             TypeKind::Trait(trait_name) => {
                 if trait_name != "IntoIterator" && trait_name != "Iterator" {
-                    panic!("expected `IntoIterator` or `Iterator` found `{trait_name}`")
+                    throw!("expected `IntoIterator` or `Iterator` found `{}`", trait_name)
                 }
                 let generic_map = &unwrap(&typ.children)[0];
                 for generic in unwrap(&generic_map.children) {
@@ -1269,7 +1374,7 @@ fn get_into_iter_return_typ(ast: &[Ast], info: &Info, iter: &Ast) -> Option<Type
                         }
                     }
                 }
-                panic!("couldn't find `Item` type in `{trait_name}`")
+                throw!("couldn't find `Item` type in `{}`", trait_name)
             },
             TypeKind::Pointer | TypeKind::MutPointer => {
                 Some(typ_with_child! {
@@ -1277,7 +1382,7 @@ fn get_into_iter_return_typ(ast: &[Ast], info: &Info, iter: &Ast) -> Option<Type
                     match_kind(ast, info, get_pointer_inner(typ)).unwrap()
                 })
             }
-            _ => panic!("kind: {:?}", typ.kind)
+            _ => throw!("kind: {:?}", typ.kind)
         }
     }
     match_kind(ast, info, iter.typ.as_ref().unwrap())
@@ -1302,9 +1407,10 @@ pub fn get_property_method_typ_and_set_args(
             ast, info.traits, &trait_name.to_string(), func_name
         )
     };
-    let func_pos = func_pos.unwrap_or_else(||
-        panic!("function `{func_name}` not found in struct `{trait_name}`")
-    );
+    let func_pos = func_pos.unwrap_or_else(|| {
+        update_pos_from_tree_node(&ast[unwrap_u(&func_call.children)[0]]);
+        throw!("function `{}` not found in struct `{}`", func_name, trait_name)
+    });
     let is_static = matches!(ast[func_pos].value, AstNode::StaticFunction(_));
     let func_children = unwrap_u(&ast[func_pos].children);
 
@@ -1353,9 +1459,10 @@ pub fn get_property_method_typ(
             ast, info.traits, &trait_name.to_string(), func_name
         )
     };
-    let func_pos = func_pos.unwrap_or_else(||
-        panic!("function `{func_name}` not found in struct `{trait_name}`")
-    );
+    let func_pos = func_pos.unwrap_or_else(|| {
+        update_pos_from_tree_node(&ast[unwrap_u(&func_call.children)[0]]);
+        throw!("function `{}` not found in struct `{}`", func_name, trait_name)
+    });
     let is_static = matches!(ast[func_pos].value, AstNode::StaticFunction(_));
     let func_children = unwrap_u(&ast[func_pos].children);
 
@@ -1416,14 +1523,20 @@ pub fn find_index_typ(ast: &[Ast], info: &mut Info, base: usize, pos: usize) -> 
             Some(Type { kind: TypeKind::Struct(struct_name), .. }) => {
                 let index_func = find_function_in_struct(
                     ast, info.structs, struct_name.get_str(), "index", pos
-                ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", struct_name));
+                ).unwrap_or_else(|| {
+                    update_pos_from_tree_node(&ast[pos]);
+                    throw!("Didn't find `index` function in `{}`", struct_name)
+                });
                 let idx_typ = &ast[unwrap_u(&ast[index_func].children)[2]].typ;
                 apply_generics_from_base(idx_typ, typ.as_ref().unwrap())
             }
             Some(Type { kind: TypeKind::Trait(trait_name), .. }) => {
                 let index_func = find_function_in_trait(
                     ast, info.traits, trait_name.get_str(), "index"
-                ).unwrap_or_else(|| panic!("Didn't find `index` function in `{}`", trait_name));
+                ).unwrap_or_else(|| {
+                    update_pos_from_tree_node(&ast[pos]);
+                    throw!("Didn't find `index` function in `{}`", trait_name)
+                });
                 let idx_typ = &ast[unwrap_u(&ast[index_func].children)[2]].typ;
                 apply_generics_from_base(idx_typ, typ.as_ref().unwrap())
             }
@@ -1452,7 +1565,10 @@ pub fn find_index_typ(ast: &[Ast], info: &mut Info, base: usize, pos: usize) -> 
                     Some(options[0].clone())
                 }
             },
-            _ => panic!("{typ:?}")
+            _ => {
+                update_pos_from_tree_node(&ast[pos]);
+                throw!("expected `struct`, `trait`, `enum` or `tuple` {:?}", typ)
+            }
         }
     }
     find_index_typ_inner(&ast[base].typ, ast, info, pos)

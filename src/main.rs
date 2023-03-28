@@ -12,12 +12,13 @@ mod copy_folder;
 
 use construct_ast::ast_structure::{Ast, join};
 use std::collections::{HashMap, HashSet};
-use std::{env, fs};
+use std::{env, fs, panic};
+use std::backtrace::Backtrace;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::fmt::{Write as w};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, exit};
 use once_cell::sync::Lazy;
 use fancy_regex::Regex as FancyRegex;
 use lazy_static::lazy_static;
@@ -27,9 +28,10 @@ use crate::construct_ast::mold_ast;
 use crate::construct_ast::mold_ast::{add_trait_to_struct, FileInfo, get_trt_strct_functions, Info, StructTypes};
 use crate::construct_ast::tree_utils::{clone_sub_tree, print_tree};
 use crate::copy_folder::{change_file_extensions, CopyFolder, delete_unused_files};
-use crate::mold_tokens::SolidToken;
+use crate::mold_tokens::{SolidToken, SolidTokenWPos};
 use crate::to_python::ToWrapVal;
 use crate::types::{Type};
+
 
 const EMPTY_STR: String = String::new();
 const RUST_IMPORTS: &str = "pub use std::{{\
@@ -51,6 +53,11 @@ static mut PARSED_FILES: Lazy<HashMap<String, FileInfo>> = Lazy::new(HashMap::ne
 static mut PARSING_FILES: Lazy<HashSet<String>> = Lazy::new(HashSet::new);
 static mut MODULE_PATH: Option<PathBuf> = None;
 static mut IMPL_TRAITS: Lazy<HashMap<ImplTraitsKey, Vec<ImplTraitsVal>>> = Lazy::new(HashMap::new);
+static mut CUR_LINE: usize = 0;
+static mut CUR_COL: usize = 0;
+static mut CUR_PATH: Vec<String> = vec![]; //1 this is a vec cuz when importing it might change this but it should change back when done
+static mut SRC_CODE: Vec<String> = vec![]; //1 this is a vec cuz when importing it might change this but it should change back when done
+static mut LINE_DIFF: Vec<usize> = vec![];
 
 lazy_static! {
     pub static ref POINTER_WITHOUT_LIFETIME: FancyRegex = FancyRegex::new(r"&(?!\s*mut)(?!\s*')").unwrap();
@@ -87,6 +94,7 @@ pub struct OneOfEnumTypes {
     needs_lifetime: bool
 }
 
+
 // 2 optimizations:
 // lto = "fat"
 // codegen-units = 1
@@ -94,6 +102,19 @@ pub struct OneOfEnumTypes {
 // todo play with boxing stuff in the enums\structs to decrease their size
 // TODO it doesnt check the types passed to built ins (i think) but it needs to for some at least
 fn main() {
+    panic::set_hook(Box::new(|info| {
+        println!("{}", panic_message::panic_info_message(info));
+        println!(
+            "\n{}",
+            Backtrace::force_capture().to_string()
+                .split('\n').skip(12).enumerate()
+                .map(|(i, x)|
+                    if i % 2 == 0 { x.trim_start().to_string() }
+                    else { format!("    {}", x.trim_start()) }
+                ).collect::<Vec<_>>()
+                .join("\n")
+        ); // TODO remove this
+    }));
     // todo remove
     unsafe {
         IS_COMPILED = true;
@@ -104,8 +125,11 @@ fn main() {
         if argument == "compile"    { unsafe { IS_COMPILED = true; } }
         else if argument == "test"  { test = true; unsafe { DONT_PRINT = true; } }
         else if argument == "noprint" { unsafe { DONT_PRINT = true; }} // todo remove this
-        else if path.is_none()      { path = Some(argument); }
-        else { panic!("unexpected argument `{argument}`") }
+        else if path.is_none()      {
+            // todo check that is valid path else panic (not throw)
+            path = Some(argument);
+        }
+        else { panic!("\x1b[1m\x1b[91munexpected argument `{}`\x1b[0m", argument) }
     }
     let path = path.unwrap_or_else(|| String::from("."));
 
@@ -133,7 +157,7 @@ fn main() {
             }
         }
     } else {
-        run_on_path(paths[8]);
+        run_on_path(paths[0]);
     }
 }
 
@@ -359,7 +383,7 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
                                 cur_file_path: &mut Default::default(),
                             };
                             // dbg!(imp_trt);
-                            // panic!();
+                            // throw!();
                             let implementation = add_trait_to_struct(
                                 stct_tree, &key.name, &stct_funcs,
                                 &imp_trt.trt_name, &trt_funcs, &imp_trt.types, &imp_trt.generics, &fake_info
@@ -385,16 +409,30 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
 fn parse_file(path: &String, one_of_enums: &mut OneOfEnums) {
     unsafe {
         if PARSING_FILES.contains(path) {
-            panic!("circular import")
+            throw!("circular import")
         }
         PARSING_FILES.insert(path.clone());
     }
 
-    let data = fs::read_to_string(path).expect("Couldn't read file");
-    let data = put_at_start(&data);
+    let orig_data = fs::read_to_string(path).expect("Couldn't read file");
+    let data = put_at_start(&orig_data);
+    unsafe {
+        SRC_CODE.push(data.clone());
+        CUR_PATH.push(path.clone());
+        LINE_DIFF.push(
+            data.chars().filter(|x| *x == '\n').count()
+                - orig_data.chars().filter(|x| *x == '\n').count()
+        );
+    }
+
+    for i in 0..150 {
+        println!("{i}: \x1b[{i}m Exception \x1b[0m ")
+    }
+    // panic2!("!");
+
     let tokens = mold_tokens::tokenize(&data);
     if unsafe { !DONT_PRINT } {
-        println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidToken)>>());
+        println!("{:?}", tokens.iter().enumerate().collect::<Vec<(usize, &SolidTokenWPos)>>());
     }
     let mut info = Info {
         funcs: &mut Default::default(),
@@ -444,6 +482,8 @@ use crate::{{ _index_mut, _index, clone, {} }};
             ).collect(),
         });
     }
+    unsafe { SRC_CODE.pop(); CUR_PATH.pop(); LINE_DIFF.pop(); }
+    // println!("{}", unsafe { SRC_CODE.last().unwrap().split('\n').nth(CUR_LINE).unwrap() });
 }
 
 
@@ -564,7 +604,7 @@ list_comprehension_macro = \"*\"{}",
 
 
 fn find_module_path(path: &String) -> PathBuf {
-    let full_path = fs::canonicalize(path).unwrap_or_else(|_| panic!("couldn't find full path `{path}`"));
+    let full_path = fs::canonicalize(path).unwrap_or_else(|_| throw!("couldn't find full path `{}`", path));
     for parent in full_path.ancestors().skip(1) {
         for path in fs::read_dir(parent).unwrap() {
             if matches!(path.unwrap().path().extension(), Some(st) if st == "mold") {
@@ -572,6 +612,6 @@ fn find_module_path(path: &String) -> PathBuf {
             }
         }
     }
-    panic!("no `.mold` file found")
+    throw!("no `.mold` file found")
 }
 

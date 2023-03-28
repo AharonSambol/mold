@@ -1,6 +1,7 @@
 use pretty_print_tree::PrettyPrintTree;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
-use crate::{IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, some_vec};
+use crate::{CUR_COL, CUR_LINE, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, some_vec};
+use crate::mold_tokens::Pos;
 use crate::types::unwrap_u;
 
 #[inline]
@@ -8,10 +9,11 @@ pub fn get_last(arr: &Option<Vec<usize>>) -> usize {
     *arr.as_ref().unwrap().last().unwrap()
 }
 
-pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNode) -> usize {
+pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNode, src_pos: Option<Pos>) -> usize {
     let index = get_last(&ast[parent].children);
     ast.insert(index, Ast {
         value,
+        pos: src_pos,
         children: some_vec![index + 1],
         parent: Some(parent),
         typ: None,
@@ -38,9 +40,10 @@ pub fn insert_as_parent_of_prev(ast: &mut Vec<Ast>, parent: usize, value: AstNod
     index
 }
 
-pub fn add_as_first_child(ast: &mut Vec<Ast>, parent: usize, value: AstNode) -> usize {
+pub fn add_as_first_child(ast: &mut Vec<Ast>, parent: usize, value: AstNode, src_pos: Option<Pos>) -> usize {
     let new_node = Ast {
         value,
+        pos: src_pos,
         children: None,
         parent: Some(parent),
         typ: None,
@@ -56,7 +59,7 @@ pub fn add_as_first_child(ast: &mut Vec<Ast>, parent: usize, value: AstNode) -> 
     pos
 }
 
-pub fn insert_as_parent_of(ast: &mut Vec<Ast>, node: usize, value: AstNode) -> usize {
+pub fn insert_as_parent_of(ast: &mut Vec<Ast>, node: usize, value: AstNode, src_pos: Option<Pos>) -> usize {
     let parent = ast[node].parent.unwrap();
     let index_in_parent = ast[parent].ref_children().iter()
         .position(|x| *x == node).unwrap();
@@ -64,15 +67,13 @@ pub fn insert_as_parent_of(ast: &mut Vec<Ast>, node: usize, value: AstNode) -> u
     
     ast.push(Ast {
         value,
+        pos: src_pos,
         children: some_vec![node],
         parent: Some(parent),
         typ: None,
         is_mut: true
     });
     ast[node].parent = Some(ast.len() - 1);
-    print_tree(ast, node);
-    print_tree(ast, ast[node].parent.unwrap());
-    // panic!("******");
     ast.len() - 1
 }
 
@@ -151,9 +152,9 @@ pub fn print_tree(ast: &[Ast], pos: usize){
         PrettyPrintTree::<(&[Ast], usize)>::new(
             Box::new(|(vc, pos)| {
                 if let Some(t) = &vc[*pos].typ {
-                    format!("{pos}. {}\n:{t}\n({:?})\n[{}]", vc[*pos].value, vc[*pos].parent, vc[*pos].is_mut)
+                    format!("{pos}. {}\n:{t}\n({:?})\n[{}] {{{:?}}}", vc[*pos].value, vc[*pos].parent, vc[*pos].is_mut, vc[*pos].pos.clone().unwrap_or(Pos::default()))
                 } else {
-                    format!("{pos}. {}\n({:?})\n[{}]", vc[*pos].value, vc[*pos].parent, vc[*pos].is_mut)
+                    format!("{pos}. {}\n({:?})\n[{}] {{{:?}}}", vc[*pos].value, vc[*pos].parent, vc[*pos].is_mut, vc[*pos].pos.clone().unwrap_or(Pos::default()))
                 }
             }),
             Box::new(|(vc, pos)| {
@@ -178,3 +179,12 @@ pub fn print_tree(ast: &[Ast], pos: usize){
     println!("{}\n", ppt.to_str(&(ast, pos)));
 }
 
+#[inline]
+pub fn update_pos_from_tree_node(node: &Ast) {
+    unsafe {
+        if let Some(pos) = &node.pos {
+            CUR_LINE = pos.start_line;
+            CUR_COL = pos.start_col;
+        }
+    }
+}

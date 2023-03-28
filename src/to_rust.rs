@@ -8,16 +8,18 @@ use crate::add_types::ast_add_types::{get_associated_type, NUM_TYPES, SPECIFIED_
 use crate::add_types::generics::apply_generics_from_base;
 use crate::add_types::utils::{get_pointer_complete_inner, get_pointer_inner, is_float};
 use crate::construct_ast::mold_ast::{Info};
-use crate::construct_ast::tree_utils::print_tree;
+use crate::construct_ast::tree_utils::{print_tree, update_pos_from_tree_node};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, implements_trait, print_type};
+use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 
 //4 probably using a string builder would be much more efficient (but less readable IMO)
 pub fn to_rust(
     ast: &[Ast], pos: usize, indentation: usize, info: &Info
 ) -> String {
-    let children = unwrap_u(&ast[pos].children);
+    update_pos_from_tree_node(&ast[pos]);
 
+    let children = unwrap_u(&ast[pos].children);
     match &ast[pos].value {
         AstNode::Body => {
             let indent = "\t".repeat(indentation);
@@ -71,7 +73,7 @@ pub fn to_rust(
                             to_rust(ast, *child, indentation + 1, info)
                         ).unwrap();
                     },
-                    _ => panic!()
+                    _ => throw!()
                 }
             }
             res
@@ -643,7 +645,6 @@ pub fn to_rust(
         AstNode::Case => {
             let parent_match = &ast[*ast[pos].parent.as_ref().unwrap()];
             let match_on = parent_match.ref_children()[0];
-            print_tree(ast, match_on);
             let match_on = get_pointer_complete_inner(ast[match_on].typ.as_ref().unwrap());
             let is_one_of = matches!(&match_on.kind, TypeKind::OneOf);
             // println!("is_one_of: {is_one_of}, {:?}", &ast[match_on].typ);
@@ -676,7 +677,7 @@ pub fn to_rust(
                 )
             }
         }
-        AstNode::Null => panic!("unexpected `None`, can only assign `None` to variable which is of `union` type"),
+        AstNode::Null => throw!("unexpected `None`, can only assign `None` to variable which is of `union` type"),
         AstNode::Tuple => {
             format!(
                 "({})",
@@ -685,7 +686,7 @@ pub fn to_rust(
                 ), ", ")
             )
         }
-        _ => panic!("Unexpected AST `{:?}`", ast[pos].value)
+        _ => throw!("Unexpected AST `{:?}`", ast[pos].value)
     }
 }
 
@@ -891,9 +892,9 @@ fn built_in_funcs(
             let parent = ast[pos_in_ast].parent.unwrap();
             let is_in_for = matches!(&ast[parent].value, AstNode::ForIter);
 
-            if args.is_empty() {
-                panic!("not enough args passed to `range` expected at least 1")
-            }
+            // if args.is_empty() {
+            //     throw!("not enough args passed to `range` expected at least 1")
+            // }
 
             let mut optional_args = vec![];
             for i in args.iter().skip(1) {
@@ -922,7 +923,7 @@ fn built_in_funcs(
                             to_rust(ast, optional_args[1], 0, info)
                         )
                     }
-                    _ => panic!("too many args passed to `range` expected <=3 found {}", args.len())
+                    _ => unreachable!()// throw!("too many args passed to `range` expected <=3 found {}", args.len())
                 },
                 if !is_in_for { ")" } else { "" }
             )
@@ -1016,10 +1017,10 @@ fn built_in_funcs(
             // let args = unwrap_u(&ast[args[0]].children);
 
             if args.len() < 2 {
-                panic!("not enough args passed to `pow` expected at least 2 (at most 3), got `{}`", args.len())
+                throw!("not enough args passed to `pow` expected at least 2 (at most 3), got `{}`", args.len())
             }
             if args.len() > 3 {
-                panic!("too many args passed to `pow` expected at most 3 (at least 2), got `{}`", args.len())
+                throw!("too many args passed to `pow` expected at most 3 (at least 2), got `{}`", args.len())
             }
             let base_typ = unwrap_enum!(
                 &ast[args[0]].typ.as_ref().unwrap().kind,
@@ -1027,7 +1028,7 @@ fn built_in_funcs(
             );
             let is_float = ["f32", "f64"].contains(&base_typ);
             // let cast_to = if is_float { base_typ } else { "u32" };
-            // panic!("{:?}", ast[args[2]].value);
+            // throw!("{:?}", ast[args[2]].value);
 
             format!(
                 "({}).{}({}{})",
@@ -1069,16 +1070,16 @@ fn built_in_funcs(
                     let arg_typ = get_pointer_inner(arg_typ);
                     if let TypeKind::Struct(name) = &arg_typ.kind {
                         if name != "String" {
-                            panic!("int() can't convert non-string with explicit base");
+                            throw!("int() can't convert non-string with explicit base");
                         }
                         return Some(format!("{{\
                         let _arg_ = {arg};\
                         let _base_ = {base};\
-                        i32::from_str_radix(_arg_, _base_ as u32).unwrap_or_else(|_| panic!(\"invalid literal for int() with base {{_base_}}: `{{_arg_}}`\"))\
+                        i32::from_str_radix(_arg_, _base_ as u32).unwrap_or_else(|_| throw!(\"invalid literal for int() with base {{_base_}}: `{{_arg_}}`\"))\
                         }}"))
                     }
                 }
-                panic!()
+                throw!()
             };
             if let TypeKind::Struct(name) = &arg_typ.kind {
                 if NUM_TYPES.contains(name.get_str()) || name == "bool" {
@@ -1090,7 +1091,7 @@ fn built_in_funcs(
                     if name == "String" {
                         return Some(format!("{{\
                         let _arg_ = {arg};\
-                        _arg_.parse::<i32>().unwrap_or_else(|_| panic!(\"invalid literal for int() with base 10: `{{_arg_}}`\"))\
+                        _arg_.parse::<i32>().unwrap_or_else(|_| throw!(\"invalid literal for int() with base 10: `{{_arg_}}`\"))\
                         }}"))
                     }
                 }

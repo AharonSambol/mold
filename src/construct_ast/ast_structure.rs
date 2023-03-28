@@ -1,4 +1,4 @@
-use crate::mold_tokens::OperatorType;
+use crate::mold_tokens::{OperatorType, Pos};
 use crate::types::{Type, TypeKind};
 use std::fmt::{Display, Formatter};
 
@@ -9,23 +9,45 @@ pub struct Ast {
     pub children: Option<Vec<usize>>,
     pub parent: Option<usize>,
     pub typ: Option<Type>,
-    pub is_mut: bool
+    pub is_mut: bool,
+    pub pos: Option<Pos>
 }
-
 impl Ast {
-    pub fn new(value: AstNode) -> Ast {
+    pub fn new(value: AstNode, pos: Pos) -> Ast {
         Self {
             value,
+            pos: Some(pos),
             typ: None,
+            children: None,
+            parent: None,
+            is_mut: true,
+        }
+    }
+    pub fn new_no_pos(value: AstNode) -> Ast {
+        Self {
+            value,
+            pos: None,
+            typ: None,
+            children: None,
+            parent: None,
+            is_mut: true,
+        }
+    }
+    pub fn new_w_typ(value: AstNode, typ: Option<Type>, pos: Pos) -> Ast {
+        Self {
+            value,
+            typ,
+            pos: Some(pos),
             children: None,
             parent: None,
             is_mut: true
         }
     }
-    pub fn new_w_typ(value: AstNode, typ: Option<Type>) -> Ast {
+    pub fn new_w_typ_no_pos(value: AstNode, typ: Option<Type>) -> Ast {
         Self {
             value,
             typ,
+            pos: None,
             children: None,
             parent: None,
             is_mut: true

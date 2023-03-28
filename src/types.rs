@@ -8,6 +8,7 @@ use crate::add_types::generics::apply_generics_from_base;
 use crate::add_types::polymorphism::escape_typ_chars;
 use crate::add_types::utils::get_pointer_complete_inner;
 use crate::construct_ast::mold_ast::{add_trait_to_struct, get_trt_strct_functions, Info, TraitFuncs};
+use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 
 pub const UNKNOWN_TYPE: Type = Type {
     kind: TypeKind::Unknown,
@@ -230,16 +231,16 @@ impl Type {
                 if let Some(vc) = &mut self.children {
                     vc.append(typ.children.as_mut().unwrap());
                 } else {
-                    panic!("adding two empty 'OneOf' types together??")
+                    throw!("adding two empty 'OneOf' types together??")
                 }
             } else if let Some(vc) = &mut self.children {
                 vc.push(typ);
-            } else { panic!("an empty 'OneOf' type?") }
+            } else { throw!("an empty 'OneOf' type?") }
             self
         } else if let TypeKind::OneOf = typ.kind {
             if let Some(vc) = &mut typ.children {
                 vc.insert(0, self)
-            } else { panic!("an empty 'OneOf' type?") }
+            } else { throw!("an empty 'OneOf' type?") }
             typ
         } else {
             Type {
@@ -567,7 +568,7 @@ fn one_of_implements_trait(typ: &Type, expected_trait: &Type, ast: &[Ast], info:
     if let Some(vc) = unsafe { IMPL_TRAITS.get_mut(&key) } {
         if let Some(trt) = vc.iter().find(|x| x.trt_name == expected_trait_name && x.generics == trt_generics) {
             if trt.types != trt_a_types {
-                panic!("cant impl same trait twice with different associated types (I dont think this should ever happen..)")
+                throw!("cant impl same trait twice with different associated types (I dont think this should ever happen..)")
             }
             return Some(first)
             // let mut children = unwrap(&trt.generics).clone();

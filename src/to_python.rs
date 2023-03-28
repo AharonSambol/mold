@@ -5,6 +5,8 @@ use regex::Regex;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u};
+use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
+use crate::construct_ast::tree_utils::update_pos_from_tree_node;
 
 lazy_static!{
     static ref NUM_TYP_RE: Regex = Regex::new(r"[uif]").unwrap();
@@ -23,6 +25,8 @@ pub enum ToWrapVal {
 pub fn to_python(
     ast: &[Ast], pos: usize, indentation: usize, add_val_wrapper: ToWrapVal
 ) -> String {
+    update_pos_from_tree_node(&ast[pos]);
+
     let children = unwrap_u(&ast[pos].children);
     match &ast[pos].value {
         AstNode::Module | AstNode::Body => {
@@ -102,7 +106,7 @@ pub fn to_python(
                             to_python(ast, *child, indentation + 1, ToWrapVal::Nothing) //1 body
                         ).unwrap();
                     },
-                    _ => panic!()
+                    _ => throw!()
                 }
             }
             res
@@ -153,9 +157,9 @@ pub fn to_python(
             }
         },
         AstNode::Identifier(name) => {
-            let name = if name == "None" { panic!() } else { name };
+            let name = if name == "None" { throw!() } else { name };
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetName | ToWrapVal::GetAsValue => name.clone(),
                 ToWrapVal::GetInnerValue =>
                     String::from(remove_unnecessary_val_creation(&format!("{}.v", name)))
@@ -165,7 +169,7 @@ pub fn to_python(
             // let c1 = format!("{}.v", to_python(ast, children[0], indentation, false));
             // let c2 = format!("{}.v", to_python(ast, children[1], indentation, false));
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => format!(
                     "value_({} {op} {})",
                     to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue),
@@ -185,7 +189,7 @@ pub fn to_python(
                         to_python(ast, children[0], indentation, ToWrapVal::GetName)
                     );
                     match add_val_wrapper {
-                        ToWrapVal::Nothing => panic!(),
+                        ToWrapVal::Nothing => throw!(),
                         ToWrapVal::GetAsValue => format!("value_({p})"),
                         ToWrapVal::GetName | ToWrapVal::GetInnerValue => p,
                     }
@@ -195,7 +199,7 @@ pub fn to_python(
                              to_python(ast, children[0], indentation, ToWrapVal::GetName)
                     );
                     match add_val_wrapper {
-                        ToWrapVal::Nothing => panic!(),
+                        ToWrapVal::Nothing => throw!(),
                         ToWrapVal::GetAsValue => format!("value_({p})"),
                         ToWrapVal::GetName | ToWrapVal::GetInnerValue => p,
                     }
@@ -205,7 +209,7 @@ pub fn to_python(
                          to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue)
                     );
                     match add_val_wrapper {
-                        ToWrapVal::Nothing => panic!(),
+                        ToWrapVal::Nothing => throw!(),
                         ToWrapVal::GetInnerValue => remove_unnecessary_val_creation(&format!("{r}.v")).to_string(),
                         ToWrapVal::GetAsValue => r,
                         ToWrapVal::GetName => r
@@ -213,7 +217,7 @@ pub fn to_python(
                 }
                 _ => {
                     match add_val_wrapper {
-                        ToWrapVal::Nothing => panic!(),
+                        ToWrapVal::Nothing => throw!(),
                         ToWrapVal::GetAsValue =>
                             format!("value_({op}{})", to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue)),
                         ToWrapVal::GetName | ToWrapVal::GetInnerValue =>
@@ -237,7 +241,7 @@ pub fn to_python(
         },
         AstNode::Index => {
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => format!(
                     "value_({}[{}])",
                     to_python(ast, children[0], indentation, ToWrapVal::GetInnerValue),
@@ -252,28 +256,28 @@ pub fn to_python(
         },
         AstNode::Number(num) => {
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => format!("value_({})", NUM_TYP_RE.split(num).next().unwrap()),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => NUM_TYP_RE.split(num).next().unwrap().to_string(),
             }
         },
         AstNode::String { val, .. } => {
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => format!("value_({val})"),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => val.clone(),
             }
         },
         AstNode::Char(chr) => {
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => format!("value_('{chr}')"),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!("'{chr}'"),
             }
         },
         AstNode::Bool(b) => {
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => String::from(if *b { "value_(True)" } else { "value_(False)" }),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => String::from(if *b { "True" } else { "False" }),
             }
@@ -283,14 +287,14 @@ pub fn to_python(
                 |child| to_python(ast, *child, indentation + 1, ToWrapVal::GetInnerValue)
             ), ", ");
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => format!("value_(built_in_list_([{elems}]))"),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!("built_in_list_([{elems}])"),
             }
         },
         AstNode::SetLiteral => {
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => {
                     let mut res = String::from("value_({");
                     for (i, child) in children.iter().enumerate() {
@@ -317,7 +321,7 @@ pub fn to_python(
         },
         AstNode::DictLiteral => {
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => {
                     let mut res = String::from("value_({");
                     for (i, child) in children.iter().enumerate() {
@@ -366,7 +370,7 @@ pub fn to_python(
             }
             write!(res, ")").unwrap();
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => format!("value_({})", res),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => res,
             }
@@ -389,7 +393,7 @@ pub fn to_python(
         }
         AstNode::Args => {
             if let ToWrapVal::GetName = add_val_wrapper {
-                panic!();
+                throw!();
             }
             if children.is_empty() {
                 return EMPTY_STR;
@@ -443,7 +447,7 @@ pub fn to_python(
             let base = to_python(ast, children[0], indentation, ToWrapVal::GetAsValue);
             if let Ast { value: AstNode::FunctionCall(_), children: Some(ch), .. } = &ast[children[1]] {
                 return match add_val_wrapper {
-                    ToWrapVal::Nothing => panic!(),
+                    ToWrapVal::Nothing => throw!(),
                     ToWrapVal::GetAsValue => format!(
                         "value_({}.getattr('{}')({}))",
                         base,
@@ -459,7 +463,7 @@ pub fn to_python(
                 }
             }
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => format!(
                     "value_({}.getattr('{}'))",
                     base,
@@ -511,7 +515,7 @@ pub fn to_python(
         //     }
         //     write!(res, ")").unwrap();
         //     match add_val_wrapper {
-        //         ToWrapVal::Nothing => panic!(),
+        //         ToWrapVal::Nothing => throw!(),
         //         ToWrapVal::GetAsValue => format!("value_({res})"),
         //         ToWrapVal::GetName | ToWrapVal::GetInnerValue => res,
         //     }
@@ -725,12 +729,12 @@ pub fn to_python(
                 |child| to_python(ast, *child, indentation, ToWrapVal::GetInnerValue)
             ), ", ");
             match add_val_wrapper {
-                ToWrapVal::Nothing => panic!(),
+                ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => format!("value_(({elems}))"),
                 ToWrapVal::GetName | ToWrapVal::GetInnerValue => format!("({elems})"),
             }
         }
-        _ => panic!("Unexpected AST {:?}", ast[pos].value)
+        _ => throw!("Unexpected AST {:?}", ast[pos].value)
     }
 }
 
@@ -766,7 +770,7 @@ fn add_value_to_named_args(ast: &[Ast], children: &[usize]) -> String {
 
 fn remove_unnecessary_val_creation(st: &str) -> &str {
     if st.starts_with("value_(") && st.ends_with(").v") {
-        panic!("just checking if this is ever useful, if so- remove this panic");
+        throw!("just checking if this is ever useful, if so- remove this panic");
         // let end = st.len() - ").v".len();
         // return &st["value_(".len()..end]
     }

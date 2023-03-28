@@ -1,5 +1,7 @@
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::construct_ast::mold_ast::{VarTypes, StructTypes, TraitTypes};
+use crate::{CUR_COL, CUR_LINE};
+use crate::mold_tokens::{Pos, SolidToken, SolidTokenWPos};
 use crate::types::{GenericType, Type, TypeKind, unwrap_u};
 
 pub fn find_function_in_struct(
@@ -89,6 +91,7 @@ pub fn try_get_pointer_inner(mut typ: &Type) -> &Type {
     typ
 }
 
+#[inline]
 pub fn get_pointer_inner(typ: &Type) -> &Type {
     &typ.ref_children()[0].ref_children()[0]
 }
@@ -96,4 +99,20 @@ pub fn get_pointer_inner(typ: &Type) -> &Type {
 #[inline]
 pub fn is_float(typ: &TypeKind) -> bool {
     matches!(typ, TypeKind::Struct(name) if name == "f32" || name == "f64")
+}
+
+#[inline]
+pub fn add_new_line(toks: &mut Vec<SolidTokenWPos>) {
+    toks.push(SolidTokenWPos {
+        tok: SolidToken::NewLine,
+        pos: Pos::default()
+    });
+}
+
+#[inline]
+pub fn update_pos_from_token(tok: &SolidTokenWPos) {
+    unsafe {
+        CUR_LINE = tok.pos.start_line;
+        CUR_COL = tok.pos.start_col;
+    }
 }
