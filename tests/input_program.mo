@@ -43,11 +43,11 @@ enum E2:
     A
     B
 def fu(v: List[int]):
-    a = E1.A(1, False)
+    a: int | bool = 1
     match a:
-        case E1.A(a, b):
+        case int:
             pass
-        case E1.B:
+        case bool as b:
             pass
 
 def ff(a: bool):

@@ -118,7 +118,7 @@ fn main() {
     }));
     // todo remove
     unsafe {
-        // IS_COMPILED = true;
+        IS_COMPILED = true;
     }
     let mut test = false;
     let mut path = None;
@@ -146,7 +146,7 @@ fn main() {
         /*1     8*/ "tests/unions.mo",
         /*1     9*/ "tests/tictactoe.mo",
     ];
-    if test || true {
+    if test {
         for p in paths {
             println!("\x1b[107m\x1b[1m\x1b[94m ################### {p} ################### \x1b[0m");
             run_on_path(p);
