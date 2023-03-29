@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::construct_ast::mold_ast::{VarTypes, StructTypes, TraitTypes};
 use crate::{CUR_COL, CUR_LINE};
@@ -115,4 +116,21 @@ pub fn update_pos_from_token(tok: &SolidTokenWPos) {
         CUR_LINE = tok.pos.start_line;
         CUR_COL = tok.pos.start_col;
     }
+}
+
+
+// 2 probably a bit faster if for iters of &str of String didnt do this unnecessary map
+#[inline]
+pub fn join<T: Display, I: Iterator<Item=T>>(lst: I, sep: &str) -> String {
+    lst.map(|x| x.to_string())
+        .collect::<Vec<String>>()
+        .join(sep)
+}
+
+#[inline]
+pub fn join_or<T: Display, I: Iterator<Item=T>>(lst: I) -> String {
+    let mut vc = lst.map(|x| x.to_string())
+        .collect::<Vec<String>>();
+    let last = vc.pop().unwrap();
+    format!("{}` or `{last}", vc.join("`, `"))
 }

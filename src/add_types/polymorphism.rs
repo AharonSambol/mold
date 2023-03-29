@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use crate::construct_ast::ast_structure::{Ast, AstNode, join};
+use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::{typ_with_child, unwrap_enum, some_vec, EMPTY_STR, OneOfEnums, OneOfEnumTypes, IMPL_TRAITS, ImplTraitsKey, get_traits, MUT_POINTER_WITHOUT_LIFETIME, POINTER_WITHOUT_LIFETIME};
 use crate::add_types::ast_add_types::{find_index_typ, get_enum_property_typ, get_property_idf_typ, get_property_method_typ, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::{get_function_return_type};
-use crate::add_types::utils::{get_from_stack, get_pointer_complete_inner, get_pointer_inner};
+use crate::add_types::utils::{get_from_stack, get_pointer_complete_inner, get_pointer_inner, join, join_or};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::construct_ast::tree_utils::{add_as_first_child, add_to_tree, insert_as_parent_of, insert_as_parent_of_prev, print_tree, update_pos_from_tree_node};
 use crate::mold_tokens::OperatorType;
@@ -347,7 +347,7 @@ fn check_if_need_box(
             }
             Err(format!(
                 "expected: `{}` but found `{}`",
-                join(expected.ref_children().iter(), "` or `"), // todo join all with `,` and only the last one with `or`
+                join_or(expected.ref_children().iter()),
                 got_typ
             ))
         }

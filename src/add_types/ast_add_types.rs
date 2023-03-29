@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use crate::construct_ast::ast_structure::{Ast, AstNode, join, Param};
+use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
 use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, implements_trait, print_type, clean_type, print_type_b};
 use lazy_static::lazy_static;
@@ -8,7 +8,7 @@ use regex::Regex;
 use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS, IMPL_TRAITS, ImplTraitsKey, get_traits};
 use crate::add_types::generics::{apply_generics_from_base, apply_map_to_generic_typ, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::{box_if_needed, box_no_side_effects, make_enums, matches_template};
-use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_complete_inner, get_pointer_inner, is_float, update_pos_from_token};
+use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_complete_inner, get_pointer_inner, is_float, join, join_or, update_pos_from_token};
 use crate::construct_ast::tree_utils::{add_to_tree, insert_as_parent_of, print_tree, update_pos_from_tree_node};
 use crate::mold_tokens::OperatorType;
 use crate::to_rust::to_rust;
@@ -112,11 +112,15 @@ pub fn add_types(
             let parent_match = &ast[*ast[pos].parent.as_ref().unwrap()];
             let match_on = parent_match.ref_children()[0];
             let match_type = ast[match_on].typ.as_ref().unwrap();
-            let match_type = get_pointer_complete_inner(match_type);
+            let match_type = get_pointer_complete_inner(match_type).clone();
             let mut expression_children = ast[children[0]].children.clone().unwrap();
-
-            if let TypeKind::Enum(enum_name) = &match_type.kind {
-                let enum_name = enum_name.to_string();
+            if let TypeKind::Enum(enum_name_temp) = &match_type.kind {
+                let enum_name = enum_name_temp.to_string();
+                is_enum_option_valid(
+                    ast, info, ast[expression_children[0]].ref_children()[1],
+                    if expression_children.len() == 2 { Some(expression_children[1]) } else { None },
+                    enum_name_temp, true
+                );
 
                 let option = match &ast[expression_children[0]].value {
                     AstNode::Identifier(_) => {
@@ -876,7 +880,6 @@ fn add_type_func_call(
     let name = unwrap_enum!(
         &ast[children[0]].value, AstNode::Identifier(x), x.clone(), "function without identifier?"
     );
-    println!("FUNC_NAME: {name}");
     let expected_input = if let Some(fnc) = info.funcs.get(&name) {
         fnc.input.clone()
     } else { throw!("unrecognized function `{}`", name) };
@@ -1216,72 +1219,22 @@ fn put_args_in_vec(
 pub fn get_enum_property_typ(
     ast: &mut Vec<Ast>, info: &mut Info, children: &[usize], enm_name: &TypName
 ) -> Option<Type> {
-    let enum_is_normal = info.enums.get(enm_name.get_str());
-    if let Some(enm) = enum_is_normal {
-        let enm_ast = &ast[enm.pos];
-        let enm_module = &ast[enm_ast.ref_children()[1]];
-        if let AstNode::Identifier(name) = &ast[children[1]].value {
-            if let Some(opt) = unwrap_u(&enm_module.children).iter().find(|&child| {
-                matches!(&ast[*child].value, AstNode::Identifier(n2) if name == n2)
-            }) {
-                if ast[*opt].children.is_some() {
-                    update_pos_from_tree_node(&ast[children[1]]);
-                    let inner_types = ast[*opt].ref_children().iter().map(|x| ast[*x].typ.as_ref().unwrap());
-                    throw!(
-                        "`{}.{}` has inner value{} supplied: `{}`",
-                        enm_name, name,
-                        if inner_types.len() == 1 { " which wasn't" } else { "s which weren't" },
-                        join(inner_types, "`, `")
-                    )
-                }
-            } else {
-                update_pos_from_tree_node(&ast[children[1]]);
-                throw!("couldn't find `{}` in enum `{}`", name, enm_name)
-            }
-        } else {
-            #[inline] fn get_name(ast: &[Ast], pos: usize) -> &String {
-                unwrap_enum!(&ast[ast[pos].ref_children()[0]].value, AstNode::Identifier(n), n)
-            }
-            unwrap_enum!(&ast[children[1]].value, AstNode::FunctionCall(_));
-            let got_types = ast[ast[children[1]].ref_children()[1]].ref_children();
-            let name = get_name(ast, children[1]);
-            if let Some(opt) = unwrap_u(&enm_module.children).iter().find(|&child| {
-                matches!(&ast[*child].value, AstNode::Identifier(n) if n == name)
-            }) {
-                //1 check that all the types are the same
-                if matches!(&ast[*opt].children, Some(chld) if chld.len() == got_types.len()) {
-                    let exp_children = ast[*opt].ref_children()
-                        .iter().map(|i| ast[*i].typ.as_ref().unwrap());
-                    let got_children = got_types.iter().map(|i| ast[*i].typ.as_ref().unwrap());
-                    if !exp_children.clone().zip(got_children.clone()).all(
-                        |(a, b)| a == b
-                    ) {
-                        update_pos_from_tree_node(&ast[children[1]]);
-                        throw!(
-                            "incorrect types given to `{}.{}`, expected `{}` but found `{}`",
-                            enm_name, name, join(exp_children, "`, `"), join(got_children, "`, `")
-                        )
-                    }
-                } else {
-                    update_pos_from_tree_node(&ast[children[1]]);
-                    throw!(
-                        "not all values supplied to `{}.{}`, expected `{}` but found `{}`",
-                        enm_name, name, unwrap_u(&ast[*opt].children).len(), got_types.len()
-                    )
-                }
-            } else {
-                update_pos_from_tree_node(&ast[children[1]]);
-                throw!("couldn't find `{}` in enum `{}`", name, enm_name)
-            }
-
-        };
-
+    if let AstNode::FunctionCall(_) = &ast[children[1]].value {
+        let children = ast[children[1]].ref_children();
+        is_enum_option_valid(
+            ast, info, children[0],
+            if children.len() == 2 { Some(children[1]) } else { None },
+            enm_name, false
+        );
     } else {
-        todo!()
-        // info.one_of_enums[&match_on.to_string()].options.len()
+        is_enum_option_valid(
+            ast, info, children[1],
+            if ast[children[1]].children.is_some() { Some(children[1]) } else { None },
+            enm_name, false
+        );
     }
 
-    let generics = if let Some(enm) = enum_is_normal {
+    let generics = if let Some(enm) = info.enums.get(enm_name.get_str()) {
         if matches!(&enm.generics, Some(vc) if vc.is_empty()) {
             None
         } else { enm.generics.clone() }
@@ -1332,6 +1285,162 @@ pub fn get_enum_property_typ(
                 children: None
             }
         })
+    }
+}
+
+fn is_enum_option_valid(ast: &mut Vec<Ast>, info: &mut Info, variant: usize, parentheses: Option<usize>, enm_name: &TypName, ignore_types: bool) {
+    let variant_name = unwrap_enum!(&ast[variant].value, AstNode::Identifier(n), n);
+
+    if let Some(enm) = info.enums.get(enm_name.get_str()) {
+        let enm_ast = &ast[enm.pos];
+        let enm_module = &ast[enm_ast.ref_children()[1]];
+
+        if let Some(parentheses) = parentheses {
+            let got_types = ast[parentheses].ref_children();
+            if let Some(opt) = unwrap_u(&enm_module.children).iter().find(|&child| {
+                matches!(&ast[*child].value, AstNode::Identifier(n) if n == variant_name)
+            }) {
+                //1 check that all the types are the same
+                if matches!(&ast[*opt].children, Some(chld) if chld.len() == got_types.len()) {
+                    if ignore_types { return; }
+                    let exp_children = ast[*opt].ref_children()
+                        .iter().map(|i| ast[*i].typ.clone().unwrap())
+                        .collect::<Vec<_>>();
+                    let got_children = got_types
+                        .iter().map(|i| ast[*i].typ.clone().unwrap())
+                        .collect::<Vec<_>>();
+                    let variant_name = variant_name.clone();
+                    if !exp_children.iter().zip(got_children.iter()).all(
+                        |(exp, got)| matches_template(exp.clone(), got, ast, info)
+                    ) {
+                        update_pos_from_tree_node(&ast[parentheses]);
+                        throw!(
+                            "incorrect types given to `{}.{}`, expected `{}` but found `{}`",
+                            enm_name, variant_name,
+                            join(exp_children.iter(), "`, `"), join(got_children.iter(), "`, `")
+                        )
+                    }
+                } else {
+                    update_pos_from_tree_node(&ast[parentheses]);
+                    if matches!(&ast[*opt].children, Some(chld) if chld.len() > got_types.len()) {
+                        throw!(
+                            "not all values supplied to `{}.{}`, expected `{}` but found `{}`",
+                            enm_name, variant_name, unwrap_u(&ast[*opt].children).len(), got_types.len()
+                        )
+                    } else {
+                        throw!(
+                            "too many values supplied to `{}.{}`, expected `{}` but found `{}`",
+                            enm_name, variant_name, unwrap_u(&ast[*opt].children).len(), got_types.len()
+                        )
+                    }
+                }
+            } else {
+                update_pos_from_tree_node(&ast[variant]);
+                throw!("couldn't find `{}` in enum `{}`", variant_name, enm_name)
+            }
+        } else if let Some(opt) = unwrap_u(&enm_module.children).iter().find(|&child| {
+            matches!(&ast[*child].value, AstNode::Identifier(n2) if variant_name == n2)
+        }) {
+            if ast[*opt].children.is_some() {
+                update_pos_from_tree_node(&ast[variant]);
+                let inner_types = ast[*opt].ref_children().iter()
+                    .map(|x| ast[*x].typ.as_ref().unwrap());
+                throw!(
+                    "`{}.{}` has inner value{} supplied: `{}`",
+                    enm_name, variant_name,
+                    if inner_types.len() == 1 { " which wasn't" } else { "s which weren't" },
+                    join(inner_types, "`, `")
+                )
+            }
+        } else {
+            update_pos_from_tree_node(&ast[variant]);
+            throw!("couldn't find `{}` in enum `{}`", variant_name, enm_name)
+        }
+    } else {
+        let got_opt = variant_name.strip_prefix('_').unwrap();
+        let enm_options = &info.one_of_enums[enm_name.get_str()].options;
+        if !enm_options.iter().any(
+            |exp| exp.to_string() == got_opt
+        ){
+            throw!("expected `{}` but got `{}`", join_or(enm_options.iter()), got_opt);
+        }
+    }
+}
+fn is_enum_option_valid____out_of_service(ast: &mut Vec<Ast>, info: &mut Info, children: &[usize], enm_name: &TypName) {
+    if let Some(enm) = info.enums.get(enm_name.get_str()) {
+        let enm_ast = &ast[enm.pos];
+        let enm_module = &ast[enm_ast.ref_children()[1]];
+        match &ast[children[1]].value {
+            AstNode::Identifier(name) => {
+                if let Some(opt) = unwrap_u(&enm_module.children).iter().find(|&child| {
+                    matches!(&ast[*child].value, AstNode::Identifier(n2) if name == n2)
+                }) {
+                    if ast[*opt].children.is_some() {
+                        update_pos_from_tree_node(&ast[children[1]]);
+                        let inner_types = ast[*opt].ref_children().iter()
+                            .map(|x| ast[*x].typ.as_ref().unwrap());
+                        throw!(
+                        "`{}.{}` has inner value{} supplied: `{}`",
+                        enm_name, name,
+                        if inner_types.len() == 1 { " which wasn't" } else { "s which weren't" },
+                        join(inner_types, "`, `")
+                    )
+                    }
+                } else {
+                    update_pos_from_tree_node(&ast[children[1]]);
+                    throw!("couldn't find `{}` in enum `{}`", name, enm_name)
+                }
+            }
+            AstNode::FunctionCall(_) => {
+                #[inline]
+                fn get_name(ast: &[Ast], pos: usize) -> &String {
+                    unwrap_enum!(&ast[ast[pos].ref_children()[0]].value, AstNode::Identifier(n), n)
+                }
+                let got_types = ast[ast[children[1]].ref_children()[1]].ref_children();
+                let name = get_name(ast, children[1]).clone();
+                if let Some(opt) = unwrap_u(&enm_module.children).iter().find(|&child| {
+                    matches!(&ast[*child].value, AstNode::Identifier(n) if *n == name)
+                }) {
+                    //1 check that all the types are the same
+                    if matches!(&ast[*opt].children, Some(chld) if chld.len() == got_types.len()) {
+                        let exp_children = ast[*opt].ref_children()
+                            .iter().map(|i| ast[*i].typ.clone().unwrap())
+                            .collect::<Vec<_>>();
+                        let got_children = got_types
+                            .iter().map(|i| ast[*i].typ.clone().unwrap())
+                            .collect::<Vec<_>>();
+                        if !exp_children.iter().zip(got_children.iter()).all(
+                            |(exp, got)| matches_template(exp.clone(), got, ast, info)
+                        ) {
+                            update_pos_from_tree_node(&ast[children[1]]);
+                            throw!(
+                            "incorrect types given to `{}.{}`, expected `{}` but found `{}`",
+                            enm_name, name, join(exp_children.iter(), "`, `"), join(got_children.iter(), "`, `")
+                        )
+                        }
+                    } else {
+                        update_pos_from_tree_node(&ast[children[1]]);
+                        throw!(
+                        "not all values supplied to `{}.{}`, expected `{}` but found `{}`",
+                        enm_name, name, unwrap_u(&ast[*opt].children).len(), got_types.len()
+                    )
+                    }
+                } else {
+                    update_pos_from_tree_node(&ast[children[1]]);
+                    throw!("couldn't find `{}` in enum `{}`", name, enm_name)
+                }
+            }
+            _ => unreachable!()
+        }
+    } else {
+        let got_opt = unwrap_enum!(&ast[children[1]].value, AstNode::Identifier(name), name);
+        let got_opt = got_opt.strip_prefix('_').unwrap();
+        let enm_options = &info.one_of_enums[enm_name.get_str()].options;
+        if !enm_options.iter().any(
+            |exp| exp.to_string() == got_opt
+        ){
+            throw!("expected `{}` but got `{}`", join_or(enm_options.iter()), got_opt);
+        }
     }
 }
 

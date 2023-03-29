@@ -254,14 +254,6 @@ impl Display for AstNode {
     }
 }
 
-// 2 probably a bit faster if for iters of &str of String didnt do this unnecessary map
-#[inline]
-pub fn join<T: Display, I: Iterator<Item=T>>(lst: I, sep: &str) -> String {
-    lst.map(|x| x.to_string())
-        .collect::<Vec<String>>()
-        .join(sep)
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     pub typ: Type,

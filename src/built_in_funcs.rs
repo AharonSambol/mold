@@ -1,4 +1,3 @@
-use crate::construct_ast::ast_structure::join;
 use std::fmt::Write;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, make_primitive};
 

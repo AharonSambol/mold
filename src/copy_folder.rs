@@ -3,14 +3,15 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use crate::construct_ast::ast_structure::join;
 use crate::{IS_COMPILED, PARSED_FILES};
+use crate::add_types::utils::join;
 
 pub struct CopyFolder {
     pub temp_path: String,
     pub module_path: String,
 }
 impl Drop for CopyFolder {
+    // TODO if it exits badly this wont happen which is BAD (rn)
     fn drop(&mut self) {
         if unsafe { IS_COMPILED } {
             /*1 delete_dir */ Command::new("rm")

@@ -1,12 +1,10 @@
 use std::collections::HashMap;
-use pretty_print_tree::Color;
-use crate::add_types::ast_add_types::is_castable;
-use crate::add_types::polymorphism::{box_no_side_effects, can_soft_cast, matches_template, try_box_no_side_effects};
-use crate::add_types::utils::{get_pointer_complete_inner};
-use crate::construct_ast::ast_structure::{Ast, join, Param};
-use crate::construct_ast::mold_ast::{Info, VarTypes};
-use crate::{IMPL_TRAITS, ImplTraitsKey};
-use crate::types::{GenericType, implements_trait, print_type, print_type_b, Type, TypeKind, unwrap};
+use crate::add_types::polymorphism::{box_no_side_effects, try_box_no_side_effects};
+use crate::add_types::utils::{get_pointer_complete_inner, join, join_or};
+use crate::construct_ast::ast_structure::{Ast, Param};
+use crate::construct_ast::mold_ast::{Info};
+use crate::{IMPL_TRAITS};
+use crate::types::{GenericType, print_type, Type, TypeKind, unwrap};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 
 //2 only generics whose children are also T
@@ -22,10 +20,10 @@ pub fn get_function_return_type(
         let inputs = inputs.as_ref().unwrap();
         let mut hm = HashMap::new();
         for (ex_ipt, ipt) in expected_inputs.iter().zip(inputs) {
-            println!("EXP:");
-            print_type(&Some(ex_ipt.typ.clone()));
-            println!("IPT:");
-            print_type(&Some(ipt.clone()));
+            // println!("EXP:");
+            // print_type(&Some(ex_ipt.typ.clone()));
+            // println!("IPT:");
+            // print_type(&Some(ipt.clone()));
 
             map_generic_types(&ex_ipt.typ, ipt, &mut hm, ast, info);
         }
@@ -63,9 +61,10 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, 
                 return;
             }
         }
+
         throw!(
             "expected: `{}` but found `{}`",
-            join(template.ref_children().iter(), "` or `"), // todo join all with `,` and only the last one with `or`
+            join_or(template.ref_children().iter()),
             got
         );
     }

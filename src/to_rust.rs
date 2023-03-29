@@ -1,12 +1,12 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use crate::construct_ast::ast_structure::{Ast, AstNode, join};
+use crate::construct_ast::ast_structure::{Ast, AstNode};
 use std::fmt::Write;
 use std::iter::zip;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, typ_with_child, unwrap_enum, some_vec};
 use crate::add_types::ast_add_types::{get_associated_type, NUM_TYPES, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::apply_generics_from_base;
-use crate::add_types::utils::{get_pointer_complete_inner, get_pointer_inner, is_float};
+use crate::add_types::utils::{get_pointer_complete_inner, get_pointer_inner, is_float, join};
 use crate::construct_ast::mold_ast::{Info};
 use crate::construct_ast::tree_utils::{print_tree, update_pos_from_tree_node};
 use crate::mold_tokens::OperatorType;
@@ -1075,7 +1075,7 @@ fn built_in_funcs(
                         return Some(format!("{{\
                         let _arg_ = {arg};\
                         let _base_ = {base};\
-                        i32::from_str_radix(_arg_, _base_ as u32).unwrap_or_else(|_| throw!(\"invalid literal for int() with base {{_base_}}: `{{_arg_}}`\"))\
+                        i32::from_str_radix(_arg_, _base_ as u32).unwrap_or_else(|_| panic!(\"invalid literal for int() with base {{_base_}}: `{{_arg_}}`\"))\
                         }}"))
                     }
                 }
@@ -1091,7 +1091,7 @@ fn built_in_funcs(
                     if name == "String" {
                         return Some(format!("{{\
                         let _arg_ = {arg};\
-                        _arg_.parse::<i32>().unwrap_or_else(|_| throw!(\"invalid literal for int() with base 10: `{{_arg_}}`\"))\
+                        _arg_.parse::<i32>().unwrap_or_else(|_| panic!(\"invalid literal for int() with base 10: `{{_arg_}}`\"))\
                         }}"))
                     }
                 }

@@ -2,11 +2,11 @@ use std::collections::{HashMap};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use pretty_print_tree::{Color, PrettyPrintTree};
-use crate::construct_ast::ast_structure::{Ast, join, Param};
+use crate::construct_ast::ast_structure::{Ast, Param};
 use crate::{add_trait, EMPTY_STR, IMPL_TRAITS, Implementation, ImplTraitsKey, ImplTraitsVal, typ_with_child, some_vec, unwrap_enum};
 use crate::add_types::generics::apply_generics_from_base;
 use crate::add_types::polymorphism::escape_typ_chars;
-use crate::add_types::utils::get_pointer_complete_inner;
+use crate::add_types::utils::{get_pointer_complete_inner, join};
 use crate::construct_ast::mold_ast::{add_trait_to_struct, get_trt_strct_functions, Info, TraitFuncs};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 

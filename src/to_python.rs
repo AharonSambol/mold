@@ -1,4 +1,4 @@
-use crate::construct_ast::ast_structure::{Ast, AstNode, join};
+use crate::construct_ast::ast_structure::{Ast, AstNode};
 use std::fmt::Write;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -6,6 +6,7 @@ use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, unwrap_enum};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
+use crate::add_types::utils::join;
 use crate::construct_ast::tree_utils::update_pos_from_tree_node;
 
 lazy_static!{

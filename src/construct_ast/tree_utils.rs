@@ -152,9 +152,9 @@ pub fn print_tree(ast: &[Ast], pos: usize){
         PrettyPrintTree::<(&[Ast], usize)>::new(
             Box::new(|(vc, pos)| {
                 if let Some(t) = &vc[*pos].typ {
-                    format!("{pos}. {}\n:{t}\n({:?})\n[{}] {{{:?}}}", vc[*pos].value, vc[*pos].parent, vc[*pos].is_mut, vc[*pos].pos.clone().unwrap_or(Pos::default()))
+                    format!("{pos}. {}\n:{t}\n({:?})\n[{}] {{{:?}}}", vc[*pos].value, vc[*pos].parent, vc[*pos].is_mut, vc[*pos].pos.clone().unwrap_or_default())
                 } else {
-                    format!("{pos}. {}\n({:?})\n[{}] {{{:?}}}", vc[*pos].value, vc[*pos].parent, vc[*pos].is_mut, vc[*pos].pos.clone().unwrap_or(Pos::default()))
+                    format!("{pos}. {}\n({:?})\n[{}] {{{:?}}}", vc[*pos].value, vc[*pos].parent, vc[*pos].is_mut, vc[*pos].pos.clone().unwrap_or_default())
                 }
             }),
             Box::new(|(vc, pos)| {

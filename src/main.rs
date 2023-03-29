@@ -10,7 +10,7 @@ mod macros;
 mod add_types;
 mod copy_folder;
 
-use construct_ast::ast_structure::{Ast, join};
+use construct_ast::ast_structure::{Ast};
 use std::collections::{HashMap, HashSet};
 use std::{env, fs, panic};
 use std::backtrace::Backtrace;
@@ -23,6 +23,7 @@ use once_cell::sync::Lazy;
 use fancy_regex::Regex as FancyRegex;
 use lazy_static::lazy_static;
 use crate::add_types::polymorphism::escape_typ_chars;
+use crate::add_types::utils::join;
 use crate::built_in_funcs::put_at_start;
 use crate::construct_ast::mold_ast;
 use crate::construct_ast::mold_ast::{add_trait_to_struct, FileInfo, get_trt_strct_functions, Info, StructTypes};
@@ -117,7 +118,7 @@ fn main() {
     }));
     // todo remove
     unsafe {
-        IS_COMPILED = true;
+        // IS_COMPILED = true;
     }
     let mut test = false;
     let mut path = None;
@@ -145,7 +146,7 @@ fn main() {
         /*1     8*/ "tests/unions.mo",
         /*1     9*/ "tests/tictactoe.mo",
     ];
-    if test {
+    if test || true {
         for p in paths {
             println!("\x1b[107m\x1b[1m\x1b[94m ################### {p} ################### \x1b[0m");
             run_on_path(p);
@@ -424,11 +425,6 @@ fn parse_file(path: &String, one_of_enums: &mut OneOfEnums) {
                 - orig_data.chars().filter(|x| *x == '\n').count()
         );
     }
-
-    for i in 0..150 {
-        println!("{i}: \x1b[{i}m Exception \x1b[0m ")
-    }
-    // panic2!("!");
 
     let tokens = mold_tokens::tokenize(&data);
     if unsafe { !DONT_PRINT } {

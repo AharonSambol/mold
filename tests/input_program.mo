@@ -45,7 +45,7 @@ enum E2:
 def fu(v: List[int]):
     a = E1.A(1, False)
     match a:
-        case E1.A:
+        case E1.A(a, b):
             pass
         case E1.B:
             pass
