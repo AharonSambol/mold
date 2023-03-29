@@ -15,7 +15,7 @@ pub const UNKNOWN_TYPE: Type = Type {
     children: None
 };
 const EMPTY_PARAM: Param = Param {
-    typ: UNKNOWN_TYPE, name: EMPTY_STR, is_mut: false, is_args: false, is_kwargs: false, pos: usize::MAX
+    typ: UNKNOWN_TYPE, name: EMPTY_STR, is_mut: false, is_args: false, is_kwargs: false, default_val_pos: None
 };
 pub const STR_TYPE: TypeKind = TypeKind::Struct(TypName::Static("str"));
 pub const MUT_STR_TYPE: TypeKind = TypeKind::Struct(TypName::Static("String"));
@@ -409,7 +409,6 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
         return one_of_implements_trait(typ, expected_trait, ast, info, expected_trait_name)
     }
 
-    // TODO this probably needs a bunch more work  D:
     match &typ.kind {
         TypeKind::Trait(name) => {
             if name != expected_trait_name {

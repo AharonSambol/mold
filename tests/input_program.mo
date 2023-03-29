@@ -26,7 +26,6 @@
 #         return 1
 #
 # type i = int
-
 # type IList = List[i]
 
 
@@ -36,34 +35,14 @@ struct St[T, G, I]:
         self.t = t
         self.g = g
 
-enum E1:
-    A(int, bool)
-    B
-enum E2:
-    A
-    B
-def fu(v: List[int]):
-    a: int | bool = 1
-    match a:
-        case int:
-            pass
-        case bool as b:
-            pass
-
-def ff(a: bool):
-    pass
 def main():
     # TODO it thinks this is ok (default args?) a = St(1)
     # TODO print(1 + 5 $ 6666) should have an error
-    # TODO error when not put () on enum in case e.g. E.A(x)
-    xa = E1.A(1, False)
-    a = St(1, False, "wow")
-    x = 21
-    if x > 10:
-        x = 0
-    else:
-        b = 2
+    # TODO max(iter([1]))
+    a = St(1)
     print(1 + 5 $ 6666)
+
+
 #{
 
 

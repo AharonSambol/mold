@@ -39,13 +39,10 @@ enum Token {
     Tab, NewLine
 }
 
-// TODO which file too...
 #[derive(Clone, Default)]
 pub struct Pos {
     pub start_line: usize,
-    // pub end_line: usize,
     pub start_col: usize,
-    // pub end_col: usize,
 }
 
 impl Debug for Pos {
@@ -482,7 +479,6 @@ fn solidify_tokens(tokens: &Vec<TokenWPos>, input_code: &str) -> Vec<SolidTokenW
                     "in" => {
                         if let Some(SolidTokenWPos { tok: SolidToken::UnaryOperator(OperatorType::Not), .. }) = res.last() {
                             res.pop();
-                            // TODO start should be the start of the `not`
                             SolidToken::Operator(OperatorType::NotIn)
                         } else {
                             SolidToken::In

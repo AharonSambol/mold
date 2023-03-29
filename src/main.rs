@@ -114,7 +114,7 @@ fn main() {
                     else { format!("    {}", x.trim_start()) }
                 ).collect::<Vec<_>>()
                 .join("\n")
-        ); // TODO remove this
+        ); // todo remove this
     }));
     // todo remove
     unsafe {
@@ -276,9 +276,9 @@ class pointer_:
         let file_name = file_name.strip_suffix(".mo").unwrap();
 
         // TODO something about this  v
-        one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
-            "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
-        );
+        // one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
+        //     "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
+        // );
         let mut rust_main_code = { format!(
             "#![allow(unused, non_camel_case_types)]
 mod {module_name};
@@ -546,9 +546,9 @@ fn compile(ast: &[Ast], info: &Info) -> (OneOfEnums, String) {
     let rs = rs.trim();
     // TODO something about this... v
     let mut one_of_enums = info.one_of_enums.clone();
-    one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
-        "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
-    );
+    // one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
+    //     "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
+    // );
     // let one_of_enums_st = join(one_of_enums.values(), "\n\n");
     // println!("\n{one_of_enums_st}\n{rs}");
     if unsafe { !DONT_PRINT } {

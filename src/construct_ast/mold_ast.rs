@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::env::args;
 use std::fs;
 use std::path::{Path, PathBuf};
 use lazy_static::lazy_static;
@@ -205,7 +206,7 @@ pub fn get_trt_strct_functions(ast: &[Ast], module: &Ast) -> TraitFuncs {
                                 typ: ast[*x].typ.clone().unwrap(),
                                 is_mut: ast[*x].is_mut,
                                 name, is_args, is_kwargs,
-                                pos: *x
+                                default_val_pos: ast[*x].children.as_ref().map(|ch| ch[0])
                             }
                         })
                         .collect()
@@ -1035,7 +1036,7 @@ fn word_tok(
                     );
                     let index = add_to_tree(prop_pos, ast, Ast::new(
                         AstNode::FunctionCall(true),
-                        tokens[pos].pos.clone()
+                        tokens[pos - 1].pos.clone()
                     ));
 
                     add_to_tree(index, ast, Ast::new(
@@ -1046,7 +1047,7 @@ fn word_tok(
                 } else {
                     insert_as_parent_of_prev(
                         ast, parent, AstNode::FunctionCall(false),
-                        Some(tokens[pos].pos.clone())
+                        Some(tokens[pos - 1].pos.clone())
                     )
                 };
                 // let index = insert_as_parent_of_prev(ast, parent, type_call);

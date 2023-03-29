@@ -254,7 +254,7 @@ pub fn put_at_start(input: &str) -> String {
         BuiltIn::Func(BuiltInFunc {
             name: "max",
             generics: Some(vec!["T"]),
-            args: vec!["x: IntoIterator[Item=T] | Iterator[Item=T]"],
+            args: vec!["x: IntoIterator[Item=T]"],
             return_typ: Some("T"),
         }),
         //4 sum

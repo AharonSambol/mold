@@ -6,6 +6,7 @@ use crate::construct_ast::mold_ast::{Info};
 use crate::{IMPL_TRAITS};
 use crate::types::{GenericType, print_type, Type, TypeKind, unwrap};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
+use crate::construct_ast::tree_utils::update_pos_from_tree_node;
 
 //2 only generics whose children are also T
 //  as in [Generic(Of("T"))]
@@ -61,7 +62,6 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, 
                 return;
             }
         }
-
         throw!(
             "expected: `{}` but found `{}`",
             join_or(template.ref_children().iter()),
@@ -70,7 +70,6 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, 
     }
     // let temp_got = cast_to_trait(template).unwrap_or_else(|err| throw!("{err}"));
     // let got = if let Some(g) = &temp_got { g } else { got };
-
     let got = box_no_side_effects(template.clone(), got, ast, info);
     // if !matches_template(template.clone(), &got, ast, info) {
     //     throw!("(5) expected `{template}` but got `{got}`")

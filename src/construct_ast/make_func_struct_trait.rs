@@ -141,10 +141,11 @@ fn make_func_signature(
             pos: Some(src_pos.clone())
         });
         if let Some(default_val) = default_val {
+            println!("DEFAULT_VAL!!");
             let ast_len = ast.len();
             ast[identifier_pos].children = Some(vec![ast_len]);
-            param.pos = ast_len;
-            input.last_mut().unwrap().pos = ast_len;
+            param.default_val_pos = Some(ast_len); // todo i dont think this is necessary
+            input.last_mut().unwrap().default_val_pos = Some(ast_len);
             for node in default_val.iter().skip(1) {
                 let mut node_clone = node.clone();
                 node_clone.parent = Some(node_clone.parent.unwrap() + ast_len);

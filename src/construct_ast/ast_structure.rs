@@ -261,7 +261,7 @@ pub struct Param {
     pub is_mut: bool,
     pub is_args: bool,
     pub is_kwargs: bool,
-    pub pos: usize,
+    pub default_val_pos: Option<usize>,
 }
 
 impl Display for Param {

@@ -924,7 +924,9 @@ fn format_args_and_get_return_typ(
     #[inline] fn get_generics(expected_input: &Option<Vec<Param>>, args: &Option<Vec<usize>>, ast: &mut Vec<Ast>, info: &mut Info, vars: &VarTypes) -> HashMap<String, Type> {
         let mut generic_map = HashMap::new();
         if let Some(expected_input) = &expected_input {
+            // todo update here
             for (exp, got) in expected_input.iter().zip(args.as_ref().unwrap()) {
+                update_pos_from_tree_node(&ast[*got]);
                 let got_typ = box_no_side_effects(
                     exp.typ.clone(), &ast[*got].typ.clone().unwrap(), ast, info
                 );
@@ -1146,10 +1148,12 @@ fn add_optional_args( //3 not optimized // todo can't use name for positional ar
     for ex_arg in expected_args.iter().skip(amount_of_pos_args) {
         if let Some(pos) = supplied_kws.get(&ex_arg.name) {
             to_add.push(*pos);
-        } else if ex_arg.pos != usize::MAX {
+        } else if let Some(def_val_pos) = ex_arg.default_val_pos {
+            dbg!(&ex_arg);
+            print_tree(ast, def_val_pos);
             add_to_tree(
                 children[1], ast,
-                ast[ex_arg.pos].clone()
+                ast[def_val_pos].clone()
             );
             ast[children[1]].children.as_mut().unwrap().pop();
             amount_of_pushed += 1;
@@ -1256,6 +1260,7 @@ pub fn get_enum_property_typ(
                 .zip(unwrap_u(&args.children).clone());
             for (generic, arg) in zip {
                 let typ = ast[arg].typ.clone().unwrap();
+                update_pos_from_tree_node(&ast[arg]);
                 map_generic_types(&Type {
                     kind: TypeKind::Generic(GenericType::NoVal(generic.clone())),
                     children: None
@@ -1458,12 +1463,11 @@ pub fn get_property_method_typ_and_set_args(
                 typ: ast[*x].typ.clone().unwrap(),
                 is_mut: ast[*x].is_mut,
                 name, is_args, is_kwargs,
-                pos: *x
+                default_val_pos: ast[*x].children.as_ref().map(|ch| ch[0])
             }
         }).collect());
 
     let input_arg_types = ast[arg_pos].children.clone();
-
     #[allow(clippy::unnecessary_to_owned)]
     (format_args_and_get_return_typ(
         expected_input, &input_arg_types, &func_name.to_string(), ast,
@@ -1513,7 +1517,7 @@ pub fn get_property_method_typ(
                     typ: ast[*x].typ.clone().unwrap(),
                     is_mut: ast[*x].is_mut,
                     name, is_args, is_kwargs,
-                    pos: *x
+                    default_val_pos: ast[*x].children.as_ref().map(|ch| ch[0])
                 }
             }).collect());
 

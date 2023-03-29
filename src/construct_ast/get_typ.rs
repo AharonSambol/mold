@@ -40,7 +40,7 @@ pub fn get_params(
                     is_mut,
                     is_args,
                     is_kwargs,
-                    pos: usize::MAX
+                    default_val_pos: None
                 }, None, src_pos));
                 is_mut = true;
                 is_args = false;
