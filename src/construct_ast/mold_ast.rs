@@ -593,6 +593,7 @@ pub fn make_ast_expression(
     vars: &mut VarTypes, info: &mut Info
 ) -> usize {
     // println!("{}\n".to_str(&(tree.clone(), 0)));
+    // todo lets random tokens to go together e.g. 1 + 2 a 4
     let mut amount_of_open = 0;
     while pos < tokens.len() {
         update_pos_from_token(&tokens[pos]);

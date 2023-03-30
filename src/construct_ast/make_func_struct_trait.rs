@@ -141,7 +141,6 @@ fn make_func_signature(
             pos: Some(src_pos.clone())
         });
         if let Some(default_val) = default_val {
-            println!("DEFAULT_VAL!!");
             let ast_len = ast.len();
             ast[identifier_pos].children = Some(vec![ast_len]);
             param.default_val_pos = Some(ast_len); // todo i dont think this is necessary

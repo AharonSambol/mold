@@ -35,7 +35,7 @@ def bubble_sort(lst: &mut List[int]):
 def main():
     lst = [1, 2, 64, 214, 43, 56, 32, 3, 23, 5, 12, 532, 634, 2, 35, 34, 6, 391, 34, 436, 457, 37, 35, 34743, 457, 3475, 643, 7835, 43]
     new_lst: List[int] = []
-    for x in range(100):
+    for x in range(1): # 100
         for i in iter(lst):
             new_lst.append(*i + x)
     bubble_sort(&mut new_lst)

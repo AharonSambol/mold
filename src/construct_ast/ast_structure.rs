@@ -114,6 +114,7 @@ pub enum AstNode {
     Type(String), // e.g.  struct A: \n type Inner
     Types,
     UnaryOp(OperatorType),  // children[0] = elem
+    VArgs, // children = args
     WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
     NamedArg(String), // children[0] = value
     Null,
@@ -177,6 +178,7 @@ impl AstNode {
             | AstNode::ForIter
             | AstNode::ArgsDef
             | AstNode::Args
+            | AstNode::VArgs
             | AstNode::ReturnType
             | AstNode::GenericsDeclaration
             | AstNode::Return => false,
@@ -250,6 +252,7 @@ impl Display for AstNode {
             AstNode::As(name) => write!(f, "[AS: {name}]"),
             AstNode::From => write!(f, "[FROM]"),
             AstNode::Import => write!(f, "[IMPORT]"),
+            AstNode::VArgs => write!(f, "(*Args)"),
         }
     }
 }

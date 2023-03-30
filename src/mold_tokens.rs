@@ -398,7 +398,8 @@ pub fn tokenize(input_code: &str) -> Vec<SolidTokenWPos> {
                     continue
                 },
                 // </editor-fold>
-                _ => Word { start: i, end: i + 1, is_spaced: false }
+                'a'..='z' | 'A'..='Z' | '_' => Word { start: i, end: i + 1, is_spaced: false },
+                _ => throw!("unexpected token `{}`", c)
             },
             pos: Pos {
                 start_line: line_num,   //end_line: line_num,

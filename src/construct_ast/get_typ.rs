@@ -33,7 +33,7 @@ pub fn get_params(
                     name: wrd.clone(),
                     typ: if is_args {
                         typ_with_child! {
-                            TypeKind::Args,
+                            TypeKind::VArgs,
                             typ
                         }
                     } else { typ },

@@ -35,12 +35,12 @@ struct St[T, G, I]:
         self.t = t
         self.g = g
 
+def f(*args: Debug):
+    pass
+
 def main():
-    # TODO it thinks this is ok (default args?) a = St(1)
-    # TODO print(1 + 5 $ 6666) should have an error
     # TODO max(iter([1]))
-    a = St(1)
-    print(1 + 5 $ 6666)
+    a: List[List[int | bool] | List[int | str]] = [[1, False, 4], [2, "3"]]
 
 
 #{

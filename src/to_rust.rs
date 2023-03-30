@@ -155,7 +155,7 @@ pub fn to_rust(
                                 to_rust(ast, *child, indentation, info)
                             } else {
                                 format!(
-                                    "({} as f32)",
+                                    "(({}) as f32)",
                                     to_rust(ast, *child, indentation, info)
                                 )
                             }
@@ -165,7 +165,7 @@ pub fn to_rust(
                 }
                 OperatorType::Pow => {
                     format!(
-                        "{}.pow({})",
+                        "({}).pow({})",
                         to_rust(ast, children[0], indentation, info),
                         to_rust(ast, children[1], indentation, info)
                     )
@@ -173,11 +173,11 @@ pub fn to_rust(
                 OperatorType::Is =>
                     is_to_rust(ast, indentation, info, children),
                 OperatorType::IsNot =>
-                    format!("!{}", is_to_rust(ast, indentation, info, children)),
+                    format!("!({})", is_to_rust(ast, indentation, info, children)),
                 OperatorType::In =>
                     in_to_rust(ast, indentation, info, children),
                 OperatorType::NotIn =>
-                    format!("!{}", in_to_rust(ast, indentation, info, children)),
+                    format!("!({})", in_to_rust(ast, indentation, info, children)),
                 _ if is_string_addition(ast, children[0], children[1], op) => {
                     format!(
                         "{} + &{}",
@@ -686,6 +686,14 @@ pub fn to_rust(
                 ), ", ")
             )
         }
+        AstNode::VArgs => {
+            format!(
+                "vec![{}]",
+                join(children.iter().map(
+                    |child| to_rust(ast, *child, indentation, info)
+                ), ", ")
+            )
+        }
         _ => throw!("Unexpected AST `{:?}`", ast[pos].value)
     }
 }
@@ -932,7 +940,20 @@ fn built_in_funcs(
             //1 the first arg will be a vec cuz its *args
             let args = unwrap_u(&ast[args[0]].children);
             let mut formats = String::new();
-            for arg in args {
+            let mut is_debug_vc = vec![false; args.len()];
+            for (i, arg) in args.iter().enumerate() {
+                // assert!(matches!(&ast[*arg].value, AstNode::Property));
+                // let property_children = ast[*arg].ref_children();
+                // assert!(matches!(&ast[property_children[0]].value, AstNode::Identifier(idf) if idf == "_boxof_Debug_endof___or___boxof_Display_endof_"));
+                // assert!(matches!(&ast[property_children[1]].value, AstNode::FunctionCall(true)));
+                // let func_children = ast[property_children[1]].ref_children();
+                // let is_debug = unwrap_enum!(&ast[func_children[0]].value, AstNode::Identifier(varient), varient) == "__boxof_Debug_endof_";
+                // if is_debug {
+                //     is_debug_vc[i] = true;
+                //     write!(formats, "{{:?}} ").unwrap();
+                // } else {
+                //     write!(formats, "{{}} ").unwrap();
+                // }
                 let mut typ = ast[*arg].typ.as_ref().unwrap();
                 let mut pointers = String::new();
                 while let Type{ kind: k@ (TypeKind::Pointer | TypeKind::MutPointer), children } = typ {
@@ -942,6 +963,7 @@ fn built_in_funcs(
                     };
                     typ = &children.as_ref().unwrap()[0];
                 }
+
                 let display = typ_with_child! {
                     TypeKind::Trait(TypName::Static("Display")),
                     Type {
@@ -961,13 +983,14 @@ fn built_in_funcs(
                 } else if implements_trait(typ, &debug, ast, info).is_some() {
                     write!(formats, "{pointers}{{:?}} ").unwrap();
                 } else {
-                    todo!()
+                    update_pos_from_tree_node(&ast[*arg]);
+                    throw!("expected `Display` or `Debug` but found `{}`", typ);
                 }
             }
             format!(
                 "println!(\"{}\", {})",
                 formats.trim_end(),
-                join(args.iter().map(|arg|
+                join(args.iter().zip(is_debug_vc).map(|(arg, is_dbg)|
                     to_rust(ast, *arg, 0, info)
                 ), ", ")
             )

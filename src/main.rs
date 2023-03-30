@@ -120,6 +120,7 @@ fn main() {
     unsafe {
         IS_COMPILED = true;
     }
+
     let mut test = false;
     let mut path = None;
     for argument in env::args().skip(1) {

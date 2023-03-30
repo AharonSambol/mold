@@ -13,20 +13,20 @@ use crate::construct_ast::tree_utils::update_pos_from_tree_node;
 //               |
 //        [Generic(Of("T"))]
 pub fn get_function_return_type(
-    return_type: &Option<Type>, expected_inputs: &Option<Vec<Param>>, inputs: &Option<Vec<Type>>,
+    return_type: &Option<Type>, expected_inputs: &Option<Vec<Param>>, inputs: &Option<Vec<(Type, usize)>>,
     ast: &mut Vec<Ast>, info: &mut Info
 ) -> Option<Type> {
     let return_type = if let Some(x) = return_type { x } else { return None };
     if let Some(expected_inputs) = expected_inputs {
         let inputs = inputs.as_ref().unwrap();
         let mut hm = HashMap::new();
-        for (ex_ipt, ipt) in expected_inputs.iter().zip(inputs) {
+        for (ex_ipt, (ipt, pos)) in expected_inputs.iter().zip(inputs) {
             // println!("EXP:");
             // print_type(&Some(ex_ipt.typ.clone()));
             // println!("IPT:");
             // print_type(&Some(ipt.clone()));
 
-            map_generic_types(&ex_ipt.typ, ipt, &mut hm, ast, info);
+            map_generic_types(&ex_ipt.typ, ipt, &mut hm, ast, info, *pos);
         }
         let res = apply_map_to_generic_typ(return_type, &hm);
         return Some(res);
@@ -34,7 +34,7 @@ pub fn get_function_return_type(
     Some(return_type.clone())
 }
 
-pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, Type>, ast: &mut Vec<Ast>, info: &mut Info) {
+pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, Type>, ast: &mut Vec<Ast>, info: &mut Info, pos: usize) {
     // let cast_to_trait = |trt: &Type| if matches!(&trt.kind, TypeKind::Trait(_)) && !matches!(&got.kind, TypeKind::Trait(_)) {
     //     let res = implements_trait(got, trt, ast, info);
     //     if res.is_some() { Ok(res) } else { Err(format!("expected `{template}` but found `{got}`")) }
@@ -51,7 +51,9 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, 
         }
         for option in template.children.as_ref().unwrap() {
             // let temp_got = cast_to_trait(option);
-            let temp_got = try_box_no_side_effects(option.clone(), got, ast, info);
+            let temp_got = try_box_no_side_effects(
+                option.clone(), got, ast, info, pos
+            );
             if temp_got.is_err() { continue }
             let got = temp_got.unwrap();
 
@@ -70,7 +72,7 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, 
     }
     // let temp_got = cast_to_trait(template).unwrap_or_else(|err| throw!("{err}"));
     // let got = if let Some(g) = &temp_got { g } else { got };
-    let got = box_no_side_effects(template.clone(), got, ast, info);
+    let got = box_no_side_effects(template.clone(), got, ast, info, pos);
     // if !matches_template(template.clone(), &got, ast, info) {
     //     throw!("(5) expected `{template}` but got `{got}`")
     // }

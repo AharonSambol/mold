@@ -244,7 +244,7 @@ pub fn add_types(
         }
         AstNode::Module | AstNode::Body | AstNode::ReturnType
         | AstNode::GenericsDeclaration | AstNode::ColonParentheses
-        | AstNode::Args | AstNode::NamedArg(_) => {
+        | AstNode::Args | AstNode::NamedArg(_) | AstNode::VArgs => {
             for child in children {
                 add_types(ast, child, vars, info, parent_struct);
             }
@@ -896,7 +896,7 @@ fn format_args_and_get_return_typ(
 ) -> Option<Type> {
     #[inline] fn format_args(
         ast: &mut Vec<Ast>, children: &[usize], expected_input: &Option<Vec<Param>>, func_name: &str,
-        info: &mut Info, vars: &VarTypes, args: &Option<Vec<usize>>
+        info: &mut Info, args: &Option<Vec<usize>>, is_builtin: bool
     ) -> Option<Vec<usize>> {
         // let mut args = unwrap_u(&ast[children[1]].children).clone();
         if expected_input.is_some() && !expected_input.as_ref().unwrap().is_empty() {
@@ -905,8 +905,10 @@ fn format_args_and_get_return_typ(
             //     throw!("expected `{}` args but found `0`", expected_args.len())
             // }
             let mut args = args.clone().unwrap_or_default();
-            put_args_in_vec(ast, children, &mut args, expected_args, info, vars);
+
+            put_args_in_vec(ast, children, &mut args, expected_args, info, is_builtin);
             add_optional_args(ast, children, &mut args, expected_args);
+
             if args.len() != expected_args.len() {
                 update_pos_from_tree_node(&ast[ast[children[0]].parent.unwrap()]);
                 throw!(
@@ -928,11 +930,11 @@ fn format_args_and_get_return_typ(
             for (exp, got) in expected_input.iter().zip(args.as_ref().unwrap()) {
                 update_pos_from_tree_node(&ast[*got]);
                 let got_typ = box_no_side_effects(
-                    exp.typ.clone(), &ast[*got].typ.clone().unwrap(), ast, info
+                    exp.typ.clone(), &ast[*got].typ.clone().unwrap(), ast, info, *got
                 );
                 map_generic_types(
                     &exp.typ, &got_typ, &mut generic_map,
-                    ast, info
+                    ast, info, *got
                 );
             }
         }
@@ -973,33 +975,36 @@ fn format_args_and_get_return_typ(
     if expected_input.is_some() && expected_input.as_ref().unwrap().is_empty() {
         expected_input = None;
     }
+
+    let is_builtin = unsafe { IGNORE_FUNCS.contains(func_name) };
     let args = format_args(
-        ast, children, &expected_input, func_name, info, vars, args
+        ast, children, &expected_input, func_name, info, args, is_builtin
     );
     let generic_map = get_generics(&expected_input, &args, ast, info, vars);
 
-    let args: Option<Vec<Type>> = if let Some(args) = args {
-        if unsafe { IGNORE_FUNCS.contains(func_name) } {
+    let args: Option<Vec<(Type, usize)>> = if let Some(args) = args {
+        if is_builtin {
             // check_that_is_castable(
             //     expected_input.as_ref().unwrap(), &args, info, ast, true
             // )
             Some(expected_input.as_ref().unwrap().iter().zip(args.iter()).map(
                 |(exp, got)| {
                     let got_typ = ast[*got].typ.as_ref().unwrap().clone();
-                    if !matches_template(exp.typ.clone(), &got_typ, ast, info) {
+                    if !matches_template(exp.typ.clone(), &got_typ, ast, info, *got) {
                         update_pos_from_tree_node(&ast[pos]); // todo not sure if correct node
                         throw!("expected `{}` but got `{}`", &exp.typ, got_typ)
                     }
-                    got_typ
+                    (got_typ, *got)
                 }
             ).collect())
         } else {
             Some(expected_input.as_ref().unwrap().iter().zip(args.iter()).map(
                 |(exp, got)|
-                    box_if_needed(exp.typ.clone(), ast, *got, info)
+                    (box_if_needed(exp.typ.clone(), ast, *got, info), *got)
             ).collect())
         }
     } else { None };
+
 
     let rtrn_typ = if base.is_some() || func_name == "__init__" {
         let init_type = if func_name == "__init__" {
@@ -1172,7 +1177,7 @@ fn add_optional_args( //3 not optimized // todo can't use name for positional ar
 
 fn put_args_in_vec(
     ast: &mut Vec<Ast>, children: &[usize], args: &mut Vec<usize>, expected_args: &[Param],
-    info: &mut Info, vars: &VarTypes
+    info: &mut Info, is_builtin: bool
 ) {
     let args_kwargs_pos = expected_args.iter().enumerate()
         .find(|(_, par)| par.is_args || par.is_kwargs);
@@ -1184,22 +1189,40 @@ fn put_args_in_vec(
             .cloned().collect();
         let expected_typ = &expected_args[pos_in_args].typ.ref_children()[0];
 
-        let inner_typ = box_if_needed(
-            expected_typ.clone(), ast, vec_children[0], info
-        );
+
+        let inner_typ = if !is_builtin {
+            box_if_needed(expected_typ.clone(), ast, vec_children[0], info)
+        } else {
+            let typ = ast[vec_children[0]].typ.clone().unwrap();
+            box_no_side_effects(
+                expected_typ.clone(),
+                &typ,
+                ast, info, vec_children[0]
+            );
+            typ
+        };
+
         for pos in vec_children.iter().skip(1) {
-            box_if_needed(expected_typ.clone(), ast, *pos, info);
+            if !is_builtin {
+                box_if_needed(expected_typ.clone(), ast, *pos, info);
+            } else {
+                box_no_side_effects(
+                    expected_typ.clone(),
+                    &ast[*pos].typ.clone().unwrap(),
+                    ast, info, *pos
+                );
+            }
         }
 
         let vec_pos = add_to_tree(
             children[1],
             ast,
             Ast {
-                value: AstNode::ListLiteral,
+                value: AstNode::VArgs,
                 children: Some(vec_children),
                 parent: None,
                 typ: Some(typ_with_child! {
-                    TypeKind::Args,
+                    TypeKind::VArgs,
                     inner_typ
                 }),
                 is_mut: false,
@@ -1264,7 +1287,7 @@ pub fn get_enum_property_typ(
                 map_generic_types(&Type {
                     kind: TypeKind::Generic(GenericType::NoVal(generic.clone())),
                     children: None
-                }, &typ, &mut generics_map, ast, info);
+                }, &typ, &mut generics_map, ast, info, arg);
             }
         }
 
@@ -1312,17 +1335,19 @@ fn is_enum_option_valid(ast: &mut Vec<Ast>, info: &mut Info, variant: usize, par
                         .iter().map(|i| ast[*i].typ.clone().unwrap())
                         .collect::<Vec<_>>();
                     let got_children = got_types
-                        .iter().map(|i| ast[*i].typ.clone().unwrap())
+                        .iter().map(|i| (ast[*i].typ.clone().unwrap(), *i))
                         .collect::<Vec<_>>();
                     let variant_name = variant_name.clone();
                     if !exp_children.iter().zip(got_children.iter()).all(
-                        |(exp, got)| matches_template(exp.clone(), got, ast, info)
+                        |(exp, (got_typ, got_pos))|
+                            matches_template(exp.clone(), got_typ, ast, info, *got_pos)
                     ) {
                         update_pos_from_tree_node(&ast[parentheses]);
                         throw!(
                             "incorrect types given to `{}.{}`, expected `{}` but found `{}`",
                             enm_name, variant_name,
-                            join(exp_children.iter(), "`, `"), join(got_children.iter(), "`, `")
+                            join(exp_children.iter(), "`, `"),
+                            join(got_children.iter().map(|(t, p)| t), "`, `")
                         )
                     }
                 } else {
@@ -1523,8 +1548,8 @@ pub fn get_property_method_typ(
 
         let input_arg_types =
             ast[arg_pos].children.as_ref().map(|c| c.iter().map(|x|
-                    ast[*x].typ.clone().unwrap()
-                ).collect());
+                (ast[*x].typ.clone().unwrap(), *x)
+            ).collect());
         let res = get_function_return_type(
             &return_type.clone(), &expected_arg_types, &input_arg_types, ast, info
         );

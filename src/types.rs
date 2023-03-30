@@ -76,7 +76,7 @@ pub enum TypeKind {
     GenericsMap,
     OneOf,
     AssociatedType(String), // e.g. Iterator[Inner=i32]
-    Args,
+    VArgs,
     Trait(TypName),
     Enum(TypName),
     Unknown,
@@ -191,8 +191,8 @@ impl Display for Type {
             TypeKind::Generics => write!(
                 f, "GENERICS({})", join(unwrap(&self.children).iter(), ",")
             ),
-            TypeKind::Args => {
-                write!(f, "ARGS({})", unwrap(&self.children)[0])
+            TypeKind::VArgs => {
+                write!(f, "Vec<{}>", unwrap(&self.children)[0])
             },
             TypeKind::Trait(name) => {
                 let gens = self.format_generics();

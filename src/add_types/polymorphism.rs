@@ -11,7 +11,7 @@ use crate::types::{GenericType, implements_trait, print_type, Type, TypeKind, Ty
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 
 // TODO also cast: `as Box<dyn P>`
-fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize {
+fn add_box(ast: &mut Vec<Ast>, pos: usize) {
     let ast_len = ast.len();
     let parent_pos = ast[pos].parent.unwrap();
 
@@ -35,7 +35,13 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize {
         }),
         pos: None
     });
+
     let property = ast.len() - 1;
+    ast.swap(property, pos);
+
+    let property = pos;
+    let pos = ast.len() - 1;
+
     add_to_tree(
         property, ast, Ast::new_no_pos(AstNode::Identifier(String::from("Box")))
     );
@@ -49,8 +55,6 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) -> usize {
 
     ast[pos].parent = Some(args_pos);
     ast[args_pos].children = Some(vec![pos]);
-
-    property
 }
 
 /* TODO
@@ -243,26 +247,25 @@ fn add_one_of_enum(
 }
 
 #[inline(always)] pub fn box_no_side_effects(
-    expected: Type, got_typ: &Type, ast: &mut Vec<Ast>, info: &mut Info
+    expected: Type, got_typ: &Type, ast: &mut Vec<Ast>, info: &mut Info, pos: usize
 ) -> Type {
-    try_box_no_side_effects(expected, got_typ, ast, info).unwrap_or_else(|e| throw!("{}", e))
+    try_box_no_side_effects(expected, got_typ, ast, info, pos).unwrap_or_else(|e| throw!("{}", e))
 }
 
 #[inline(always)] pub fn try_box_no_side_effects(
-    expected: Type, got_typ: &Type, ast: &mut Vec<Ast>, info: &mut Info
+    expected: Type, got_typ: &Type, ast: &mut Vec<Ast>, info: &mut Info, pos: usize
 ) -> Result<Type, String> {
-    check_if_need_box(expected, got_typ, ast, usize::MAX, info, true, Mutate::Dont)
+    check_if_need_box(expected, got_typ, ast, pos, info, true, Mutate::Dont)
 }
 
-#[inline(always)] pub fn matches_template(expected: Type, got: &Type, ast: &mut Vec<Ast>, info: &mut Info) -> bool {
-    check_if_need_box(expected, got, ast, usize::MAX, info, true, Mutate::Dont).is_ok()
+#[inline(always)] pub fn matches_template(expected: Type, got: &Type, ast: &mut Vec<Ast>, info: &mut Info, pos: usize) -> bool {
+    check_if_need_box(expected, got, ast, pos, info, true, Mutate::Dont).is_ok()
 }
 
 #[derive(Copy, Clone)]
 enum Mutate {
     Dont,
-    Box,
-    Map
+    Box
 }
 
 fn check_if_need_box(
@@ -284,47 +287,18 @@ fn check_if_need_box(
             // TODO generics and associated types
             if let TypeKind::OneOf = &got_typ.kind {
                 if expected.contains(got_typ) {
-                    if let Mutate::Dont = mutate {
-                        return Ok(expected)
+                    if let Mutate::Box = mutate {
+                        match_to_convert_types(&expected, got_typ, ast, pos);
                     }
-                    if let Mutate::Map = mutate {
-                        todo!();
-                        // todo maybe use map instead of list comp?
-                        // let stmt_mod = insert_as_parent_of(ast, pos, AstNode::Module);
-                        // let comp_pos = insert_as_parent_of(ast, stmt_mod, AstNode::ListComprehension);
-                        // add_to_tree(comp_pos, ast, Ast::new(AstNode::Module)); //1 loop_mod
-                        // add_to_tree(comp_pos, ast, Ast::new(AstNode::Module)); //1 condition_mod
-                    }
-                    match_to_convert_types(&expected, got_typ, ast, pos);
                     return Ok(expected)
                 } else {
                     todo!()
                 }
             }
             for typ in unwrap(&expected.children) {
-                if typ == got_typ {
-                    if let Mutate::Map = mutate {
-                        // todo maybe use map instead of list comp?
-                        let for_iter = insert_as_parent_of(ast, pos, AstNode::ForIter, None);
-                        let par_pos = insert_as_parent_of(ast, for_iter, AstNode::ColonParentheses, None);
-                        let for_pos = insert_as_parent_of(ast, par_pos, AstNode::ForStatement, None);
-                        let loop_mod = insert_as_parent_of(ast, for_pos, AstNode::Module, None);
-                        let comp_pos = insert_as_parent_of(ast, loop_mod, AstNode::ListComprehension, None);
-                        let stmt_mod = add_as_first_child(ast, comp_pos, AstNode::Module, None);
-                        let stmt = add_to_tree(
-                            stmt_mod, ast, Ast::new_no_pos(AstNode::Identifier(String::from("x")))
-                        );
-                        ast[stmt].typ = Some(got_typ.clone());
-                        add_to_tree(comp_pos, ast, Ast::new_no_pos(AstNode::Module)); //1 condition_mod
-
-                        let for_vars = add_as_first_child(ast, par_pos, AstNode::ForVars, None);
-                        add_to_tree(
-                            for_vars, ast,
-                            Ast::new_no_pos(AstNode::Identifier(String::from("x")))
-                        );
-
-                        match_to_convert_types(&expected, &expected, ast, stmt);
-                    } else if let Mutate::Box = mutate {
+                if check_if_need_box(typ.clone(), got_typ, ast, pos, info, is_outer_call, Mutate::Dont).is_ok() {
+                    if let Mutate::Box = mutate {
+                        check_if_need_box(typ.clone(), got_typ, ast, pos, info, is_outer_call, Mutate::Box).unwrap();
                         add_one_of_enum(
                             ast, pos, &expected.to_string(),
                             &format!("_{}", escape_typ_chars(&typ.to_string()))
@@ -335,9 +309,9 @@ fn check_if_need_box(
                 if matches!(&typ.kind, TypeKind::Trait(_)) {
                     if let Some(trt) = implements_trait(got_typ, typ, ast, info) {
                         if let Mutate::Box = mutate {
-                            let new_pos = add_box(ast, pos);
+                            add_box(ast, pos);
                             add_one_of_enum(
-                                ast, new_pos, &expected.to_string(),
+                                ast, pos, &expected.to_string(),
                                 &format!("_{}", escape_typ_chars(&typ.to_string()))
                             );
                         }
@@ -355,7 +329,9 @@ fn check_if_need_box(
             if let Some(trt) = implements_trait(got_typ, &expected, ast, info) {
                 if !matches!(&got_typ.kind, TypeKind::Trait(_)) {
                     if !is_outer_call { return err() }
-                    if let Mutate::Box = mutate { add_box(ast, pos); }
+                    if let Mutate::Box = mutate {
+                        add_box(ast, pos);
+                    }
                 }
                 Ok(trt)
             } else { err() }
@@ -401,18 +377,55 @@ fn check_if_need_box(
                 }
                 if expected_struct_name == "Vec" {
                     let res = compare_generic_and_a_typ_children(&expected, got_typ, err);
-                    if res.is_ok() || !is_outer_call { res } else {
-                        let expected = &expected
+                    if res.is_ok() {
+                        res
+                    } else {
+                        let is_list_literal = matches!(&ast[pos].value, AstNode::ListLiteral);
+                        if !is_outer_call || !is_list_literal {
+                            return res //1 which is err
+                        }
+                        let expected = expected
                             .children.as_ref().unwrap()[0] //1 generic map
                             .children.as_ref().unwrap()[0] //1 the generic
-                            .children.as_ref().unwrap()[0];//1 the value of the generic
-                        let got = &got_typ
-                            .children.as_ref().unwrap()[0] //1 generic map
-                            .children.as_ref().unwrap()[0] //1 the generic
-                            .children.as_ref().unwrap()[0];//1 the value of the generic
-                        check_if_need_box(
-                            expected.clone(), got, ast, pos, info, true, Mutate::Map
-                        )
+                            .children.as_ref().unwrap()[0]
+                            .clone();//1 the value of the generic
+                        let children = ast[pos].children.clone().unwrap();
+                        if let TypeKind::OneOf = &expected.kind {
+                            for child in &children {
+                                let mut found_one = false;
+                                for opt in expected.ref_children() {
+                                    if check_if_need_box(
+                                        opt.clone(),
+                                        &ast[*child].typ.clone().unwrap(),
+                                        ast, *child, info, true, Mutate::Dont
+                                    ).is_ok() {
+                                        found_one = true;
+                                        break
+                                    }
+                                }
+                                if !found_one {
+                                    return err()
+                                }
+                            }
+                            if let Mutate::Box = mutate {
+                                for child in children {
+                                    check_if_need_box(
+                                        expected.clone(),
+                                        &ast[child].typ.clone().unwrap(),
+                                        ast, child, info, true, Mutate::Box
+                                    ).unwrap();
+                                }
+                            }
+                        } else {
+                            for inner_pos in children {
+                                check_if_need_box(
+                                    expected.clone(),
+                                    &ast[inner_pos].typ.clone().unwrap(),
+                                    ast, inner_pos, info, true, mutate
+                                )?;
+                            }
+                        }
+                        Ok(expected)
                     }
                 } else {
                     compare_generic_and_a_typ_children(&expected, got_typ, err)
@@ -428,8 +441,8 @@ fn check_if_need_box(
             } else { err() }
         }
         TypeKind::Tuple => { todo!() }
-        TypeKind::Args => {
-            let TypeKind::Args = got_typ.kind else {
+        TypeKind::VArgs => {
+            let TypeKind::VArgs = got_typ.kind else {
                 unreachable!()
             };
             let res_typs: Vec<_> =
@@ -441,7 +454,7 @@ fn check_if_need_box(
                 return Err(unsafe { err_one.as_ref().err().unwrap_unchecked().clone() })
             }
             Ok(Type {
-                kind: TypeKind::Args,
+                kind: TypeKind::VArgs,
                 children: Some(res_typs.iter().map(|x|
                     unsafe { x.as_ref().ok().unwrap_unchecked().clone() }
                 ).collect())
