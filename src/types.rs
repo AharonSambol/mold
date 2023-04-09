@@ -5,7 +5,7 @@ use pretty_print_tree::{Color, PrettyPrintTree};
 use crate::construct_ast::ast_structure::{Ast, Param};
 use crate::{add_trait, EMPTY_STR, IMPL_TRAITS, Implementation, ImplTraitsKey, ImplTraitsVal, typ_with_child, some_vec, unwrap_enum};
 use crate::add_types::generics::apply_generics_from_base;
-use crate::add_types::polymorphism::escape_typ_chars;
+use crate::add_types::polymorphism::{escape_typ_chars, make_enums};
 use crate::add_types::utils::{get_pointer_complete_inner, join};
 use crate::construct_ast::mold_ast::{add_trait_to_struct, get_trt_strct_functions, Info, TraitFuncs};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
@@ -229,19 +229,30 @@ impl Type {
         if let TypeKind::OneOf = self.kind {
             if let TypeKind::OneOf = typ.kind {
                 if let Some(vc) = &mut self.children {
-                    vc.append(typ.children.as_mut().unwrap());
+                    for t in typ.children.unwrap() {
+                        if !vc.contains(&t) {
+                            vc.push(t.clone());
+                        }
+                    }
+                    // vc.append(typ.children.as_mut().unwrap());
                 } else {
                     throw!("adding two empty 'OneOf' types together??")
                 }
             } else if let Some(vc) = &mut self.children {
-                vc.push(typ);
+                if !vc.contains(&typ) {
+                    vc.push(typ);
+                }
             } else { throw!("an empty 'OneOf' type?") }
             self
         } else if let TypeKind::OneOf = typ.kind {
             if let Some(vc) = &mut typ.children {
-                vc.insert(0, self)
+                if !vc.contains(&self) {
+                    vc.insert(0, self)
+                }
             } else { throw!("an empty 'OneOf' type?") }
             typ
+        } else if self == typ {
+            self
         } else {
             Type {
                 kind: TypeKind::OneOf,
@@ -698,4 +709,26 @@ fn join_generics_and_types(generics: &Option<Vec<Type>>, a_types: &mut dyn Itera
     ));
 
     res
+}
+
+pub fn join_types<T: Iterator<Item=Type>>(mut types: T, info: &mut Info) -> Type {
+    let res = if let Some(t) = types.next() { t } else { return UNKNOWN_TYPE };
+    let mut res = if let TypeKind::OneOf = res.kind {
+        res
+    } else {
+        typ_with_child!{
+            TypeKind::OneOf,
+            res
+        }
+    };
+    for t in types {
+        res = res.add_option(t);
+    }
+    // panic!("{:?}", res);
+    if res.ref_children().len() == 1 {
+        res.children.unwrap().remove(0)
+    } else {
+        make_enums(&res, info.one_of_enums);
+        res
+    }
 }

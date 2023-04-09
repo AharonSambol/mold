@@ -343,7 +343,12 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
                 } else { enm_types.generics },
                 // todo!() //1 impls
             );
-            writeln!(&mut rust_main_code, "{}", res).unwrap();
+            if !res.contains("UNKNOWN TYPE") {
+                // println!("{res}");
+                writeln!(&mut rust_main_code, "{}", res).unwrap();
+            } else {
+                // todo if used then panic
+            }
         }
         main.unwrap().write_all(rust_main_code.as_ref()).unwrap();
 
@@ -452,7 +457,7 @@ fn parse_file(path: &String, one_of_enums: &mut OneOfEnums) {
 use crate::{{ _index_mut, _index, clone, {} }};
 
 {code}",
-            join(enums.keys(), ",")
+            join(enums.keys().filter(|x| !x.contains("UNKNOWN TYPE")), ",")
         ).as_ref()).unwrap();
     } else {
         let mut file = File::create(path).unwrap();

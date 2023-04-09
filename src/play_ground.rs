@@ -14,7 +14,6 @@ impl Trt for S {
 
     }
 }
-
 fn f<'a, T: Iterator<Item=&'a i32>>(f: T) {
     for i in f {
         println!("{i}")

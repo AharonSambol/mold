@@ -40,18 +40,15 @@ def f(*args: Debug):
 
 def main():
     # TODO max(iter([1]))
-    a: List[List[int | bool] | List[int | str]] = [[1, False, 4], [2, "3"]]
+    # TODO a: List[tuple[int, bool, int] | List[int | str]] = [(1, False, 4), [2, "3"]]
+    # TODO a: List[dict[int, bool | str] | List[int | str]] = [{1: False, 2: "T"}, [2, "3"]]
+    # TODO a: List[Set[int | bool] | List[int | str]] = [{1, False, 4}, [2, "3"]]
+    # a: List[List[int | bool] | List[int | str]] = [[1, False, 4], [2, "3"]]
+    a = [[1, 4], [2, "3"]]
+    # b = clone(&a[0])
 
 
 #{
-
-
-
-
-
-
-
-
 
 trait Trt[T=int]:
     def trt_func(self, t: T) -> T

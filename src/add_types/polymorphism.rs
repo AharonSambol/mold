@@ -239,11 +239,9 @@ fn add_one_of_enum(
     expected: Type, ast: &mut Vec<Ast>, pos: usize, info: &mut Info
 ) -> Type {
     let got_typ = ast[pos].typ.clone().unwrap();
+    update_pos_from_tree_node(&ast[pos]);
     check_if_need_box(expected, &got_typ, ast, pos, info, true, Mutate::Box)
-        .unwrap_or_else(|e| {
-            update_pos_from_tree_node(&ast[pos]);
-            throw!("{}", e)
-        })
+        .unwrap_or_else(|e| throw!("{}", e))
 }
 
 #[inline(always)] pub fn box_no_side_effects(
@@ -276,7 +274,14 @@ fn check_if_need_box(
     // print_type(&Some(expected.clone()));
     // println!("Got:");
     // print_type(&Some(got_typ.clone()));
-    let err = || Err(format!("expected `{expected}` but got `{got_typ}`"));
+    #[track_caller]
+    fn err(expected: &Type, got_typ: &Type) -> Result<Type, String> {
+        let caller_location = std::panic::Location::caller();
+        let caller_file = caller_location.file();
+        let caller_line_number = caller_location.line();
+        Err(format!("expected `{expected}` but got `{got_typ}`\n\
+        \x1b[0m{caller_file}:{caller_line_number} [DBG INFO]")) // todo remove dbg info
+    }
 
     if expected == *got_typ {
         return Ok(expected)
@@ -328,13 +333,19 @@ fn check_if_need_box(
         TypeKind::Trait(_) => {
             if let Some(trt) = implements_trait(got_typ, &expected, ast, info) {
                 if !matches!(&got_typ.kind, TypeKind::Trait(_)) {
-                    if !is_outer_call { return err() }
+                    if !is_outer_call {
+                        update_pos_from_tree_node(&ast[pos]);
+                        return err(&expected, got_typ)
+                    }
                     if let Mutate::Box = mutate {
                         add_box(ast, pos);
                     }
                 }
                 Ok(trt)
-            } else { err() }
+            } else {
+                update_pos_from_tree_node(&ast[pos]);
+                err(&expected, got_typ)
+            }
         }
         TypeKind::Pointer | TypeKind::MutPointer => {
             let res = if got_typ.kind == expected.kind
@@ -347,7 +358,10 @@ fn check_if_need_box(
                 } else {
                     check_if_need_box(expected, got_typ, ast, pos, info, false, Mutate::Dont)
                 }
-            } else { err() };
+            } else {
+                update_pos_from_tree_node(&ast[pos]);
+                err(&expected, got_typ)
+            };
             if res.is_err() && is_outer_call {
                 if let TypeKind::Pointer = &expected.kind {
                     let expected = get_pointer_inner(&expected).clone();
@@ -373,15 +387,16 @@ fn check_if_need_box(
         TypeKind::Struct(expected_struct_name) => {
             if let TypeKind::Struct(got_struct_name) = &got_typ.kind {
                 if expected_struct_name != got_struct_name {
-                    return err()
+                    update_pos_from_tree_node(&ast[pos]);
+                    return err(&expected, got_typ)
                 }
-                if expected_struct_name == "Vec" {
+                if expected_struct_name == "Vec" || expected_struct_name == "HashSet" {
                     let res = compare_generic_and_a_typ_children(&expected, got_typ, err);
                     if res.is_ok() {
                         res
                     } else {
-                        let is_list_literal = matches!(&ast[pos].value, AstNode::ListLiteral);
-                        if !is_outer_call || !is_list_literal {
+                        let is_literal = matches!(&ast[pos].value, AstNode::ListLiteral | AstNode::SetLiteral);
+                        if !is_outer_call || !is_literal {
                             return res //1 which is err
                         }
                         let expected = expected
@@ -389,7 +404,7 @@ fn check_if_need_box(
                             .children.as_ref().unwrap()[0] //1 the generic
                             .children.as_ref().unwrap()[0]
                             .clone();//1 the value of the generic
-                        let children = ast[pos].children.clone().unwrap();
+                        let children = ast[pos].children.clone().unwrap_or_default();
                         if let TypeKind::OneOf = &expected.kind {
                             for child in &children {
                                 let mut found_one = false;
@@ -404,7 +419,8 @@ fn check_if_need_box(
                                     }
                                 }
                                 if !found_one {
-                                    return err()
+                                    update_pos_from_tree_node(&ast[*child]);
+                                    return err(&expected, ast[*child].typ.as_ref().unwrap())
                                 }
                             }
                             if let Mutate::Box = mutate {
@@ -413,7 +429,7 @@ fn check_if_need_box(
                                         expected.clone(),
                                         &ast[child].typ.clone().unwrap(),
                                         ast, child, info, true, Mutate::Box
-                                    ).unwrap();
+                                    ).unwrap(); // can prob be unwrap_unsafe
                                 }
                             }
                         } else {
@@ -425,20 +441,36 @@ fn check_if_need_box(
                                 )?;
                             }
                         }
-                        Ok(expected)
+                        Ok(typ_with_child! {
+                            TypeKind::Struct(expected_struct_name.clone()),
+                            typ_with_child! {
+                                TypeKind::GenericsMap,
+                                typ_with_child! {
+                                    TypeKind::Generic(GenericType::WithVal(String::from("T"))),
+                                    expected
+                                }
+                            }
+                        })
                     }
                 } else {
                     compare_generic_and_a_typ_children(&expected, got_typ, err)
                 }
-            } else { err() }
+            } else {
+                update_pos_from_tree_node(&ast[pos]);
+                err(&expected, got_typ)
+            }
         }
         TypeKind::Enum(expected_enum_name) => {
             if let TypeKind::Enum(got_enum_name) = &got_typ.kind {
                 if expected_enum_name != got_enum_name {
-                    return err()
+                    update_pos_from_tree_node(&ast[pos]);
+                    return err(&expected, got_typ)
                 }
                 compare_generic_and_a_typ_children(&expected, got_typ, err)
-            } else { err() }
+            } else {
+                update_pos_from_tree_node(&ast[pos]);
+                err(&expected, got_typ)
+            }
         }
         TypeKind::Tuple => { todo!() }
         TypeKind::VArgs => {
@@ -489,7 +521,7 @@ fn match_to_convert_types(expected: &Type, got_typ: &Type, ast: &mut Vec<Ast>, p
     // TODO add case _: unreachable!()
 }
 
-fn compare_generic_and_a_typ_children<F: Fn() -> Result<Type, String>>(
+fn compare_generic_and_a_typ_children<F: Fn(&Type, &Type) -> Result<Type, String>>(
     expected: &Type, got_typ: &Type, err: F
 ) -> Result<Type, String> {
     let expected_children = unwrap(&expected.ref_children()[0].children);
@@ -497,7 +529,8 @@ fn compare_generic_and_a_typ_children<F: Fn() -> Result<Type, String>>(
 
     let mut res = got_typ.clone();
     let mut empty = vec![];
-    let res_children = res.children.as_mut().unwrap()[0].children.as_mut().unwrap_or(&mut empty);
+    let res_children = res.children.as_mut().unwrap()[0]
+        .children.as_mut().unwrap_or(&mut empty);
 
     #[derive(PartialEq, Eq, Hash)]
     enum GOrT {
@@ -523,25 +556,26 @@ fn compare_generic_and_a_typ_children<F: Fn() -> Result<Type, String>>(
         match &got_arg.kind {
             TypeKind::Generic(GenericType::NoVal(name)) => {
                 if let Some(exp) = expected_hm.get(&GOrT::Generic(name.clone())) {
-                    if exp.is_some() { return err() }
-                } else { return err() }
+                    if exp.is_some() { return err(expected, got_typ) }
+                } else { return err(expected, got_typ) }
             }
             TypeKind::Generic(GenericType::WithVal(name)) => {
                 if let Some(exp) = expected_hm.get(&GOrT::Generic(name.clone())) {
                     if let Some(exp) = exp {
-                        if let TypeKind::Unknown = &got_arg.ref_children()[0].kind {
-                            res_arg.children.as_mut().unwrap()[0] = exp.clone();
-                        } else if *exp != got_arg.ref_children()[0] { return err() }
+                        if *exp != got_arg.ref_children()[0] { return err(expected, got_typ) }
+                        // if let TypeKind::Unknown = &got_arg.ref_children()[0].kind {
+                        //     res_arg.children.as_mut().unwrap()[0] = exp.clone();
+                        // } else if *exp != got_arg.ref_children()[0] { return err(expected, got_typ) }
                     }
-                } else { return err() }
+                } else { return err(expected, got_typ) }
             }
             TypeKind::AssociatedType(name) => {
                 let inner_typ = got_arg.children.as_ref()
                     .map(|children| children[0].clone());
 
                 if let Some(exp) = expected_hm.get(&GOrT::AType(name.clone())) {
-                    if matches!(exp, Some(_) if *exp != inner_typ) { return err() }
-                } else { return err() }
+                    if matches!(exp, Some(_) if *exp != inner_typ) { return err(expected, got_typ) }
+                } else { return err(expected, got_typ) }
             }
             _ => unreachable!("{:?}", got_arg),
         };

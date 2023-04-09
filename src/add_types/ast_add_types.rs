@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
-use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, implements_trait, print_type, clean_type, print_type_b};
+use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, implements_trait, print_type, clean_type, print_type_b, join_types};
 use lazy_static::lazy_static;
 use pretty_print_tree::Color;
 use regex::Regex;
@@ -26,9 +26,14 @@ lazy_static! {
 // TODO a pointer to a trait is technically useless and the prob is that I cant cast &v to &Box<v>
 // todo first save all uses of each var (in mold_ast) then check if any of them are used in a
 //  function and if so assign their type
-pub fn add_types(
+#[inline(always)] pub fn add_types(
     ast: &mut Vec<Ast>, pos: usize, vars: &mut VarTypes, info: &mut Info,
-    parent_struct: &Option<HashMap<String, usize>>,
+    parent_struct: &Option<HashMap<String, usize>>
+) { add_types_inner(ast, pos, vars, info, parent_struct, false) }
+
+fn add_types_inner(
+    ast: &mut Vec<Ast>, pos: usize, vars: &mut VarTypes, info: &mut Info,
+    parent_struct: &Option<HashMap<String, usize>>, box_types: bool
 ) {
     update_pos_from_tree_node(&ast[pos]);
 
@@ -36,7 +41,7 @@ pub fn add_types(
     match &ast[pos].value {
         AstNode::Tuple => {
             for child in children {
-                add_types(ast, child, vars, info, parent_struct);
+                add_types_inner(ast, child, vars, info, parent_struct, box_types);
             }
             ast[pos].typ = Some(Type {
                 kind: TypeKind::Tuple,
@@ -246,7 +251,7 @@ pub fn add_types(
         | AstNode::GenericsDeclaration | AstNode::ColonParentheses
         | AstNode::Args | AstNode::NamedArg(_) | AstNode::VArgs => {
             for child in children {
-                add_types(ast, child, vars, info, parent_struct);
+                add_types_inner(ast, child, vars, info, parent_struct, box_types);
             }
         }
         AstNode::Return => {
@@ -310,13 +315,6 @@ pub fn add_types(
                 if let Some(i) = get_from_stack(vars, name) {
                     let should_be = ast[i].typ.clone().unwrap();
                     box_if_needed(should_be, ast, children[1], info);
-                    // if ast[children[1]].typ != *check_for_boxes(should_be, children[1], info, vars) {
-                    //     throw!(
-                    //         "expected `{}` but found `{}`. variables can't change type, if you want to override use `:=`",
-                    //         should_be.as_ref().unwrap(),
-                    //         ast[children[1]].typ.as_ref().unwrap()
-                    //     );
-                    // }
                 } else { //1 first assignment
                     add_to_stack(vars, name.clone(), children[0]);
                     ast[pos].value = AstNode::FirstAssignment;
@@ -331,12 +329,11 @@ pub fn add_types(
             add_types(ast, children[1], vars, info, parent_struct);
             if ast[pos].typ.is_some() {
                 ast[children[0]].typ = ast[pos].typ.clone();
-                // throw!("\ne: {:?}\ng: {:?}", ast[pos].typ.clone().unwrap(), ast[children[1]].typ.clone().unwrap());
                 box_if_needed(
                     ast[pos].typ.clone().unwrap(), ast, children[1], info
                 );
-                // throw!("!{:?}", ast[children[0]].typ);
             } else {
+                add_types_inner(ast, children[1], vars, info, parent_struct, true);
                 let typ = ast[children[1]].typ.clone();
                 if typ.is_none() {
                     throw!("`{}` needs a type annotation", ast[children[0]].value)
@@ -381,9 +378,6 @@ pub fn add_types(
         AstNode::FunctionCall(_) => {
             add_type_func_call(ast, pos, vars, info, parent_struct, &children);
         }
-        // AstNode::StructInit => {
-        //     add_type_struct_innit(ast, pos, vars, info, parent_struct, &children)
-        // }
         AstNode::Property => {
             add_type_property(ast, pos, vars, info, parent_struct, &children)
         }
@@ -446,7 +440,7 @@ pub fn add_types(
         }
         AstNode::UnaryOp(op) => {
             let op = op.clone();
-            add_types(ast, children[0], vars, info, parent_struct);
+            add_types_inner(ast, children[0], vars, info, parent_struct, box_types);
             ast[pos].typ = match op {
                 OperatorType::Pointer => Some(typ_with_child! {
                     TypeKind::Pointer,
@@ -491,30 +485,54 @@ pub fn add_types(
             }
         }
         AstNode::ForIter | AstNode::Parentheses => {
-            add_types(ast, children[0], vars, info, parent_struct);
+            add_types_inner(ast, children[0], vars, info, parent_struct, box_types);
             ast[pos].typ = ast[children[0]].typ.clone();
         }
         AstNode::ListLiteral | AstNode::SetLiteral => {
+            let name = TypeKind::Struct(TypName::Static(
+                if let AstNode::ListLiteral = &ast[pos].value { "Vec" } else { "HashSet" }
+            ));
+            let t = TypeKind::Generic(GenericType::WithVal(String::from("T")));
+
             let inner_types: Vec<_> = children.iter().map(|x| {
-                add_types(ast, *x, vars, info, parent_struct);
+                add_types_inner(ast, *x, vars, info, parent_struct, box_types);
                 *x
             }).collect(); //1 collecting so that all of them get a type
-            ast[pos].typ = Some(typ_with_child!{
-                TypeKind::Struct(TypName::Static(
-                    if let AstNode::ListLiteral = &ast[pos].value { "Vec" } else { "HashSet" }
-                )),
-                typ_with_child!{
-                    TypeKind::GenericsMap,
-                    typ_with_child!{
-                        TypeKind::Generic(GenericType::WithVal(String::from("T"))),
-                        if let Some(x) = inner_types.first() {
-                            ast[*x].typ.clone().unwrap()
-                        } else { UNKNOWN_TYPE }
-                    }
+            let typ = join_types(
+                inner_types.iter().map(|x| ast[*x].typ.clone().unwrap()),
+                info
+            );
+
+            if let TypeKind::OneOf = typ.kind {
+                if box_types {
+                    let expected = typ_with_child! {
+                        name,
+                        typ_with_child!{
+                            TypeKind::GenericsMap,
+                            typ_with_child!{ t, typ }
+                        }
+                    };
+                    ast[pos].typ = Some(box_if_needed(expected, ast, pos, info));
+                } else {
+                    ast[pos].typ = Some(typ_with_child! {
+                        name,
+                        typ_with_child!{
+                            TypeKind::GenericsMap,
+                            typ_with_child!{ t, UNKNOWN_TYPE }
+                        }
+                    });
                 }
-            });
+            } else {
+                ast[pos].typ = Some(typ_with_child! {
+                    name,
+                    typ_with_child!{
+                        TypeKind::GenericsMap,
+                        typ_with_child!{ t, typ }
+                    }
+                });
+            }
         }
-        AstNode::DictLiteral => {
+        AstNode::DictLiteral => { // TODO
             let inner_types: Vec<_> = children.iter().map(|x| {
                 add_types(ast, *x, vars, info, parent_struct);
                 *x
@@ -569,9 +587,9 @@ pub fn add_types(
             vars.pop();
         }
         AstNode::Ternary => {
-            add_types(ast, children[0], vars, info, parent_struct);
+            add_types_inner(ast, children[0], vars, info, parent_struct, box_types);
             add_types(ast, children[1], vars, info, parent_struct);
-            add_types(ast, children[2], vars, info, parent_struct);
+            add_types_inner(ast, children[2], vars, info, parent_struct, box_types);
 
             if !matches!(
                 &ast[children[1]].typ.as_ref().unwrap().kind,
@@ -603,10 +621,19 @@ fn add_type_operator(
 ) {
     add_types(ast, children[0], vars, info, parent_struct);
     add_types(ast, children[1], vars, info, parent_struct);
+
     let t1 = ast[children[0]].typ.as_ref().unwrap();
     let t2 = ast[children[1]].typ.as_ref().unwrap();
+    // print_tree(ast, 0);
+    // print_tree(ast, pos);
+    // print_type(&Some(t1.clone()));
+    // print_type(&Some(t2.clone()));
     let t1 = get_pointer_complete_inner(t1);
     let t2 = get_pointer_complete_inner(t2);
+
+    // print_type(&Some(t1.clone()));
+    // print_type(&Some(t2.clone()));
+
     update_pos_from_tree_node(&ast[pos]);
     let t1_name = unwrap_enum!(
         &t1.kind, TypeKind::Struct(t), t, "`{}` not valid for `{}`", op, t1
@@ -1154,8 +1181,8 @@ fn add_optional_args( //3 not optimized // todo can't use name for positional ar
         if let Some(pos) = supplied_kws.get(&ex_arg.name) {
             to_add.push(*pos);
         } else if let Some(def_val_pos) = ex_arg.default_val_pos {
-            dbg!(&ex_arg);
-            print_tree(ast, def_val_pos);
+            // dbg!(&ex_arg);
+            // print_tree(ast, def_val_pos);
             add_to_tree(
                 children[1], ast,
                 ast[def_val_pos].clone()
@@ -1667,3 +1694,32 @@ pub fn get_associated_type(typ: &Type, trait_names: Vec<&str>, associated_type_n
         _ => todo!()
     }
 }
+
+// A VERY hacky solution... :(
+// this removes the inner types of all the vectors so that they can be properly cast
+// fn box_and_mess_up_typ(typ: &mut Type) {
+//     if matches!(&typ.kind, TypeKind::Struct(name) if name == "Vec") {
+//         let gmap = &mut typ.children.as_mut().unwrap()[0];
+//         unwrap_enum!(gmap.kind, TypeKind::GenericsMap);
+//         let t = &mut gmap.children.as_mut().unwrap()[0];
+//         unwrap_enum!(t.kind, TypeKind::Generic(GenericType::WithVal(_)));
+//         for inner_typ in t.children.as_ref().unwrap() {
+//             box_if_needed(
+//                 typ.clone().unwrap(), ast, children[1], info
+//             );
+//         }
+//         t.children = some_vec![
+//             Type {
+//                 kind: TypeKind::OneOf,
+//                 children: Some(vec![])
+//             }
+//         ];
+//
+//     }
+//     if let AstNode::ListLiteral =
+//     if let Some(children) = typ.children.as_mut() {
+//         for child in children {
+//             mess_up_typ(child);
+//         }
+//     }
+// }

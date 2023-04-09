@@ -1,6 +1,6 @@
 #[macro_export] macro_rules! unwrap_enum {
     ($var:expr, $pattern:pat) => {
-        let $pattern = $var else { unreachable!() };
+        assert!(matches!($var, $pattern));
     };
     ($var:expr, $pattern:pat, $result:expr) => {
         if let $pattern = $var { $result } else { unreachable!() }
@@ -73,7 +73,7 @@ macro_rules! throw { // todo repeating code
                 let padding = ln1.max(ln2);
                 panic!(
                     concat!(
-                        "[{}:{}:{}]\x1b[94m\x1b[1m ***INTERNAL ERROR***:\x1b[0m \n\
+                        "{}:{}:{}\x1b[94m\x1b[1m ***INTERNAL ERROR***:\x1b[0m \n\
                         \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
                         \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
                     ),
@@ -93,7 +93,7 @@ macro_rules! throw { // todo repeating code
 
             panic!(
                 concat!(
-                    "[{}:{}:{}]\x1b[94m\x1b[1m error:\x1b[0m \n\
+                    "{}:{}:{}\x1b[94m\x1b[1m error:\x1b[0m \n\
                     \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
                     \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
                 ),
@@ -117,7 +117,7 @@ macro_rules! throw { // todo repeating code
                 panic!(
                     concat!(
                         "\x1b[1m\x1b[91m", $st, "\x1b[0m\n\
-                        [{}:{}:{}]\x1b[94m\x1b[1m ***INTERNAL ERROR***:\x1b[0m \n\
+                        {}:{}:{}\x1b[94m\x1b[1m ***INTERNAL ERROR***:\x1b[0m \n\
                         \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
                         \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
                     ),
@@ -138,7 +138,7 @@ macro_rules! throw { // todo repeating code
             panic!(
                 concat!(
                     "\x1b[1m\x1b[91m", $st, "\x1b[0m\n\
-                    [{}:{}:{}]\x1b[94m\x1b[1m error:\x1b[0m \n\
+                    {}:{}:{}\x1b[94m\x1b[1m error:\x1b[0m \n\
                     \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
                     \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
                 ),
@@ -162,7 +162,7 @@ macro_rules! throw { // todo repeating code
                 panic!(
                     concat!(
                         "\x1b[1m\x1b[91m", $format, "\x1b[0m\n\
-                        [{}:{}:{}]\x1b[94m\x1b[1m ***INTERNAL ERROR***:\x1b[0m \n\
+                        {}:{}:{}\x1b[94m\x1b[1m ***INTERNAL ERROR***:\x1b[0m \n\
                         \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
                         \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
                     ),
@@ -184,7 +184,7 @@ macro_rules! throw { // todo repeating code
             panic!(
                 concat!(
                     "\x1b[1m\x1b[91m", $format, "\x1b[0m\n\
-                    [{}:{}:{}]\x1b[94m\x1b[1m error:\x1b[0m \n\
+                    {}:{}:{}\x1b[94m\x1b[1m error:\x1b[0m \n\
                     \x1b[94m\x1b[1mline {:width$} |\x1b[0m \x1b[1m\x1b[31m{} \x1b[0m \n\
                     \x1b[94m\x1b[1mcol  {:width$} | {}^ (about here)\x1b[0m \n"
                 ),
