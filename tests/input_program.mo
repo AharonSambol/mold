@@ -29,6 +29,21 @@
 # type IList = List[i]
 
 
+def fib(x: int) -> int:
+    if x < 2:
+        return x
+    return fib(x - 1) + fib(x - 2)
+
+def main():
+    print('\'')
+    print("\\'")
+    print("\"")
+    print('\\"')
+    print('"')
+    print("'")
+    print(fib(35))
+
+#{
 struct St[T, G, I]:
     def __init__(self, g: G, t: T, i: I):
         self.i = i
@@ -38,13 +53,17 @@ struct St[T, G, I]:
 def f(*args: Debug):
     pass
 
+def pp(x: Debug | Display):
+    pass
 def main():
     # TODO max(iter([1]))
     # TODO a: List[tuple[int, bool, int] | List[int | str]] = [(1, False, 4), [2, "3"]]
     # TODO a: List[dict[int, bool | str] | List[int | str]] = [{1: False, 2: "T"}, [2, "3"]]
     # TODO a: List[Set[int | bool] | List[int | str]] = [{1, False, 4}, [2, "3"]]
     # a: List[List[int | bool] | List[int | str]] = [[1, False, 4], [2, "3"]]
-    a = [[1, 4], [2, "3"]]
+    # a = {1, "3"}
+    x = [1, "3"]
+    pp(x)
     # b = clone(&a[0])
 
 

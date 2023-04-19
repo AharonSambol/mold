@@ -12,11 +12,11 @@ use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 
 // TODO also cast: `as Box<dyn P>`
 fn add_box(ast: &mut Vec<Ast>, pos: usize) {
-    let ast_len = ast.len();
+    // let ast_len = ast.len();
     let parent_pos = ast[pos].parent.unwrap();
 
-    let parent_children = ast[parent_pos].children.as_mut().unwrap();
-    *parent_children.iter_mut().find(|x| **x == pos).unwrap() = ast_len; //1 ast_len is the position the Property will be pushed into
+    // let parent_children = ast[parent_pos].children.as_mut().unwrap();
+    // *parent_children.iter_mut().find(|x| **x == pos).unwrap() = ast_len; //1 ast_len is the position the Property will be pushed into
 
     ast.push(Ast {
         value: AstNode::Property,
@@ -57,44 +57,7 @@ fn add_box(ast: &mut Vec<Ast>, pos: usize) {
     ast[args_pos].children = Some(vec![pos]);
 }
 
-/* TODO
-    fn cast_one_of_to_other_one_of(ast: &mut Vec<Ast>, pos: usize, to_typ: Type) -> usize {
-        let ast_len = ast.len();
-        let parent_pos = ast[pos].parent.unwrap();
-
-        let parent_children = ast[parent_pos].children.as_mut().unwrap();
-        *parent_children.iter_mut().find(|x| **x == pos).unwrap() = ast_len; //1 ast_len is the position the Property will be pushed into
-
-        ast.push(Ast {
-            value: AstNode::Body,
-            children: None,
-            parent: Some(parent_pos),
-            typ: Some(to_typ),
-            is_mut: false,
-        });
-        let body = ast.len() - 1;
-
-        add_to_tree(
-            body, ast, Ast::new(AstNode::Match(String::from("Box")))
-        );
-        let func_call = add_to_tree(
-            body, ast, Ast::new(AstNode::FunctionCall(true))
-        );
-        add_to_tree(
-            func_call, ast, Ast::new(AstNode::Identifier(String::from("new")))
-        );
-        let args_pos = add_to_tree(func_call, ast, Ast::new(AstNode::Args));
-
-        ast[pos].parent = Some(args_pos);
-        ast[args_pos].children = Some(vec![pos]);
-
-        property
-    }
-
- */
-
 pub fn make_enums(typ: &Type, enums: &mut OneOfEnums) {
-    // todo sort here
     let types = unwrap(&typ.children);
     let mut generics = vec![];
     types.iter().for_each(|x| {
@@ -191,50 +154,6 @@ fn add_one_of_enum(
     property
 }
 
-
-// pub fn box_typ_no_side_effects(expected: &Type, got: &Type, ast: &Vec<Ast>, info: &Info, is_outer: bool) -> Option<Type> {
-//     // TODO this doesnt deal with generics at all???
-//     if expected == got {
-//         return Some(got.clone())
-//     }
-//     if is_outer {
-//         if let TypeKind::OneOf = expected.kind {
-//             if let TypeKind::OneOf = &got.kind {
-//                 if expected.contains(got) {
-//                     return Some(expected.clone())
-//                 }
-//             }
-//             for typ in unwrap(&expected.children) {
-//                 let res = box_typ_no_side_effects(typ, got, ast, info, false);
-//                 if res.is_some() {
-//                     return res
-//                 }
-//             }
-//             throw!(
-//                 "expected: `{}` but found `{got}`",
-//                 join(expected.ref_children().iter(), "` or `")
-//             );
-//         }
-//     }
-//     if let TypeKind::OneOf = &got.kind {
-//         if got.children.as_ref().unwrap().iter().all(|typ| can_soft_cast(typ, expected)) {
-//             return Some(expected.clone())
-//         }
-//         if let TypeKind::Trait(_) = &expected.kind {
-//             let res = implements_trait(got, expected, ast, info);
-//             if res.is_some() {
-//                 return res
-//             }
-//         }
-//         throw!("can't cast `{got}` to `{expected}`")
-//     }
-//
-//     if let TypeKind::Trait(_) = &expected.kind {
-//         return implements_trait(got, expected, ast, info)
-//     }
-//     None
-// }
-
 #[inline(always)] pub fn box_if_needed(
     expected: Type, ast: &mut Vec<Ast>, pos: usize, info: &mut Info
 ) -> Type {
@@ -303,7 +222,9 @@ fn check_if_need_box(
             for typ in unwrap(&expected.children) {
                 if check_if_need_box(typ.clone(), got_typ, ast, pos, info, is_outer_call, Mutate::Dont).is_ok() {
                     if let Mutate::Box = mutate {
+
                         check_if_need_box(typ.clone(), got_typ, ast, pos, info, is_outer_call, Mutate::Box).unwrap();
+
                         add_one_of_enum(
                             ast, pos, &expected.to_string(),
                             &format!("_{}", escape_typ_chars(&typ.to_string()))
@@ -331,6 +252,7 @@ fn check_if_need_box(
             ))
         }
         TypeKind::Trait(_) => {
+            println!("expected: {expected}");
             if let Some(trt) = implements_trait(got_typ, &expected, ast, info) {
                 if !matches!(&got_typ.kind, TypeKind::Trait(_)) {
                     if !is_outer_call {
@@ -441,6 +363,7 @@ fn check_if_need_box(
                                 )?;
                             }
                         }
+
                         Ok(typ_with_child! {
                             TypeKind::Struct(expected_struct_name.clone()),
                             typ_with_child! {
@@ -459,6 +382,7 @@ fn check_if_need_box(
                 update_pos_from_tree_node(&ast[pos]);
                 err(&expected, got_typ)
             }
+
         }
         TypeKind::Enum(expected_enum_name) => {
             if let TypeKind::Enum(got_enum_name) = &got_typ.kind {
@@ -582,492 +506,7 @@ fn compare_generic_and_a_typ_children<F: Fn(&Type, &Type) -> Result<Type, String
     }
     Ok(res)
 }
-/*
-// 5 *** polymorphism doesn't work for `OneOf` types ***
-pub fn out_of_service___check_for_boxes(
-    expected: Type, ast: &mut Vec<Ast>, pos: usize, info: &mut Info, vars: &VarTypes, is_outer_call: bool
-) -> Type {
-    #[inline] fn is_box_typ(typ: &Type) -> bool {
-        match &typ.kind {
-            TypeKind::Struct(bx) => bx == "Box",
-            TypeKind::Trait(_) => true,
-            _ => false
-        }
-    }
-    #[inline] fn supplied_box(
-        got: &Ast, vars: &VarTypes, ast: &[Ast], info: &mut Info, pos: usize
-    ) -> bool {
-        match &got.value {
-            AstNode::Struct(bx) => bx == "Box",
-            AstNode::Trait { .. } => true,
-            AstNode::Identifier(idf) => {
-                let typ = get_from_stack(vars, idf).unwrap();
-                let typ = ast[typ].typ.clone().unwrap();
-                match &typ.kind {
-                    TypeKind::Struct(name)  =>
-                        if name == "Box" { return true },
-                    TypeKind::Trait(_) => return true,
-                    _ => ()
-                }
-                false
-            },
-            AstNode::Index => {
-                is_box_typ(
-                    &find_index_typ(
-                        ast, info, got.ref_children()[0], pos
-                    ).unwrap()
-                )
-            }
-            AstNode::FunctionCall(_) => {
-                let func_name = unwrap_enum!(
-                    &ast[unwrap_u(&got.children)[0]].value,
-                    AstNode::Identifier(n), n
-                );
-                let return_type = info.funcs[func_name].output.as_ref().unwrap();
-                is_box_typ(return_type)
-            }
-            AstNode::Property => {
-                let typ = get_property_typ(got, ast, info, pos);
-                if let Some(t) = typ { is_box_typ(&t) } else { false }
-            }
-            _ => false
-        }
-    }
 
-    let got = &ast[pos].clone();
-    if let AstNode::NamedArg(_) = got.value {
-        return box_if_needed(
-            expected, ast, unwrap_u(&got.children)[0], info, vars, false
-        ).unwrap_or_else(|e| throw!("{e}"))
-    }
-    if let TypeKind::OneOf = expected.kind {
-        if let Some(got_typ @ Type{ kind: TypeKind::OneOf, .. }) = &got.typ {
-            if expected == *got_typ {
-                return expected
-            } else if expected.contains(got_typ) {
-                let match_pos = insert_as_parent_of(ast, pos, AstNode::Match);
-                let from_enum_name = got_typ.to_string();
-                let to_enum_name = expected.to_string();
-                for typ in got_typ.ref_children() {
-                    let case = add_to_tree(match_pos, ast, Ast::new(AstNode::Case));
-                    /**/let condition = add_to_tree(case, ast, Ast::new(AstNode::Body));
-                    /*-*/let prop = add_to_tree(condition, ast, Ast::new(AstNode::Property));
-                    /*--*/let frm_enm =add_to_tree(prop, ast, Ast::new(AstNode::Identifier(from_enum_name.clone())));
-                    ast[frm_enm].typ = Some(Type { kind: TypeKind::Enum(TypName::Static("")), children: None}); //1 so that is uses `::` and not `.`
-                    /*--*/add_to_tree(prop, ast, Ast::new(AstNode::Identifier(format!("_{typ}"))));
-                    /**/add_to_tree(case, ast, Ast::new(AstNode::Identifier(String::from("x"))));
-
-                    /**/let body = add_to_tree(case, ast, Ast::new(AstNode::Body));
-                    /*-*/let prop = add_to_tree(body, ast, Ast::new(AstNode::Property));
-                    /*--*/add_to_tree(prop, ast, Ast::new(AstNode::Identifier(to_enum_name.clone())));
-                    /*--*/let func_call = add_to_tree(prop, ast, Ast::new(AstNode::FunctionCall(true)));
-                    /*---*/add_to_tree(func_call, ast, Ast::new(AstNode::Identifier(format!("_{typ}"))));
-                    /*---*/let args = add_to_tree(func_call, ast, Ast::new(AstNode::Args));
-                    /*----*/add_to_tree(args, ast, Ast::new(AstNode::Identifier(String::from("x"))));
-                }
-                print_tree(ast, match_pos);
-                // TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                return expected
-            }
-        }
-        for typ in unwrap(&expected.children) {
-            if let Some(t) = &got.typ {
-                if t == typ {
-                    add_one_of_enum(
-                        ast, pos, &expected.to_string(),
-                        &format!("_{}", escape_typ_chars(&typ.to_string()))
-                    );
-                    return got.typ.clone().unwrap()
-                }
-                if matches!(
-                    &typ.kind, TypeKind::Trait(_) if implements_trait(t, typ, ast, info).is_some()
-                ) {
-                    // print_tree(ast, pos);
-                    let new_pos = add_box(ast, pos);
-                    add_one_of_enum(
-                        ast, new_pos, &expected.to_string(),
-                        &format!("_{}", escape_typ_chars(&typ.to_string()))
-                    );
-                    // todo does this have the correct generics?
-                    return expected
-                }
-            }
-        }
-        print_tree(ast, 0);
-        println!("{}", join(expected.ref_children().iter(), "` or `"));
-        println!("{:?}", got);
-        throw!(
-            "expected: `{}` but found `{}`",
-            join(expected.ref_children().iter(), "` or `"),
-            got.typ.clone().unwrap()
-        );
-    }
-    if let Some(Type { kind: TypeKind::OneOf, children: Some(types) }) = &got.typ {
-        #[inline(always)] fn can_cast(types: &Vec<Type>, expected: &Type, ast: &mut Vec<Ast>, pos: usize) -> bool {
-            for typ in types {
-                if !can_soft_cast(typ, expected) {
-                    return false
-                }
-            }
-            insert_as_parent_of(ast, pos, AstNode::As(expected.to_string()));
-            true
-        }
-
-        if can_cast(types, &expected, ast, pos) {
-            return expected
-        }
-        if let TypeKind::Trait(_) = &expected.kind {
-            if let Some(res) = implements_trait(got.typ.as_ref().unwrap(), &expected, ast, info) {
-                add_box(ast, pos);
-                return res
-            }
-        }
-        throw!("can't cast `{}` to `{expected}`", got.typ.as_ref().unwrap())
-    }
-    if is_box_typ(&expected) {
-        if !supplied_box(got, vars, ast, info, pos) {
-            if let TypeKind::Trait(_) = &expected.kind {
-                let mut got_typ = got.typ.as_ref().unwrap();
-                if let TypeKind::Generic(GenericType::WithVal(_)) = &got_typ.kind {
-                    got_typ = &got_typ.ref_children()[0];
-                }
-                if let Some(res) = implements_trait(got_typ, &expected, ast, info) {
-                    let pos = add_box(ast, pos);
-                    ast[pos].typ = Some(res.clone());
-                    return res
-                } else {
-                    print_type(&Some(expected.clone()));
-                    print_type(&Some(got_typ.clone()));
-                    // todo!()
-                    throw!(
-                        "`{got_typ}` doesn't implement `{}`",
-                        expected.to_string()
-                            .strip_prefix("Box<dyn ").unwrap()
-                            .strip_suffix('>').unwrap()
-                    )
-                }
-            } else {
-                // check_for_boxes(
-                //     unwrap(&expected.children)[0].clone(), ast, pos, info, vars
-                // );
-
-                let pos = add_box(ast, pos);
-                ast[pos].typ = Some(expected.clone());
-                // TODO shouldn't it keep checking?
-            }
-        } else {
-            let TypeKind::Trait(_) = &expected.kind else {
-                return box_if_needed(
-                    unwrap(&expected.children)[0].clone(), ast, pos, info, vars, false
-                ).unwrap_or_else(|e| throw!("{e}"))
-            };
-        }
-        return expected;
-    }
-    match expected.kind.clone() {
-        TypeKind::Struct(ex_name)
-        | TypeKind::Trait(ex_name)
-        | TypeKind::Enum(ex_name) => {
-            let expected_children = unwrap(&expected.children).clone();
-            let got_children = unwrap_u(&got.children).clone();
-            let typ = match &got.value {
-                AstNode::ListLiteral | AstNode::SetLiteral => {
-                    match &got.value {
-                        AstNode::ListLiteral => if ex_name != "Vec" {
-                            throw!("expected: `{}` but found: `Vec`", ex_name)
-                        }
-                        AstNode::SetLiteral => if ex_name != "HashSet" {
-                            throw!("expected: `{}` but found: `HashSet`", ex_name)
-                        }
-                        _ => unreachable!()
-                    }
-                    if expected_children.len() != 1 { throw!() }
-                    let exp_c = if let Type{
-                        kind: TypeKind::GenericsMap,
-                        children: Some(c)
-                    } = &expected_children[0] {
-                        if c.len() != 1 { throw!() }
-                        if let Type{
-                            kind: TypeKind::Generic(GenericType::WithVal(_)),
-                            children: Some(c)
-                        } = &c[0] {
-                            if c.len() != 1 { throw!() }
-                            &c[0]
-                        } else { throw!() }
-                    } else { throw!() };
-
-                    for i in got_children {
-                        box_if_needed(
-                            exp_c.clone(), ast, i, info, vars, false
-                        );
-                    }
-                    expected.clone()  //1 got what expected, no need to panic
-                },
-                AstNode::DictLiteral => {
-                    if ex_name != "HashMap" {
-                        throw!("expected: `{}` but found: `HashMap`", ex_name.get_str())
-                    }
-                    if expected_children.len() != 1 { throw!() }
-                    let exp_c: [&Type; 2] = if let Type{
-                        kind: TypeKind::GenericsMap,
-                        children: Some(c)
-                    } = &expected_children[0] {
-                        if c.len() != 2 { throw!() }
-                        let mut iter = c.iter().map(|t| {
-                            if let Type {
-                                kind: TypeKind::Generic(GenericType::WithVal(_)),
-                                children: Some(c)
-                            } = &t {
-                                if c.len() != 1 { throw!() }
-                                &c[0]
-                            } else { throw!() }
-                        });
-                        [iter.next().unwrap(), iter.next().unwrap()]
-                    } else { throw!() };
-
-                    for (i, c) in got_children.iter().enumerate() {
-                        box_if_needed(
-                            exp_c[i % 2].clone(), ast, *c, info, vars, false
-                        );
-                    }
-                    expected.clone()  //1 got what expected, no need to panic
-                },
-                AstNode::StructInit => {
-                    if let TypeKind::Trait(_) = expected.kind {
-                        let struct_name = unwrap_enum!(
-                            &ast[unwrap_u(&got.children)[0]].value, AstNode::Identifier(x), x
-                        );
-                        let traits = get_traits!(TypName::Str(struct_name.clone()), info);
-                        if traits.is_none() || traits.unwrap().iter().all(|x| ex_name != x.trt_name) {
-                            throw!("the struct `{struct_name}` doesn't implement the trait `{}`", ex_name.get_str())
-                        }
-                        // let struct_pos = info.structs[&struct_name].pos;
-                        // let traits = &ast[unwrap_u(&ast[struct_pos].children)[3]];
-                        // if !unwrap_u(&traits.children).iter().any(|x|
-                        //     unwrap_enum!(&ast[*x].value, AstNode::Identifier(trt), trt) == ex_name.get_str()
-                        // ) {
-                        //     throw!("the struct `{struct_name}` doesn't implement the trait `{}`", ex_name.get_str())
-                        // }
-                    } else {
-                        let struct_name = unwrap_enum!(&ast[got_children[0]].value, AstNode::Identifier(s), s);
-                        if struct_name != ex_name.get_str() {
-                            throw!("expected: `{ex_name}` got: `{struct_name}`");
-                        }
-
-                        let mut generics_map = HashMap::new();
-                        let generics = unwrap(&expected.children);
-                        if !generics.is_empty() {
-                            if let Type { kind: TypeKind::GenericsMap, children: Some(children) } = &generics[0] {
-                                for child in children {
-                                    if let Type {
-                                        kind: TypeKind::Generic(GenericType::WithVal(name)),
-                                        children: Some(c)
-                                    } = child {
-                                        generics_map.insert(name.clone(), c[0].clone());
-                                    }
-                                }
-                            }
-                        }
-
-                        let struct_pos = info.structs[ex_name.get_str()].pos;
-                        let args_def = &ast[unwrap_u(&ast[struct_pos].children)[1]];
-
-                        let expected_args: Vec<_> = unwrap_u(&args_def.children).iter().map(|x|
-                            if let Some(Type { kind: TypeKind::Generic(GenericType::NoVal(name)), .. }) = &ast[*x].typ {
-                                generics_map[name].clone()
-                            } else {
-                                ast[*x].typ.clone().unwrap()
-                            }
-                        ).collect();
-                        let got_args = unwrap_u(&ast[got_children[1]].children).clone();
-                        if expected_args.len() != got_args.len() {
-                            throw!("{} != {}", expected_children.len(), got_args.len())
-                        }
-                        for (got_c, exp_c) in got_args.iter().zip(expected_args) {
-                            box_if_needed(
-                                exp_c, ast, *got_c, info, vars, false
-                            );
-                        }
-                    }
-                    expected.clone()  //1 got what expected, no need to panic
-                }
-                AstNode::Identifier(idf) => {
-                    let typ = get_from_stack(vars, idf).unwrap();
-                    ast[typ].typ.clone().unwrap()
-                }
-                AstNode::Number(num) => {
-                    // if !SPECIFIED_NUM_TYPE_RE.is_match(ex_name.get_str()) {
-                    //      throw!("expected: `{}` but found an ambiguous number", ex_name.get_str())
-                    // }
-                    if let Some(t) = SPECIFIED_NUM_TYPE_RE.find(num) {
-                        if t.as_str() != ex_name.get_str() {
-                            throw!("expected: `{}` but found: `{}`", ex_name.get_str(), t.as_str())
-                        }
-                    } else {
-                        let new_num = format!("{}{}", num, ex_name.get_str());
-                        ast[pos].value = AstNode::Number(new_num);
-                    }
-                    expected.clone()  //1 got what expected, no need to panic
-                }
-                AstNode::Bool(_) => {
-                    if ex_name.get_str() != "bool" {
-                        throw!("expected: `{}` but found: `bool`", ex_name.get_str())
-                    }
-                    expected.clone()  //1 got what expected, no need to panic
-                }
-                AstNode::Char(_) => {
-                    if ex_name.get_str() != "char" {
-                        throw!("expected: `{}` but found: `char`", ex_name.get_str())
-                    }
-                    expected.clone()  //1 got what expected, no need to panic
-                }
-                AstNode::String { mutable, .. } => {
-                    if *mutable && ex_name.get_str() == "String" {
-                        //1 then its good
-                    } else if !*mutable{
-                        todo!()
-                    } else {
-                        throw!(
-                            "expected: `{}` but found: `{}`",
-                            ex_name.get_str(),
-                            if *mutable { "String" } else { "&str" }
-                        )
-                    }
-                    expected.clone()  //1 got what expected, no need to panic
-                },
-                AstNode::Property => {
-                    get_property_typ(got, ast, info, pos).unwrap()
-                }
-                AstNode::Index => {
-                    find_index_typ(
-                        ast, info, got.ref_children()[0], pos
-                    ).unwrap()
-                }
-                AstNode::FunctionCall(_) => {
-                    let func_name = unwrap_enum!(
-                        &ast[unwrap_u(&got.children)[0]].value,
-                        AstNode::Identifier(n), n
-                    );
-                    let args = &ast[unwrap_u(&got.children)[1]].ref_children();
-                    let args: Vec<_> = args.iter().map(|x| ast[*x].typ.clone().unwrap()).collect();
-                    get_function_return_type(
-                        &info.funcs[func_name].output,
-                        &info.funcs[func_name].input,
-                        &if args.is_empty() { None } else { Some(args) },
-                        ast, info
-                    ).unwrap()
-                    // println!("&&& {}", info.funcs[func_name].output.clone().unwrap());
-                    // info.funcs[func_name].output.clone().unwrap()
-                }
-                AstNode::Parentheses => {
-                    box_if_needed(
-                        expected.clone(), ast, got_children[0], info, vars, false
-                    ).unwrap_or_else(|e| throw!("{e}"))
-                }
-                AstNode::Operator(op) | AstNode::UnaryOp(op) => {
-                    if let AstNode::UnaryOp(OperatorType::Dereference) = &got.value {
-                        let new_expected = typ_with_child! {
-                            ast[got_children[0]].typ.as_ref().unwrap().kind.clone(), //1 either pointer or mut pointer
-                            typ_with_child! {
-                                TypeKind::Generic(GenericType::WithVal(String::from("T"))),
-                                expected.clone()
-                            }
-                        };
-                        box_if_needed(new_expected, ast, got_children[0], info, vars, false);
-                    } else {
-                        let new_expected = match op {
-                            OperatorType::Div => todo!(),
-                            OperatorType::OpEq(op) if OperatorType::Div == **op => todo!(),
-                            _ => expected.clone()
-                        };
-                        for child in got_children {
-                            box_if_needed(new_expected.clone(), ast, child, info, vars, false);
-                        }
-                    }
-                    expected.clone()  //1 got what expected, no need to panic
-                },
-                AstNode::Cast => got.typ.clone().unwrap(),
-                _ => throw!("expected: {:?}, got.kind: {:?}", expected.kind, got.value)
-            };
-            if !can_soft_cast(&typ, &expected) {
-                print_type(&Some(expected.clone()));
-                print_type(&Some(typ.clone()));
-                print_tree(ast, 0);
-                throw!("expected: `{expected}` got: `{typ}`");
-            }
-        },
-        TypeKind::Generic(_) => {}
-        TypeKind::Pointer | TypeKind::MutPointer => {
-            // let got_children = unwrap_u(&got.children).clone();
-            let typ = match &got.value {
-                AstNode::UnaryOp(OperatorType::Pointer | OperatorType::MutPointer) => {
-                    let expected_inner = get_pointer_inner(&expected).clone();
-                    box_if_needed(
-                        expected_inner, ast, unwrap_u(&got.children)[0],
-                        info, vars, false
-                    );
-                    expected.clone()  //1 got what expected, no need to panic
-                }
-                AstNode::Identifier(idf) => {
-                    let typ = get_from_stack(vars, idf).unwrap();
-                    ast[typ].typ.clone().unwrap()
-                }
-                AstNode::Property => {
-                    get_property_typ(got, ast, info, pos).unwrap()
-                }
-                AstNode::Index => {
-                    find_index_typ(
-                        ast, info, got.ref_children()[0], pos
-                    ).unwrap()
-                }
-                AstNode::FunctionCall(_) => {
-                    let func_name = unwrap_enum!(
-                        &ast[unwrap_u(&got.children)[0]].value,
-                        AstNode::Identifier(n), n
-                    );
-                    let args = &ast[unwrap_u(&got.children)[1]].ref_children();
-                    let args: Vec<_> = args.iter().map(|x| ast[*x].typ.clone().unwrap()).collect();
-                    get_function_return_type(
-                        &info.funcs[func_name].output,
-                        &info.funcs[func_name].input,
-                        &if args.is_empty() { None } else { Some(args) },
-                        ast, info
-                    ).unwrap()
-                }
-                AstNode::Parentheses => {
-                    box_if_needed(
-                        expected.clone(), ast, unwrap_u(&got.children)[0],
-                        info, vars, false
-                    ).unwrap_or_else(|e| throw!("{e}"))
-                }
-                AstNode::Operator(_) | AstNode::UnaryOp(_) => {
-                    for child in unwrap_u(&got.children) {
-                        box_if_needed(expected.clone(), ast, *child, info, vars, false);
-                    }
-                    expected.clone()  //1 got what expected, no need to panic
-                },
-                _ => throw!("expected: {:?}, got.kind: {:?}", expected.kind, got.value)
-            };
-            if typ != expected {
-                print_type(&Some(expected.clone()));
-                print_type(&Some(typ.clone()));
-                throw!("expected: `{expected}` got: `{typ}`");
-            }
-        }
-        TypeKind::Tuple => {
-            let typ = got.typ.as_ref().unwrap();
-            if *typ != expected {
-                throw!("expected: `{expected}` got: `{typ}`");
-            }
-        }
-        _ => {
-            print_tree(ast, 0);
-            throw!("{:?}", expected)
-        },
-    }
-    expected
-}
-*/
 fn get_property_typ(
     got: &Ast, ast: &mut Vec<Ast>, info: &mut Info, pos: usize
 ) -> Option<Type> {

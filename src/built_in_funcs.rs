@@ -46,7 +46,7 @@ pub fn put_at_start(input: &str) -> String {
             name: "String",
             generics: None,
             methods: vec![
-                "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]",
+                "fmt(self: &Self, f: &mut Formatter[`_]) -> Result[(), Error]",
                 "clone(self) -> str", // todo do automatically?
                 "split(self, s: str) -> List[str]", //todo (optional) s: str | char    if rust: -> Iter[str]
                 "strip(self) -> str",        //todo (optional) c: char
@@ -121,7 +121,7 @@ pub fn put_at_start(input: &str) -> String {
                 "into_iter(self) -> IntoIterator[Item=T]",
                 "append(self, t: T)",
                 "index(self, pos: usize) -> T",
-                "Debug::fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]",
+                "Debug::fmt(self: &Self, f: &mut Formatter[`_]) -> Result[(), Error]",
             ],
             methods_with_impl: vec!["def __init__(self, x: T):\n\t\tself.x = x"],
             traits: Some(vec!["Debug", "IntoIterator[Item=T]"]),
@@ -152,9 +152,9 @@ pub fn put_at_start(input: &str) -> String {
         //1 Formatter
         BuiltIn::Struct(BuiltInStruct{
             name: "Formatter",
-            generics: Some(vec!["'_"]),
+            generics: Some(vec!["`_"]),
             methods: vec![],
-            methods_with_impl: vec!["def __init__(self, x: '_):\n\t\tself.x = x"],
+            methods_with_impl: vec!["def __init__(self, x: `_):\n\t\tself.x = x"],
             traits: None,
         }),
         //1 Error
@@ -194,7 +194,7 @@ pub fn put_at_start(input: &str) -> String {
             duck: false,
             generics: None,
             methods: vec![
-                "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]"
+                "fmt(self: &Self, f: &mut Formatter[`_]) -> Result[(), Error]"
             ],
             types: None,
             ignore: true,
@@ -205,7 +205,7 @@ pub fn put_at_start(input: &str) -> String {
             duck: true,
             generics: None,
             methods: vec![
-                "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]"
+                "fmt(self: &Self, f: &mut Formatter[`_]) -> Result[(), Error]"
             ],
             types: None,
             ignore: true,

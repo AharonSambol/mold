@@ -3,7 +3,8 @@ use std::fmt::Write;
 use std::hint::unreachable_unchecked;
 use crate::add_types::utils::{add_new_line, update_pos_from_token};
 use crate::mold_tokens::Token::{Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char, LifeTime};
-use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE, EMPTY_STR, IS_COMPILED};
+use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE, EMPTY_STR, IS_COMPILED, unwrap_enum};
+use crate::types::unwrap;
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,7 +139,6 @@ pub enum OperatorType {
     Eq, IsEq, Bigger, Smaller, NEq, BEq, SEq,
     Plus, Minus, Mul, Pow, Div, Mod, FloorDiv,
     OpEq(Box<OperatorType>),
-    // PlusEq, MinusEq, MulEq, PowEq, DivEq, ModEq, FloorDivEq,
     BinOr, BinAnd, Xor, BinNot,
     OrEq, AndEq, XorEq,
     ShiftR, ShiftL,
@@ -229,11 +229,11 @@ impl OperatorType {
 }
 
 enum Comment { None, Normal, Multiline(i8) }
-
+enum StrType { Single, Double, None }
 pub fn tokenize(input_code: &str) -> Vec<SolidTokenWPos> {
     let mut tokens: Vec<TokenWPos> = Vec::new();
     let mut skip = 0;
-    let mut is_str = false;
+    let mut is_str = StrType::None;
     let mut is_comment = Comment::None;
     let mut escaped = false;
     let mut open_braces = 0;
@@ -243,7 +243,6 @@ pub fn tokenize(input_code: &str) -> Vec<SolidTokenWPos> {
     let mut col_num = 0;
     let mut last_tokens_len = 0;
     let chars: Vec<_> = input_code.chars().collect();
-    #[allow(clippy::explicit_counter_loop)]
     for (i, c) in chars.iter().enumerate() {
         if tokens.len() != last_tokens_len && matches!(tokens.last(), Some(last) if matches!(last.tok, Token::NewLine)) {
             last_tokens_len = tokens.len();
@@ -279,21 +278,27 @@ pub fn tokenize(input_code: &str) -> Vec<SolidTokenWPos> {
             continue
         }
 
-        if is_str {
+        if let StrType::Double | StrType::Single = is_str {
             match c {
-                '"' => {
-                    is_str = escaped;
-                    escaped = false;
+                '"' if matches!(is_str, StrType::Double) => {
+                    if escaped {
+                        escaped = false;
+                    } else {
+                        is_str = StrType::None;
+                    }
+                },
+                '\'' if matches!(is_str, StrType::Single) => {
+                    if escaped {
+                        escaped = false;
+                    } else {
+                        is_str = StrType::None;
+                    }
                 },
                 '\\' => escaped = !escaped,
                 _ => escaped = false
             }
-            if let TokenWPos {
-                tok: Str { end, .. }, .. //pos: Pos { end_line, end_col, .. }
-            } = tokens.last_mut().unwrap() { //1 always true
+            if let Some(TokenWPos { tok: Str { end, .. }, .. }) = tokens.last_mut() { //1 if is str and not char
                 *end += 1;
-                // *end_line = line_num;
-                // *end_col = col_num;
             }
             continue
         }
@@ -358,46 +363,13 @@ pub fn tokenize(input_code: &str) -> Vec<SolidTokenWPos> {
                     Parenthesis(IsOpen::False)
                 },
                 // </editor-fold>
-                // <editor-fold desc="''">
-                '\'' => {
-                    if chars[i + 2] == '\'' {
-                        make_char(&mut tokens, &mut skip, &chars, i, line_num, col_num - 1);
-                        continue
-                    } else {
-                        LifeTime
+                '\'' | '"' => {
+                    if add_string(&mut tokens, line_num, col_num, &chars, i, &mut skip) {
+                        is_str = if *c == '"' { StrType::Double } else { StrType::Single };
                     }
-                },
-                '"' => {
-                    is_str = true;
-                    if let Some(TokenWPos {
-                                    tok: Word { start, end, is_spaced: false },
-                                    ..
-                                }) = tokens.last_mut() {
-                        if *start == *end - 1 && chars[*start] == 'i' {
-                            tokens.last_mut().unwrap().tok = Str {
-                                start: i,
-                                end: i + 1,
-                                mutable: false
-                            };
-                            continue
-                        }
-                    }
-                    tokens.push(TokenWPos {
-                        tok: Str {
-                            start: i,
-                            end: i + 1,
-                            mutable: true
-                        },
-                        pos: Pos {
-                            start_line: line_num,
-                            start_col: col_num - 1,
-                            // end_line: line_num,
-                            // end_col: col_num + 1,
-                        }
-                    });
                     continue
                 },
-                // </editor-fold>
+                '`' => LifeTime,
                 'a'..='z' | 'A'..='Z' | '_' => Word { start: i, end: i + 1, is_spaced: false },
                 _ => throw!("unexpected token `{}`", c)
             },
@@ -417,6 +389,46 @@ pub fn tokenize(input_code: &str) -> Vec<SolidTokenWPos> {
         };
     }
     solidify_tokens(&tokens, input_code)
+}
+
+/// returns false if is char (and not a string)
+fn add_string(
+    tokens: &mut Vec<TokenWPos>, line_num: usize, col_num: usize, chars: &[char], i: usize, skip: &mut i32
+) -> bool {
+    if let Some(TokenWPos {
+        tok: Word { start, end, is_spaced: false }, ..
+    }) = tokens.last_mut() {
+        if *start == *end - 1 {
+            if chars[*start] == 'i' {
+                tokens.last_mut().unwrap().tok = Str {
+                    start: i,
+                    end: i + 1,
+                    mutable: false
+                };
+                return true;
+            } else if chars[*start] == 'c' {
+                if chars[i + 2] != '\'' && chars[i + 2] != '"' {
+                    throw!("char can only contain one character")
+                }
+                *tokens.last_mut().unwrap() = make_char(
+                    skip, chars, i, line_num, col_num - 1
+                );
+                return false;
+            }
+        }
+    }
+    tokens.push(TokenWPos {
+        tok: Str {
+            start: i,
+            end: i + 1,
+            mutable: true
+        },
+        pos: Pos {
+            start_line: line_num,
+            start_col: col_num - 1,
+        }
+    });
+    true
 }
 
 fn solidify_tokens(tokens: &Vec<TokenWPos>, input_code: &str) -> Vec<SolidTokenWPos> {
@@ -618,25 +630,23 @@ fn str_to_op_type(st: &str) -> Option<OperatorType> {
     })
 }
 
-fn make_char(tokens: &mut Vec<TokenWPos>, skip: &mut i32, chars: &[char], i: usize, line_num: usize, col_num: usize) {
+fn make_char(skip: &mut i32, chars: &[char], i: usize, line_num: usize, col_num: usize) -> TokenWPos {
     if chars[i + 1] != '\\' {
         *skip = 2;
-        tokens.push( TokenWPos {
+        return TokenWPos {
             tok: Char(chars[i + 1]),
             pos: Pos {
                 start_line: line_num,
-                // end_line: line_num,
                 start_col: col_num,
-                // end_col: col_num + 3,
             }
-        });
-        return;
+        }
     }
     *skip = 3;
-    tokens.push(TokenWPos {
+    TokenWPos {
         tok: Char(
             match chars[i + 2] {
                 '\'' => '\'',
+                '\"' => '\"',
                 't' => '\t',
                 '\\' => '\\',
                 'n' => '\n',
@@ -646,11 +656,9 @@ fn make_char(tokens: &mut Vec<TokenWPos>, skip: &mut i32, chars: &[char], i: usi
         ),
         pos: Pos {
             start_line: line_num,
-            // end_line: line_num,
             start_col: col_num,
-            // end_col: col_num + 4,
         }
-    });
+    }
 }
 
 fn join_num(tokens: &mut [TokenWPos], new_end: usize, /*new_end_line: usize, new_end_col: usize*/) -> bool {

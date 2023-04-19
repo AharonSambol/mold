@@ -415,7 +415,9 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
     if typ == expected_trait {
         return Some(typ.clone())
     }
-
+    if expected_trait_name == "Debug" {
+        println!("!$, {}", typ)
+    }
     if let TypeKind::OneOf = &typ.kind {
         return one_of_implements_trait(typ, expected_trait, ast, info, expected_trait_name)
     }
@@ -558,6 +560,10 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
 }
 
 fn one_of_implements_trait(typ: &Type, expected_trait: &Type, ast: &[Ast], info: &Info, expected_trait_name: &str) -> Option<Type> {
+    println!("expected_trait_name: {expected_trait_name}");
+    if expected_trait_name == "Debug" {
+        panic!("!");
+    }
     let mut options = typ.ref_children().iter();
     let first = implements_trait(options.next().unwrap(), expected_trait, ast, info);
     if first.is_none() || options.any(|typ| implements_trait(typ, expected_trait, ast, info) != first) {
@@ -575,6 +581,7 @@ fn one_of_implements_trait(typ: &Type, expected_trait: &Type, ast: &[Ast], info:
         name: typ.to_string(),
         path: String::from("out/src/main.rs"),
     };
+
     if let Some(vc) = unsafe { IMPL_TRAITS.get_mut(&key) } {
         if let Some(trt) = vc.iter().find(|x| x.trt_name == expected_trait_name && x.generics == trt_generics) {
             if trt.types != trt_a_types {
@@ -652,6 +659,9 @@ fn one_of_implements_trait(typ: &Type, expected_trait: &Type, ast: &[Ast], info:
             "\n"
         ),
     );
+    if expected_trait_name == "Debug" {
+        panic!("{implementation}");
+    }
     let val = ImplTraitsVal {
         trt_name: String::from(expected_trait_name),
         implementation: Implementation::Is(implementation),

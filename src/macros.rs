@@ -40,7 +40,7 @@
                 concat!("clone() -> ", stringify!($val)),
                 "__init__(self)",
                 // "__str__(self: &Self) -> str",
-                "fmt(self: &Self, f: &mut Formatter['_]) -> Result[(), Error]"
+                "fmt(self: &Self, f: &mut Formatter[`_]) -> Result[(), Error]"
             ],
             methods_with_impl: vec![],
             traits: Some(vec![

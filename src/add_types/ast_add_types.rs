@@ -1026,8 +1026,9 @@ fn format_args_and_get_return_typ(
             ).collect())
         } else {
             Some(expected_input.as_ref().unwrap().iter().zip(args.iter()).map(
-                |(exp, got)|
+                |(exp, got)| {
                     (box_if_needed(exp.typ.clone(), ast, *got, info), *got)
+                }
             ).collect())
         }
     } else { None };

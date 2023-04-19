@@ -19,6 +19,7 @@ use std::io::Write;
 use std::fmt::{Write as w};
 use std::path::PathBuf;
 use std::process::{Command, exit};
+use std::time::Instant;
 use once_cell::sync::Lazy;
 use fancy_regex::Regex as FancyRegex;
 use lazy_static::lazy_static;
@@ -512,17 +513,26 @@ fn run(path: &String) {
                 .spawn()
                 .expect("ls command failed to start");
             a.wait().unwrap();
+
             println!("\n\x1b[100m\x1b[1m\x1b[92m OUTPUT: \x1b[0m");
+            let now = Instant::now();
+
             let mut prs = Command::new("out/target/release/out").spawn().unwrap();
             prs.wait().unwrap();
+
+            println!("\n\x1b[40m\x1b[51m\x1b[1m\x1b[37m EXECUTION TIME: {:?} \x1b[0m", now.elapsed());
         } else {
             println!("{}", std::str::from_utf8(&check.stderr).unwrap());
         }
     } else {
         println!("\n\x1b[100m\x1b[1m\x1b[92m OUTPUT: \x1b[0m");
+        let now = Instant::now();
+
         Command::new("python3").arg(path)
             .spawn().expect("ls command failed to start")
             .wait().unwrap();
+
+        println!("\n\x1b[40m\x1b[1m\x1b[37m EXECUTION TIME: {:?} \x1b[0m", now.elapsed());
     }
 }
 
@@ -616,4 +626,3 @@ fn find_module_path(path: &String) -> PathBuf {
     }
     throw!("no `.mold` file found")
 }
-

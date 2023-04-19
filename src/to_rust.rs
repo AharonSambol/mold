@@ -1,8 +1,12 @@
+use std::clone;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use std::fmt::Write;
 use std::iter::zip;
+use std::mem::replace;
+use lazy_static::lazy_static;
+use regex::Regex;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, typ_with_child, unwrap_enum, some_vec};
 use crate::add_types::ast_add_types::{get_associated_type, NUM_TYPES, SPECIFIED_NUM_TYPE_RE};
 use crate::add_types::generics::apply_generics_from_base;
@@ -12,6 +16,11 @@ use crate::construct_ast::tree_utils::{print_tree, update_pos_from_tree_node};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, implements_trait, print_type};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
+
+lazy_static! {
+    static ref ODD_NUM_ESCAPE_SINGLE_Q: Regex = Regex::new(r#"([^\\]|^)(\\\\)*\\'"#).unwrap();
+    static ref ODD_NUM_ESCAPE_DOUBLE_Q: Regex = Regex::new(r#"([^\\]|^)(\\\\)*\\""#).unwrap();
+}
 
 //4 probably using a string builder would be much more efficient (but less readable IMO)
 pub fn to_rust(
@@ -323,10 +332,34 @@ pub fn to_rust(
             )
         },
         AstNode::String { val, mutable } => {
-            if *mutable { format!("String::from({val})") }
-            else { val.clone() }
+            if val.starts_with('"') {
+                if ODD_NUM_ESCAPE_SINGLE_Q.is_match(val) {
+                    throw!("unexpected escape sequence `\\'`");
+                }
+                if *mutable {
+                    format!("String::from({val})")
+                } else { val.clone() }
+            } else {
+                if ODD_NUM_ESCAPE_DOUBLE_Q.is_match(val) {
+                    throw!("unexpected escape sequence `\\\"`");
+                }
+
+                let escaped = val[1..val.len() - 1] // remove the single quote at start and end
+                    .replace('"', "\\\"")
+                    .replace("\\'", "'");
+
+                if *mutable {
+                    format!("String::from(\"{escaped}\")")
+                } else { format!("\"{escaped}\"") }
+            }
         },
-        AstNode::Char(chr) => format!("'{chr}'"),
+        AstNode::Char(chr) => {
+            match chr.as_str() {
+                "\'" => String::from("'\\\''"),
+                "\\\"" => String::from("'\"'"),
+                _ => format!("'{chr}'")
+            }
+        },
         AstNode::Property => {
             if let AstNode::FunctionCall(_) = ast[children[1]].value {
                 if let Some(res) = built_in_methods(ast, indentation, children, info){
@@ -444,19 +477,6 @@ pub fn to_rust(
             }
             res
         },
-        // AstNode::StructInit => {
-        //     let arg_vals = unwrap_u(&ast[children[1]].children);
-        //     format!(
-        //         "{}::new({})",
-        //         ast[pos].typ.clone().unwrap(),
-        //         join(
-        //             arg_vals.iter().map(|x|
-        //                 to_rust(ast, *x, indentation, info),
-        //             ),
-        //             ", "
-        //         )
-        //     )
-        // }
         AstNode::RustStructInit => {
             let args = unwrap_u(&ast[children[1]].children);
             format!(
@@ -1180,40 +1200,3 @@ fn format_associated_types(generics_ast: &Ast) -> String {
         }
     } else { EMPTY_STR }
 }
-
-
-// enum IndexTyp {
-//     Mut, Ref, Val
-// }
-// fn should_be_mut_index(ast: &[Ast], pos: usize) -> IndexTyp {
-//     let parent = ast[pos].parent.unwrap();
-//     match &ast[parent].value {
-//         AstNode::Parentheses => should_be_mut_index(ast, parent),
-//         AstNode::Assignment | AstNode::Index =>
-//             if ast[parent].ref_children()[0] == pos {
-//                 IndexTyp::Mut
-//             } else {
-//                 IndexTyp::Val
-//             }, // && should_be_mut_index(ast, parent),
-//         AstNode::ForStatement | AstNode::ArgsDef | AstNode::Bool(_) | AstNode::Char(_)
-//         | AstNode::ForVars | AstNode::Function(_) | AstNode::GenericsDeclaration
-//         | AstNode::Identifier(_) | AstNode::Arg { .. } | AstNode::IfStatement | AstNode::Enum(_)
-//         | AstNode::Number(_) | AstNode::Pass | AstNode::Continue | AstNode::Break
-//         | AstNode::ReturnType | AstNode::StaticFunction(_) | AstNode::String { .. }
-//         | AstNode::Struct(_) | AstNode::StructInit | AstNode::Trait { .. } | AstNode::Traits
-//         | AstNode::Type(_) | AstNode::Types | AstNode::WhileStatement | AstNode::ListComprehension
-//         | AstNode::SetComprehension | AstNode::DictComprehension
-//         => unreachable!(),
-//         AstNode::Args | AstNode::Body | AstNode::ColonParentheses | AstNode::DictLiteral
-//         | AstNode::FirstAssignment | AstNode::ForIter
-//         | AstNode::ListLiteral | AstNode::Module | AstNode::Operator(_) | AstNode::Return
-//         | AstNode::SetLiteral | AstNode::NamedArg(_)
-//         => IndexTyp::Val,
-//         AstNode::UnaryOp(op) => match op {
-//             OperatorType::MutPointer => IndexTyp::Mut,
-//             OperatorType::Pointer => IndexTyp::Ref,
-//             _ => IndexTyp::Val
-//         }
-//         AstNode::FunctionCall(_)  | AstNode::Property => IndexTyp::Mut,
-//     }
-// }
