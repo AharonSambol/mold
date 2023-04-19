@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use std::env::args;
+use std::env::{args, var};
 use std::fs;
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use lazy_static::lazy_static;
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
@@ -19,12 +20,10 @@ use crate::to_rust::to_rust;
 // todo this shouldn't work: a = [1 2 3 4]
 //  (it works cuz add_expression for a num just adds it to parent and then continues to the next token)
 
-lazy_static! {
-    static ref PY: String = String::from("py");
-}
 pub type TraitFuncs = HashMap<String, (usize, FuncType)>;
 
-pub type VarTypes = Vec<HashMap<String, usize>>;
+//1 the name of the var to its position (it could have multiple if it has been overridden)
+pub type VarTypes = Vec<HashMap<String, (usize, usize)>>;
 pub type GenericTypes = Vec<HashSet<String>>;
 pub type TraitTypes = HashMap<String, TraitType>;
 pub type EnumTypes = HashMap<String, EnumType>;
@@ -103,7 +102,6 @@ pub struct Info<'a> {
 pub struct FileInfo {
     pub funcs: FuncTypes,
     pub types: TypeTypes,
-
     pub structs: HashMap<String, (StructType, Vec<Ast>)>, //3 not very efficient...
     pub traits: HashMap<String, (TraitType, Vec<Ast>)>,
     pub enums: HashMap<String, (EnumType, Vec<Ast>)>,
@@ -230,14 +228,14 @@ pub fn make_ast_statement(
 
         match &tokens[pos].tok {
             SolidToken::Struct => {
-                vars.push(HashMap::new());
+                vars.push(vars.last().unwrap().clone());
                 pos = make_struct(
                     tokens, pos + 1, ast, parent, indent, info
                 );
                 vars.pop();
             },
             SolidToken::Def  => {
-                vars.push(HashMap::new());
+                vars.push(vars.last().unwrap().clone());
                 pos = make_func(
                     tokens, pos, ast, parent, indent, vars, info
                 ) - 1;
@@ -283,7 +281,7 @@ pub fn make_ast_statement(
                 let last = get_last(&ast[parent].children);
                 if let AstNode::IfStatement = ast[last].value {
                     let body_pos = add_to_tree(last, ast, Ast::new_no_pos(AstNode::Body));
-                    vars.push(HashMap::new());
+                    vars.push(vars.last().unwrap().clone());
                     pos = make_ast_statement(
                         tokens, pos + 1, ast, body_pos, indent + 1,
                         vars, info
@@ -489,7 +487,7 @@ pub fn make_ast_statement(
             }
             SolidToken::Import => todo!(),
             SolidToken::Match => {
-                vars.push(HashMap::new());
+                vars.push(vars.last().unwrap().clone());
 
                 let match_pos = add_to_tree(parent, ast, Ast::new(AstNode::Match, tokens[pos].pos.clone()));
                 pos = make_ast_expression(tokens, pos+1, ast, match_pos, vars, info);
@@ -848,7 +846,7 @@ fn comprehension(
     let stmt_mod = add_to_tree(
         0, &mut comprehension, Ast::new_no_pos(AstNode::Module)
     );
-    vars.push(HashMap::new());
+    vars.push(vars.last().unwrap().clone());
     //1 statement
     loop {
         *pos += 1;
@@ -899,7 +897,7 @@ fn comprehension(
         let iter_pos = add_to_tree(
             pars_pos, &mut comprehension, Ast::new_no_pos(AstNode::ForIter)
         );
-        vars.push(HashMap::new());
+        vars.push(vars.last().unwrap().clone());
         //4 vars:
         get_for_loop_vars(tokens, pos, &mut comprehension, vars, vars_pos);
         //4 iters:
@@ -972,9 +970,15 @@ fn word_tok(
     tokens: &[SolidTokenWPos], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
     vars: &mut VarTypes, info: &mut Info, st: &String, is_expression: bool
 ) -> usize {
+    let mut st_clone = st.clone();
+    if let Some((_, nm)) = get_from_stack(vars, st) {
+        for i in 1..=nm {
+            write!(&mut st_clone, "___{i}").unwrap();
+        }
+    }
     let mut identifier_pos = add_to_tree(
         parent, ast,
-        Ast::new(AstNode::Identifier(st.clone()), tokens[pos].pos.clone())
+        Ast::new(AstNode::Identifier(st_clone), tokens[pos].pos.clone())
     );
     loop {
         pos += 1;
@@ -1009,7 +1013,14 @@ fn word_tok(
 
                 let index = insert_as_parent_of_prev(ast, parent, AstNode::FirstAssignment, None);
                 identifier_pos += 1;
-                add_to_stack(vars, st.clone(), identifier_pos);
+                if let Some((_, num_override)) = get_from_stack(vars, st) {
+                    vars.last_mut().unwrap().insert(st.clone(), (identifier_pos, num_override + 1));
+                    let name = unwrap_enum!(&mut ast[identifier_pos].value, AstNode::Identifier(st), st);
+                    write!(name, "___{}", num_override + 1).unwrap();
+                } else {
+                    add_to_stack(vars, st.clone(), identifier_pos);
+                }
+                // TODO-TODO
                 pos += 1;
                 if !matches!(tokens[pos].tok, SolidToken::Operator(OperatorType::Eq)) {
                     ast[index].typ = Some(get_arg_typ(tokens, &mut pos, info));
@@ -1178,7 +1189,7 @@ fn if_while_statement(
     // todo check that there is colon after the condition? (for statement too)
     //4 body:
     let body_pos = add_to_tree(stmt_pos, ast, Ast::new_no_pos(AstNode::Body));
-    vars.push(HashMap::new());
+    vars.push(vars.last().unwrap().clone());
     pos = make_ast_statement(
         tokens, pos + 1, ast, body_pos, indent + 1,
         vars, info
@@ -1198,7 +1209,7 @@ fn for_statement(
     let vars_pos = add_to_tree(pars_pos, ast, Ast::new_no_pos(AstNode::ForVars));
     let iter_pos = add_to_tree(pars_pos, ast, Ast::new_no_pos(AstNode::ForIter));
     let body_pos = add_to_tree(loop_pos, ast, Ast::new_no_pos(AstNode::Body));
-    vars.push(HashMap::new());
+    vars.push(vars.last().unwrap().clone());
     //4 vars:
     get_for_loop_vars(tokens, &mut pos, ast, vars, vars_pos);
     //4 iters:

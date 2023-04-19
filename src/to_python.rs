@@ -9,11 +9,6 @@ use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 use crate::add_types::utils::join;
 use crate::construct_ast::tree_utils::update_pos_from_tree_node;
 
-lazy_static!{
-    static ref NUM_TYP_RE: Regex = Regex::new(r"[uif]").unwrap();
-    // pub static ref NONE: String = String::from("_NONE");
-}
-
 #[derive(Copy, Clone, Debug)]
 pub enum ToWrapVal {
     Nothing,
@@ -256,6 +251,9 @@ pub fn to_python(
             }
         },
         AstNode::Number(num) => {
+            lazy_static! {
+                static ref NUM_TYP_RE: Regex = Regex::new(r"[uif]").unwrap();
+            }
             match add_val_wrapper {
                 ToWrapVal::Nothing => throw!(),
                 ToWrapVal::GetAsValue => format!("value_({})", NUM_TYP_RE.split(num).next().unwrap()),

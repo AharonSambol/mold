@@ -289,10 +289,10 @@ fn add_types_inner(
             }
         }
         AstNode::Identifier(name) => {
-            if let Some(x) = get_from_stack(vars, name) {
+            if let Some((orig_pos, _num_override)) = get_from_stack(vars, name) {
                 //1 optimize: things like this could probably be references instead of clone
-                ast[pos].typ = ast[x].typ.clone();
-                ast[pos].is_mut = ast[x].is_mut;
+                ast[pos].typ = ast[orig_pos].typ.clone();
+                ast[pos].is_mut = ast[orig_pos].is_mut;
                 return;
             }
             // todo not sure how this works... doesnt it need to have generic map as child?
@@ -312,8 +312,8 @@ fn add_types_inner(
         AstNode::Assignment => {
             add_types(ast, children[1], vars, info, parent_struct);
             if let AstNode::Identifier(name) = &ast[children[0]].value {
-                if let Some(i) = get_from_stack(vars, name) {
-                    let should_be = ast[i].typ.clone().unwrap();
+                if let Some((pos, _num_override)) = get_from_stack(vars, name) {
+                    let should_be = ast[pos].typ.clone().unwrap();
                     box_if_needed(should_be, ast, children[1], info);
                 } else { //1 first assignment
                     add_to_stack(vars, name.clone(), children[0]);
@@ -342,8 +342,7 @@ fn add_types_inner(
             }
 
             if let AstNode::Identifier(name) = &ast[children[0]].value {
-                let name = name.clone();
-                add_to_stack(vars, name, children[0]);
+                add_to_stack(vars, name.clone(), children[0]);
             } else { todo!() }
         }
         AstNode::OpAssignment(op) => {

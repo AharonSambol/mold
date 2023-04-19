@@ -58,7 +58,7 @@ pub fn find_function_in_trait(
 //     None
 // }
 
-pub fn get_from_stack(vars: &VarTypes, var: &String) -> Option<usize> {
+pub fn get_from_stack(vars: &VarTypes, var: &String) -> Option<(usize, usize)> {
     for frame in vars.iter().rev() {
         if frame.contains_key(var) {
             return Some(frame[var])
@@ -69,7 +69,7 @@ pub fn get_from_stack(vars: &VarTypes, var: &String) -> Option<usize> {
 
 #[inline]
 pub fn add_to_stack(vars: &mut VarTypes, var: String, pos: usize) {
-    vars.last_mut().unwrap().insert(var, pos);
+    vars.last_mut().unwrap().insert(var, (pos, 0));
 }
 
 pub fn get_pointer_complete_inner(mut typ: &Type) -> &Type {

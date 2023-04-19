@@ -1,10 +1,7 @@
-use std::clone;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use std::fmt::Write;
-use std::iter::zip;
-use std::mem::replace;
 use lazy_static::lazy_static;
 use regex::Regex;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, typ_with_child, unwrap_enum, some_vec};
@@ -12,15 +9,11 @@ use crate::add_types::ast_add_types::{get_associated_type, NUM_TYPES, SPECIFIED_
 use crate::add_types::generics::apply_generics_from_base;
 use crate::add_types::utils::{get_pointer_complete_inner, get_pointer_inner, is_float, join};
 use crate::construct_ast::mold_ast::{Info};
-use crate::construct_ast::tree_utils::{print_tree, update_pos_from_tree_node};
+use crate::construct_ast::tree_utils::{update_pos_from_tree_node};
 use crate::mold_tokens::OperatorType;
 use crate::types::{unwrap_u, Type, TypeKind, TypName, GenericType, implements_trait, print_type};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 
-lazy_static! {
-    static ref ODD_NUM_ESCAPE_SINGLE_Q: Regex = Regex::new(r#"([^\\]|^)(\\\\)*\\'"#).unwrap();
-    static ref ODD_NUM_ESCAPE_DOUBLE_Q: Regex = Regex::new(r#"([^\\]|^)(\\\\)*\\""#).unwrap();
-}
 
 //4 probably using a string builder would be much more efficient (but less readable IMO)
 pub fn to_rust(
@@ -332,6 +325,10 @@ pub fn to_rust(
             )
         },
         AstNode::String { val, mutable } => {
+            lazy_static! {
+                static ref ODD_NUM_ESCAPE_SINGLE_Q: Regex = Regex::new(r#"([^\\]|^)(\\\\)*\\'"#).unwrap();
+                static ref ODD_NUM_ESCAPE_DOUBLE_Q: Regex = Regex::new(r#"([^\\]|^)(\\\\)*\\""#).unwrap();
+            }
             if val.starts_with('"') {
                 if ODD_NUM_ESCAPE_SINGLE_Q.is_match(val) {
                     throw!("unexpected escape sequence `\\'`");

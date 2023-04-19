@@ -35,13 +35,18 @@ def fib(x: int) -> int:
     return fib(x - 1) + fib(x - 2)
 
 def main():
-    print('\'')
-    print("\\'")
-    print("\"")
-    print('\\"')
-    print('"')
-    print("'")
-    print(fib(35))
+    a = False
+    if a == False:
+        a := 1
+        c = a + 5
+        if a == 1:
+            b = a
+            a := "2"
+            print(a)
+        print(a)
+    b = a
+    print(b)
+    # print(fib(35))
 
 #{
 struct St[T, G, I]:
