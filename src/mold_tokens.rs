@@ -89,9 +89,9 @@ pub enum SolidToken {
 impl Display for SolidToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            SolidToken::Brace(isOpen) => if let IsOpen::True = isOpen { write!(f, "{{") } else { write!(f, "}}")}
-            SolidToken::Bracket(isOpen) => if let IsOpen::True = isOpen { write!(f, "[") } else { write!(f, "]")}
-            SolidToken::Parenthesis(isOpen) => if let IsOpen::True = isOpen { write!(f, "(") } else { write!(f, ")")}
+            SolidToken::Brace(is_open) => if let IsOpen::True = is_open { write!(f, "{{") } else { write!(f, "}}")}
+            SolidToken::Bracket(is_open) => if let IsOpen::True = is_open { write!(f, "[") } else { write!(f, "]")}
+            SolidToken::Parenthesis(is_open) => if let IsOpen::True = is_open { write!(f, "(") } else { write!(f, ")")}
             SolidToken::Word(wrd) => write!(f, "{wrd}"),
             SolidToken::LifeTime(lf) => write!(f, "{lf}"),
             SolidToken::Str { val, .. } => write!(f, "{val}"),

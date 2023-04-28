@@ -44,8 +44,8 @@ pub fn get_struct_and_func_names(
                                 loop {
                                     match &tokens[*pos].tok {
                                         SolidToken::Comma | SolidToken::Bracket(IsOpen::False) if open == 0 => break,
-                                        SolidToken::Bracket(isOpen) =>
-                                            open += if let IsOpen::True = isOpen { 1 } else { -1 },
+                                        SolidToken::Bracket(is_open) =>
+                                            open += if let IsOpen::True = is_open { 1 } else { -1 },
                                         _ => ()
                                     }
                                     *pos += 1;

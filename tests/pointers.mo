@@ -1,5 +1,5 @@
 def func(a: &mut int):
-    *a = *a + 1
+    *a += 1
 
 def main():
     x = 325

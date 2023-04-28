@@ -1068,11 +1068,8 @@ fn word_tok(
                 let last = add_to_tree(index, ast, Ast::new(
                     AstNode::Args, tokens[pos].pos.clone()
                 ));
-                pos = make_ast_expression(
-                    tokens, pos + 1, ast, last, vars, info
-                );
-                while let SolidToken::Comma = tokens[pos].tok {
-                    if let (SolidToken::Word(name), SolidToken::Operator(OperatorType::Eq))
+                #[inline] fn get_arg_or_named_arg(tokens: &[SolidTokenWPos], mut pos: usize, ast: &mut Vec<Ast>, vars: &mut VarTypes, info: &mut Info, last: usize) -> usize {
+                    let parent = if let (SolidToken::Word(name), SolidToken::Operator(OperatorType::Eq))
                         = (&tokens[pos + 1].tok, &tokens[pos + 2].tok) { //1 if is named arg
                         let named_arg_pos = add_to_tree(
                             last, ast,
@@ -1081,14 +1078,17 @@ fn word_tok(
                                 tokens[pos + 1].pos.clone()
                             )
                         );
-                        pos = make_ast_expression(
-                            tokens, pos + 3, ast, named_arg_pos, vars, info
-                        );
-                        continue
-                    }
-                    pos = make_ast_expression(
-                        tokens, pos + 1, ast, last, vars, info
-                    );
+                        pos += 2;
+                        named_arg_pos
+                    } else { last };
+                    make_ast_expression(
+                        tokens, pos + 1, ast, parent, vars, info
+                    )
+                }
+
+                pos = get_arg_or_named_arg(tokens, pos, ast, vars, info, last);
+                while let SolidToken::Comma = tokens[pos].tok {
+                    pos = get_arg_or_named_arg(tokens, pos, ast, vars, info, last);
                 }
             },
             SolidToken::Bracket(IsOpen::True) => {
@@ -1125,6 +1125,7 @@ fn word_tok(
         }
     }
 }
+
 
 /*fn turn_len_func_to_method(
     tokens: &[SolidTokenWPos], pos: &mut usize, ast: &mut Vec<Ast>, parent: usize,

@@ -249,10 +249,14 @@ fn add_types_inner(
         }
         AstNode::Module | AstNode::Body | AstNode::ReturnType
         | AstNode::GenericsDeclaration | AstNode::ColonParentheses
-        | AstNode::Args | AstNode::NamedArg(_) | AstNode::VArgs => {
+        | AstNode::VArgs | AstNode::Args => {
             for child in children {
                 add_types_inner(ast, child, vars, info, parent_struct, box_types);
             }
+        }
+        AstNode::NamedArg(_) => {
+            add_types_inner(ast, children[0], vars, info, parent_struct, box_types);
+            ast[pos].typ = ast[children[0]].typ.clone();
         }
         AstNode::Return => {
             if let AstNode::RustStructInit = &ast[children[0]].value {
@@ -949,7 +953,7 @@ fn format_args_and_get_return_typ(
         }
         None
     }
-    #[inline] fn get_generics(expected_input: &Option<Vec<Param>>, args: &Option<Vec<usize>>, ast: &mut Vec<Ast>, info: &mut Info, vars: &VarTypes) -> StrToType {
+    #[inline] fn get_generics(expected_input: &Option<Vec<Param>>, args: &Option<Vec<usize>>, ast: &mut [Ast], info: &mut Info, vars: &VarTypes) -> StrToType {
         let mut generic_map = HashMap::new();
         if let Some(expected_input) = &expected_input {
             // todo update here
@@ -1217,7 +1221,9 @@ fn put_args_in_vec(
         let expected_typ = &expected_args[pos_in_args].typ.ref_children()[0];
 
 
-        let inner_typ = if !is_builtin {
+        let inner_typ = if vec_children.is_empty() {
+            expected_typ.clone()
+        } else if !is_builtin {
             box_if_needed(expected_typ.clone(), ast, vec_children[0], info)
         } else {
             let typ = ast[vec_children[0]].typ.clone().unwrap();

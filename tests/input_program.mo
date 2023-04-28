@@ -28,25 +28,17 @@
 # type i = int
 # type IList = List[i]
 
-
-def fib(x: int) -> int:
-    if x < 2:
-        return x
-    return fib(x - 1) + fib(x - 2)
-
-struct st:
-    def __init__(self, x: int):
-        self.x = x
+def func(*args: bool, a: int = 2):
+    pass
 
 def main():
-    x: int | bool = 1
-    if true:
-        x = False
-    print(x)
-    a = [1, False]
-    print(a)
+    func()
+    func(False, True, a=34)
+    # st.x = 2
+    # print(st)
     # todo [1, st(1)]
     # todo print([1, False][0])
+    # check that error gives correct line even with comment (and block comment)
 
 #{
 struct St[T, G, I]:

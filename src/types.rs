@@ -338,17 +338,11 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
         let mut a_types_hm = HashMap::new();
         let mut generics_hm = HashMap::new();
         let mut condition = vec![];
-        // if struct_name == "Vec" {
-        //     panic!("!!!!");
-        // }
         'trait_func_loop: for (trt_f_name, (_, trt_f_types)) in trt_funcs {
             let mut func_types = funcs.get(trt_f_name);
             if func_types.is_none() {
                 func_types = funcs.get(&format!("{trait_name}::{trt_f_name}"));
             }
-            // if struct_name == "Vec" && trait_name == "Debug"{
-            //     panic!("!!!!{trt_f_name} {:?}  {:?}", func_types, funcs);
-            // }
             if let Some((func_pos, func_types)) = func_types {
                 if let Some(where_clause) = ast[*func_pos].children.as_ref().unwrap().iter().nth(4) {
                     for i in ast[*where_clause].ref_children() {
@@ -360,7 +354,7 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
                         condition.push((generic_name.clone(), generic_typ.clone()));
                         if !matches_template(
                             generic_typ.clone(), &struct_generics[generic_name], ast,
-                            info, *i //todo?
+                            info, *i
                         ) {
                             return None
                         }

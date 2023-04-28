@@ -27,14 +27,14 @@ impl Drop for CopyFolder {
         } else {
             /*1 delete_dir */ Command::new("rm")
                 .arg("-rf")
-                .arg(&self.module_path)
+                .arg(&self.temp_path)
                 .spawn().expect("rm command failed to start")
                 .wait().expect("rm failed");
-            /*1 un_renamed_dir */ Command::new("mv")
-                .arg(&self.temp_path)
-                .arg(&self.module_path)
-                .spawn().expect("mv command failed to start")
-                .wait().expect("mv failed");
+            // /*1 un_renamed_dir */ Command::new("mv")
+            //     .arg(&self.temp_path)
+            //     .arg(&self.module_path)
+            //     .spawn().expect("mv command failed to start")
+            //     .wait().expect("mv failed");
         }
     }
 }
@@ -69,7 +69,7 @@ impl CopyFolder {
                 .arg(format!("{}/.", self.module_path))
                 .arg(format!("{}/", self.temp_path))
                 .output().expect("ls command failed to start");
-            let path = PathBuf::from(&self.module_path);
+            let path = PathBuf::from(&self.temp_path);
             change_file_extensions(&path, "py");
             None
         }

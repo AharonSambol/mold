@@ -80,7 +80,7 @@ struct ImplTraitsKey {
 }
 
 #[derive(Clone)]
-struct ImplTraitsVal { // TODO when adds a new Impl needs to not only check the name but also the generics
+struct ImplTraitsVal {
     trt_name: String,
     implementation: Implementation,
     types: Option<StrToType>,
@@ -119,7 +119,6 @@ pub struct OneOfEnumTypes {
 // codegen-units = 1
 // todo some things dont necessarily need to be made into a box (e.g. lst.len())
 // todo play with boxing stuff in the enums\structs to decrease their size
-// TODO it doesnt check the types passed to built ins (i think) but it needs to for some at least
 fn main() {
     panic::set_hook(Box::new(|info| {
         println!("{}", panic_message::panic_info_message(info));
@@ -136,15 +135,16 @@ fn main() {
     }));
     // todo remove
     unsafe {
-        IS_COMPILED = true;
+        // IS_COMPILED = true;
+        DONT_PRINT = true;
     }
 
-    let mut test = false;
+    // let mut test = false;
     let mut path = None;
     for argument in env::args().skip(1) {
         if argument == "compile"    { unsafe { IS_COMPILED = true; } }
-        else if argument == "test"  { test = true; unsafe { DONT_PRINT = true; } }
-        else if argument == "noprint" { unsafe { DONT_PRINT = true; }} // todo remove this
+        // else if argument == "test"  { test = true; unsafe { DONT_PRINT = true; } }
+        // else if argument == "noprint" { unsafe { DONT_PRINT = true; }} // todo remove this
         else if path.is_none()      {
             // todo check that is valid path else panic (not throw)
             path = Some(argument);
@@ -153,32 +153,34 @@ fn main() {
     }
     let path = path.unwrap_or_else(|| String::from("."));
 
-    let paths = [
-        /*1     0*/ "tests/input_program.mo",
-        /*1     1*/ "tests/import_package/imports.mo",
-        /*1     2*/ "tests/built_ins.mo",
-        /*1     3*/ "tests/enums.mo",
-        /*1     4*/ "tests/pointers.mo",
-        /*1     5*/ "tests/generics.mo",
-        /*1     6*/ "tests/lists.mo",
-        /*1     7*/ "tests/algos.mo",
-        /*1     8*/ "tests/unions.mo",
-        /*1     9*/ "tests/tictactoe.mo",
-    ];
-    if test {
-        for p in paths {
-            println!("\x1b[107m\x1b[1m\x1b[94m ################### {p} ################### \x1b[0m");
-            run_on_path(p);
-            unsafe {
-                IGNORE_TRAITS.clear();  IGNORE_STRUCTS.clear(); IGNORE_FUNCS.clear();
-                IGNORE_ENUMS.clear();   PARSED_FILES.clear();   PARSING_FILES.clear();
-                IMPL_TRAITS.clear();
-                MODULE_PATH = None;
-            }
-        }
-    } else {
-        run_on_path(paths[0]);
-    }
+    // let paths = [
+    //     /*1     0*/ "tests/input_program.mo",
+    //     /*1     1*/ "tests/import_package/imports.mo",
+    //     /*1     2*/ "tests/built_ins.mo",
+    //     /*1     3*/ "tests/enums.mo",
+    //     /*1     4*/ "tests/pointers.mo",
+    //     /*1     5*/ "tests/generics.mo",
+    //     /*1     6*/ "tests/lists.mo",
+    //     /*1     7*/ "tests/algos.mo",
+    //     /*1     8*/ "tests/unions.mo",
+    //     /*1     9*/ "tests/tictactoe.mo",
+    // ];
+    // if test {
+        // for p in paths {
+        //     println!("\x1b[107m\x1b[1m\x1b[94m ################### {p} ################### \x1b[0m");
+        //     run_on_path(p);
+        //     unsafe {
+        //         IGNORE_TRAITS.clear();  IGNORE_STRUCTS.clear(); IGNORE_FUNCS.clear();
+        //         IGNORE_ENUMS.clear();   PARSED_FILES.clear();   PARSING_FILES.clear();
+        //         IMPL_TRAITS.clear();
+        //         MODULE_PATH = None;
+        //     }
+        // }
+    // } else {
+
+    run_on_path(&path);
+        // run_on_path(paths[0]);
+    // }
 }
 
 fn run_on_path(path: &str) {
@@ -192,13 +194,15 @@ fn run_on_path(path: &str) {
     let temp_path = if unsafe { IS_COMPILED } {
         format!("out/src/{}", module_path.rsplit_once('/').unwrap().1) // todo windows is \
     } else {
-        format!("{}_TEMP_", module_path)
+        format!("out/src/{}", module_path.rsplit_once('/').unwrap().1) // todo windows is \
+        // format!("{}_TEMP_", module_path)
     };
     let path = if unsafe { IS_COMPILED } {
         path.replacen(&module_path, &temp_path, 1)
         //.replacen(".mo", ".rs", 1);
     } else {
-        path.replacen(".mo", ".py", 1)
+        path.replacen(&module_path, &temp_path, 1)
+            .replacen(".mo", ".py", 1)
     };
     let copy_folder = CopyFolder { temp_path, module_path };
     let main = copy_folder.start();
@@ -277,7 +281,7 @@ class pointer_:
     def __gt__(self, other): return self.p > other.p
 "};
         let mut built_ins = File::create(
-            format!("{}/mold_core_built_ins.py", copy_folder.module_path) // todo windows is \
+            format!("{}/mold_core_built_ins.py", copy_folder.temp_path) // todo windows is \
         ).unwrap();
         built_ins.write_all(python_built_ins.as_ref()).unwrap();
     }
