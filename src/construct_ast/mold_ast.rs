@@ -5,7 +5,7 @@ use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use lazy_static::lazy_static;
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
-use crate::{DONT_PRINT, EMPTY_STR, IS_COMPILED, PARSED_FILES, CUR_LINE, CUR_COL, SRC_CODE, CUR_PATH, MODULE_PATH, LINE_DIFF};
+use crate::{DONT_PRINT, EMPTY_STR, IS_COMPILED, PARSED_FILES, CUR_LINE, CUR_COL, SRC_CODE, CUR_PATH, MODULE_PATH, LINE_DIFF, StrToType};
 use crate::{OneOfEnums, parse_file, unwrap_enum, throw};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::{add_new_line, add_to_stack, get_from_stack, join, update_pos_from_token};
@@ -29,7 +29,7 @@ pub type TraitTypes = HashMap<String, TraitType>;
 pub type EnumTypes = HashMap<String, EnumType>;
 pub type StructTypes = HashMap<String, StructType>;
 pub type FuncTypes = HashMap<String, FuncType>;
-pub type TypeTypes = HashMap<String, Type>;
+pub type TypeTypes = StrToType;
 
 pub trait STType {
     fn get_associated_types(&self) -> &Option<Vec<String>>;
@@ -77,7 +77,7 @@ impl STType for EnumType {
 }
 
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FuncType {
     pub input: Option<Vec<Param>>,
     pub output: Option<Type>
@@ -142,7 +142,7 @@ pub fn construct_ast(tokens: &[SolidTokenWPos], pos: usize, info: &mut Info) -> 
 
 pub fn add_trait_to_struct(
     ast: &[Ast], struct_name: &str, funcs: &TraitFuncs, trt_name: &str, trt_funcs: &TraitFuncs,
-    trait_types: &Option<HashMap<String, Type>>, trait_generics: &Option<Vec<Type>>, info: &Info
+    trait_types: &Option<StrToType>, trait_generics: &Option<Vec<Type>>, info: &Info
 ) -> String {
     let expected_generics = &info.traits[trt_name].generics;
     let generics = if matches!(expected_generics, Some(vc) if !vc.is_empty()) {
@@ -1012,14 +1012,7 @@ fn word_tok(
                 }
 
                 let index = insert_as_parent_of_prev(ast, parent, AstNode::FirstAssignment, None);
-                identifier_pos += 1;
-                if let Some((_, num_override)) = get_from_stack(vars, st) {
-                    vars.last_mut().unwrap().insert(st.clone(), (identifier_pos, num_override + 1));
-                    let name = unwrap_enum!(&mut ast[identifier_pos].value, AstNode::Identifier(st), st);
-                    write!(name, "___{}", num_override + 1).unwrap();
-                } else {
-                    add_to_stack(vars, st.clone(), identifier_pos);
-                }
+
                 // TODO-TODO
                 pos += 1;
                 if !matches!(tokens[pos].tok, SolidToken::Operator(OperatorType::Eq)) {
@@ -1032,9 +1025,18 @@ fn word_tok(
                 }
 
                 ast[index].pos = Some(tokens[pos].pos.clone());
-                return make_ast_expression(
+                let res = make_ast_expression(
                     tokens, pos + 1, ast, index, vars, info
                 ) - 1;
+                identifier_pos += 1;
+                if let Some((_, num_override)) = get_from_stack(vars, st) {
+                    vars.last_mut().unwrap().insert(st.clone(), (identifier_pos, num_override + 1));
+                    let name = unwrap_enum!(&mut ast[identifier_pos].value, AstNode::Identifier(st), st);
+                    write!(name, "___{}", num_override + 1).unwrap();
+                } else {
+                    add_to_stack(vars, st.clone(), identifier_pos);
+                }
+                return res
             },
             SolidToken::Parenthesis(IsOpen::True) => {
                 let word = unwrap_enum!(&tokens[pos - 1].tok, SolidToken::Word(w), w);

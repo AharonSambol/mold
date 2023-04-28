@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use std::fmt::Write;
 use lazy_static::lazy_static;
+use regex::internal::Input;
 use regex::Regex;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, typ_with_child, unwrap_enum, some_vec};
 use crate::add_types::ast_add_types::{get_associated_type, NUM_TYPES, SPECIFIED_NUM_TYPE_RE};
@@ -134,8 +135,7 @@ pub fn to_rust(
             match op {
                 OperatorType::FloorDiv => {
                     #[inline] fn div(
-                        ast: &[Ast], children: &[usize], indentation: usize,
-                        info: &Info
+                        ast: &[Ast], children: &[usize], indentation: usize, info: &Info
                     ) -> String {
                         format!(
                             "{} / {}",
@@ -436,15 +436,15 @@ pub fn to_rust(
             let indent = "\t".repeat(indentation);
             write!(&mut res, "\n{indent}}}").unwrap();
             let mut trait_to_funcs: HashMap<&str, Vec<(usize, &str)>> = HashMap::new();
-            for (func_pos, func_name) in trait_functions {
+            for (func_pos, func_name) in trait_functions.iter() {
                 let mut func_name = func_name.split("::");
                 let trait_name = func_name.next().unwrap();
                 let func_name = func_name.next().unwrap();
                 match trait_to_funcs.entry(trait_name) {
                     Entry::Vacant(e) =>
-                        { e.insert(vec![(func_pos, func_name)]); },
+                        { e.insert(vec![(*func_pos, func_name)]); },
                     Entry::Occupied(mut e) =>
-                        { e.get_mut().push((func_pos, func_name)); }
+                        { e.get_mut().push((*func_pos, func_name)); }
                 }
             }
             for (trait_name, funcs) in trait_to_funcs.iter() {
@@ -452,7 +452,7 @@ pub fn to_rust(
                 let mut type_defs = HashMap::new();
                 for (func_pos, func_name) in funcs {
                     write!(&mut res, "\n{indent}    ").unwrap();
-                    let func_children = unwrap_u(&ast[*func_pos].children);
+                    let func_children = ast[*func_pos].ref_children();
                     if func_children.len() == 5 {
                         let types_pos = unwrap_u(&ast[func_children[4]].children);
                         for i in types_pos {
@@ -478,7 +478,7 @@ pub fn to_rust(
             let args = unwrap_u(&ast[children[1]].children);
             format!(
                 "{}{{ {} }}",
-                ast[pos].typ.clone().unwrap(),
+                ast[pos].typ.as_ref().unwrap(),
                 join(
                     args.iter().map(|x| {
                         let name = unwrap_enum!(&ast[*x].value, AstNode::Identifier(name), name);
@@ -561,7 +561,7 @@ pub fn to_rust(
             to_rust(ast, unwrap_u(&ast[pos].children)[0], indentation, info)
         }
         AstNode::ListComprehension | AstNode::SetComprehension | AstNode::DictComprehension => {
-            let loops = ast[children[1]].children.clone().unwrap();
+            let loops = ast[children[1]].children.as_ref().unwrap();
             format!(
                 "{}{}{}{}({});{}res}}",
                 /*1 initialize*/ match &ast[pos].value {
@@ -1186,9 +1186,9 @@ fn format_associated_types(generics_ast: &Ast) -> String {
         let generics: Vec<_> = generics.iter().filter_map(|x|
             if let TypeKind::AssociatedType(name) = &x.kind {
                 if let Some(children) = &x.children {
-                    Some(format!("type {} = {};", name.clone(), children[0]))
+                    Some(format!("type {} = {};", name, children[0]))
                 } else {
-                    Some(format!("type {};", name.clone()))
+                    Some(format!("type {};", name))
                 }
             } else { None }
         ).collect();

@@ -81,7 +81,7 @@ pub enum AstNode {
     ForStatement, // children[0] = colon_parentheses(ForVars, ForIter), children[1] = body
     ForVars, // children = vars
     From, // children all the words (e.g. A.B => [Identifier(A), Identifier(B)])
-    Function(String), // children[0] = args, children[1] = returnType, children[2] = body
+    Function(String), // children[0] = args, children[1] = returnType, children[2] = body, children[3] = where
     FunctionCall(bool), // bool = is_static, children[0] = func, children[1] = Args,
     GenericsDeclaration,
     Identifier(String),
@@ -115,6 +115,7 @@ pub enum AstNode {
     Types,
     UnaryOp(OperatorType),  // children[0] = elem
     VArgs, // children = args
+    Where,
     WhileStatement, // children[0] = condition, children[1] = body, children[2] = else?
     NamedArg(String), // children[0] = value
     Null,
@@ -181,6 +182,7 @@ impl AstNode {
             | AstNode::VArgs
             | AstNode::ReturnType
             | AstNode::GenericsDeclaration
+            | AstNode::Where
             | AstNode::Return => false,
         }
     }
@@ -189,6 +191,7 @@ impl AstNode {
 impl Display for AstNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            AstNode::Where => write!(f, "WHERE"),
             AstNode::RustStructInit => write!(f, "RUST_STRUCT_INIT"),
             AstNode::Tuple => write!(f, "(TUPLE)"),
             AstNode::Null => write!(f, "None"),
@@ -257,7 +260,7 @@ impl Display for AstNode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Param {
     pub typ: Type,
     pub name: String,

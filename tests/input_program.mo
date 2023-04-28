@@ -34,19 +34,19 @@ def fib(x: int) -> int:
         return x
     return fib(x - 1) + fib(x - 2)
 
+struct st:
+    def __init__(self, x: int):
+        self.x = x
+
 def main():
-    a = False
-    if a == False:
-        a := 1
-        c = a + 5
-        if a == 1:
-            b = a
-            a := "2"
-            print(a)
-        print(a)
-    b = a
-    print(b)
-    # print(fib(35))
+    x: int | bool = 1
+    if true:
+        x = False
+    print(x)
+    a = [1, False]
+    print(a)
+    # todo [1, st(1)]
+    # todo print([1, False][0])
 
 #{
 struct St[T, G, I]:

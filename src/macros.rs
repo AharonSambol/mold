@@ -200,6 +200,7 @@ macro_rules! throw { // todo repeating code
         }}
     };
 }
+
 #[macro_export] macro_rules! add_trait {
     ($key: expr, $val: expr) => {
         unsafe {

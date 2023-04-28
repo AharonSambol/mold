@@ -1,3 +1,4 @@
+use std::clone;
 use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use crate::{typ_with_child, unwrap_enum, some_vec, EMPTY_STR, OneOfEnums, OneOfEnumTypes, IMPL_TRAITS, ImplTraitsKey, get_traits, MUT_POINTER_WITHOUT_LIFETIME, POINTER_WITHOUT_LIFETIME};
@@ -159,47 +160,92 @@ fn add_one_of_enum(
 ) -> Type {
     let got_typ = ast[pos].typ.clone().unwrap();
     update_pos_from_tree_node(&ast[pos]);
-    check_if_need_box(expected, &got_typ, ast, pos, info, true, Mutate::Box)
-        .unwrap_or_else(|e| throw!("{}", e))
+    check_if_need_box(
+        expected, &got_typ, pos, true, 
+        MutateAst::Box(ast), MutateInfo::Box(info)
+    ).unwrap_or_else(|e| throw!("{}", e))
 }
 
+
 #[inline(always)] pub fn box_no_side_effects(
-    expected: Type, got_typ: &Type, ast: &mut Vec<Ast>, info: &mut Info, pos: usize
+    expected: Type, got_typ: &Type, ast: &[Ast], info: &Info, pos: usize
 ) -> Type {
     try_box_no_side_effects(expected, got_typ, ast, info, pos).unwrap_or_else(|e| throw!("{}", e))
 }
 
 #[inline(always)] pub fn try_box_no_side_effects(
-    expected: Type, got_typ: &Type, ast: &mut Vec<Ast>, info: &mut Info, pos: usize
+    expected: Type, got_typ: &Type, ast: &[Ast], info: &Info, pos: usize
 ) -> Result<Type, String> {
-    check_if_need_box(expected, got_typ, ast, pos, info, true, Mutate::Dont)
+    check_if_need_box(
+        expected, got_typ, pos, true, MutateAst::Dont(ast), MutateInfo::Dont(info)
+    )
 }
 
-#[inline(always)] pub fn matches_template(expected: Type, got: &Type, ast: &mut Vec<Ast>, info: &mut Info, pos: usize) -> bool {
-    check_if_need_box(expected, got, ast, pos, info, true, Mutate::Dont).is_ok()
+//2 ast and info don't actually need to be mutable...
+#[inline(always)] pub fn matches_template(expected: Type, got: &Type, ast: &[Ast], info: &Info, pos: usize) -> bool {
+    check_if_need_box(
+        expected, got, pos, true, MutateAst::Dont(ast), MutateInfo::Dont(info)
+    ).is_ok()
 }
 
-#[derive(Copy, Clone)]
-enum Mutate {
-    Dont,
-    Box
+enum MutateAst<'a> {
+    Dont(&'a [Ast]),
+    Box(&'a mut Vec<Ast>)
+}
+enum MutateInfo<'a, 'b> {
+    Dont(&'a Info<'b>),
+    Box(&'a mut Info<'b>)
+}
+
+impl MutateAst<'_> {
+    fn reborrow(&mut self) -> MutateAst {
+        match *self {
+            MutateAst::Dont(ast) => MutateAst::Dont(ast),
+            MutateAst::Box(ref mut ast) => MutateAst::Box(ast),
+        }
+    }
+}
+impl<'a, 'b> MutateInfo<'a, 'b> {
+    fn reborrow<'s>(self: &'s mut MutateInfo<'a, 'b>) -> MutateInfo<'s, 'b> {
+        match *self {
+            MutateInfo::Dont(info) => MutateInfo::Dont(info),
+            MutateInfo::Box(ref mut info) => MutateInfo::Box(info),
+        }
+    }
 }
 
 fn check_if_need_box(
-    expected: Type, got_typ: &Type, ast: &mut Vec<Ast>, pos: usize, info: &mut Info,
-    is_outer_call: bool, mutate: Mutate
+    expected: Type, got_typ: &Type, pos: usize, is_outer_call: bool, mut mutate_ast: MutateAst, mut mutate_info: MutateInfo
 ) -> Result<Type, String> {
     // println!("Exp:");
     // print_type(&Some(expected.clone()));
     // println!("Got:");
     // print_type(&Some(got_typ.clone()));
+    #[inline] fn get_ast_imut<'a>(mutate: &'a MutateAst) -> &'a [Ast] {
+        match mutate {
+            MutateAst::Dont(ast) => *ast,
+            MutateAst::Box(ast) => *ast
+        }
+    }
+    #[inline] fn get_info_imut<'a>(mutate: &'a MutateInfo) -> &'a Info<'a> {
+        match mutate {
+            MutateInfo::Dont(info) => *info,
+            MutateInfo::Box(info) => *info
+        }
+    }
+
     #[track_caller]
-    fn err(expected: &Type, got_typ: &Type) -> Result<Type, String> {
+    fn err(expected: &Type, got_typ: &Type, message: Option<String>) -> Result<Type, String> {
         let caller_location = std::panic::Location::caller();
         let caller_file = caller_location.file();
         let caller_line_number = caller_location.line();
-        Err(format!("expected `{expected}` but got `{got_typ}`\n\
-        \x1b[0m{caller_file}:{caller_line_number} [DBG INFO]")) // todo remove dbg info
+        if let Some(message) = message {
+            Err(format!("{message}\n\
+            \x1b[0m{caller_file}:{caller_line_number} [DBG INFO]")) // todo remove dbg info
+        } else {
+            Err(format!("expected `{expected}` but got `{got_typ}`\n\
+            \x1b[0m{caller_file}:{caller_line_number} [DBG INFO]")) // todo remove dbg info
+        }
     }
 
     if expected == *got_typ {
@@ -210,20 +256,42 @@ fn check_if_need_box(
         TypeKind::OneOf => {
             // TODO generics and associated types
             if let TypeKind::OneOf = &got_typ.kind {
-                if expected.contains(got_typ) {
-                    if let Mutate::Box = mutate {
+                if !is_outer_call {
+                    return err(&expected, got_typ, None)
+                }
+                return if expected.contains(got_typ) {
+                    if let MutateAst::Box(ast) = mutate_ast {
                         match_to_convert_types(&expected, got_typ, ast, pos);
                     }
-                    return Ok(expected)
+                    Ok(expected)
                 } else {
-                    todo!()
+                    if got_typ.ref_children().iter().all(
+                        |opt| expected.ref_children().iter().any(|exp|
+                            implements_trait(
+                                opt, exp, get_ast_imut(&mutate_ast),
+                                get_info_imut(&mutate_info)
+                            ).is_some()
+                        )
+                    ) {
+                        if let MutateAst::Box(ast) = mutate_ast {
+                            // todo box them too
+                            match_to_convert_types_enums_trait(&expected, got_typ, ast, pos, get_info_imut(&mutate_info));
+                        }
+                        Ok(expected)
+                    } else {
+                        err(&expected, got_typ, None)
+                    }
                 }
             }
             for typ in unwrap(&expected.children) {
-                if check_if_need_box(typ.clone(), got_typ, ast, pos, info, is_outer_call, Mutate::Dont).is_ok() {
-                    if let Mutate::Box = mutate {
-
-                        check_if_need_box(typ.clone(), got_typ, ast, pos, info, is_outer_call, Mutate::Box).unwrap();
+                let ast = get_ast_imut(&mutate_ast);
+                let info = get_info_imut(&mutate_info);
+                if check_if_need_box(
+                    typ.clone(), got_typ, pos, is_outer_call,
+                    MutateAst::Dont(ast), MutateInfo::Dont(info)
+                ).is_ok() {
+                    if let (MutateAst::Box(ast), MutateInfo::Box(info)) = (mutate_ast, mutate_info) {
+                        check_if_need_box(typ.clone(), got_typ, pos, is_outer_call, MutateAst::Box(ast), MutateInfo::Box(info)).unwrap();
 
                         add_one_of_enum(
                             ast, pos, &expected.to_string(),
@@ -233,8 +301,8 @@ fn check_if_need_box(
                     return Ok(expected.clone())
                 }
                 if matches!(&typ.kind, TypeKind::Trait(_)) {
-                    if let Some(trt) = implements_trait(got_typ, typ, ast, info) {
-                        if let Mutate::Box = mutate {
+                    if let Some(trt) = implements_trait(got_typ, typ, get_ast_imut(&mutate_ast), info) {
+                        if let MutateAst::Box(ast) = mutate_ast {
                             add_box(ast, pos);
                             add_one_of_enum(
                                 ast, pos, &expected.to_string(),
@@ -252,37 +320,57 @@ fn check_if_need_box(
             ))
         }
         TypeKind::Trait(_) => {
-            println!("expected: {expected}");
+            let ast = get_ast_imut(&mutate_ast);
+            let info = get_info_imut(&mutate_info);
             if let Some(trt) = implements_trait(got_typ, &expected, ast, info) {
                 if !matches!(&got_typ.kind, TypeKind::Trait(_)) {
                     if !is_outer_call {
                         update_pos_from_tree_node(&ast[pos]);
-                        return err(&expected, got_typ)
+                        return err(&expected, got_typ, None)
                     }
-                    if let Mutate::Box = mutate {
+                    if let MutateAst::Box(ast) = mutate_ast {
                         add_box(ast, pos);
                     }
                 }
                 Ok(trt)
             } else {
                 update_pos_from_tree_node(&ast[pos]);
-                err(&expected, got_typ)
+                err(&expected, got_typ, Some(format!("`{got_typ}` doesn't implement `{expected}`")))
             }
         }
         TypeKind::Pointer | TypeKind::MutPointer => {
+            let ast = get_ast_imut(&mutate_ast);
+            let info = get_info_imut(&mutate_info);
             let res = if got_typ.kind == expected.kind
                 || matches!((&expected.kind, &got_typ.kind), (TypeKind::Pointer, TypeKind::MutPointer))
             {
                 let expected = get_pointer_inner(&expected).clone();
                 let got_typ = get_pointer_inner(got_typ);
                 if is_outer_call {
-                    check_if_need_box(expected, got_typ, ast, pos, info, true, mutate)
+                    match mutate_info {
+                        MutateInfo::Dont(info) => {
+                            mutate_info = MutateInfo::Dont(info);
+                            check_if_need_box(
+                                expected, got_typ, pos, true,
+                                mutate_ast.reborrow(), MutateInfo::Dont(info)
+                            )
+                        }
+                        MutateInfo::Box(info) => {
+                            let res = check_if_need_box(
+                                expected, got_typ, pos, true,
+                                mutate_ast.reborrow(), MutateInfo::Box(info)
+                            );
+                            mutate_info = MutateInfo::Box(info);
+                            res
+                        }
+                    }
+
                 } else {
-                    check_if_need_box(expected, got_typ, ast, pos, info, false, Mutate::Dont)
+                    check_if_need_box(expected, got_typ, pos, false, MutateAst::Dont(ast), MutateInfo::Dont(info))
                 }
             } else {
                 update_pos_from_tree_node(&ast[pos]);
-                err(&expected, got_typ)
+                err(&expected, got_typ, None)
             };
             if res.is_err() && is_outer_call {
                 if let TypeKind::Pointer = &expected.kind {
@@ -291,7 +379,7 @@ fn check_if_need_box(
                         TypeKind::Pointer,
                         typ_with_child! {
                             TypeKind::Generic(GenericType::WithVal(String::from("T"))),
-                            check_if_need_box(expected, got_typ, ast, pos, info, true, mutate)?
+                            check_if_need_box(expected, got_typ, pos, true, mutate_ast, mutate_info)?
                         }
                     })
                 } else {
@@ -308,9 +396,11 @@ fn check_if_need_box(
         }
         TypeKind::Struct(expected_struct_name) => {
             if let TypeKind::Struct(got_struct_name) = &got_typ.kind {
+                let ast = get_ast_imut(&mutate_ast);
+                let info = get_info_imut(&mutate_info);
                 if expected_struct_name != got_struct_name {
                     update_pos_from_tree_node(&ast[pos]);
-                    return err(&expected, got_typ)
+                    return err(&expected, got_typ, None)
                 }
                 if expected_struct_name == "Vec" || expected_struct_name == "HashSet" {
                     let res = compare_generic_and_a_typ_children(&expected, got_typ, err);
@@ -334,7 +424,8 @@ fn check_if_need_box(
                                     if check_if_need_box(
                                         opt.clone(),
                                         &ast[*child].typ.clone().unwrap(),
-                                        ast, *child, info, true, Mutate::Dont
+                                        *child, true, MutateAst::Dont(ast),
+                                        MutateInfo::Dont(info)
                                     ).is_ok() {
                                         found_one = true;
                                         break
@@ -342,15 +433,16 @@ fn check_if_need_box(
                                 }
                                 if !found_one {
                                     update_pos_from_tree_node(&ast[*child]);
-                                    return err(&expected, ast[*child].typ.as_ref().unwrap())
+                                    return err(&expected, ast[*child].typ.as_ref().unwrap(), None)
                                 }
                             }
-                            if let Mutate::Box = mutate {
+                            if let (MutateAst::Box(ast), MutateInfo::Box(info)) = (mutate_ast, mutate_info) {
                                 for child in children {
                                     check_if_need_box(
                                         expected.clone(),
                                         &ast[child].typ.clone().unwrap(),
-                                        ast, child, info, true, Mutate::Box
+                                        child, true, MutateAst::Box(ast),
+                                        MutateInfo::Box(info)
                                     ).unwrap(); // can prob be unwrap_unsafe
                                 }
                             }
@@ -358,8 +450,9 @@ fn check_if_need_box(
                             for inner_pos in children {
                                 check_if_need_box(
                                     expected.clone(),
-                                    &ast[inner_pos].typ.clone().unwrap(),
-                                    ast, inner_pos, info, true, mutate
+                                    &get_ast_imut(&mutate_ast)[inner_pos].typ.clone().unwrap(),
+                                    inner_pos, true,
+                                     mutate_ast.reborrow(), mutate_info.reborrow()
                                 )?;
                             }
                         }
@@ -379,21 +472,23 @@ fn check_if_need_box(
                     compare_generic_and_a_typ_children(&expected, got_typ, err)
                 }
             } else {
+                let ast = get_ast_imut(&mutate_ast);
                 update_pos_from_tree_node(&ast[pos]);
-                err(&expected, got_typ)
+                err(&expected, got_typ, None)
             }
 
         }
         TypeKind::Enum(expected_enum_name) => {
+            let ast = get_ast_imut(&mutate_ast);
             if let TypeKind::Enum(got_enum_name) = &got_typ.kind {
                 if expected_enum_name != got_enum_name {
                     update_pos_from_tree_node(&ast[pos]);
-                    return err(&expected, got_typ)
+                    return err(&expected, got_typ, None)
                 }
                 compare_generic_and_a_typ_children(&expected, got_typ, err)
             } else {
                 update_pos_from_tree_node(&ast[pos]);
-                err(&expected, got_typ)
+                err(&expected, got_typ, None)
             }
         }
         TypeKind::Tuple => { todo!() }
@@ -401,11 +496,29 @@ fn check_if_need_box(
             let TypeKind::VArgs = got_typ.kind else {
                 unreachable!()
             };
-            let res_typs: Vec<_> =
-                expected.ref_children().iter().zip(got_typ.ref_children()).map(|(exp, got)| {
-                    // TODO adding the box will prob be problematic
-                    check_if_need_box(exp.clone(), got, ast, pos, info, true, mutate)
-                }).collect();
+            let mut res_typs: Vec<_> = vec![];
+            for (exp, got) in expected.ref_children().iter().zip(got_typ.ref_children()) {
+                match mutate_info { //1 there must be a better way to do this...
+                    MutateInfo::Dont(info) => {
+                        res_typs.push(check_if_need_box(
+                            exp.clone(), got, pos, true,
+                            mutate_ast.reborrow(), MutateInfo::Dont(info)
+                        ));
+                        mutate_info = MutateInfo::Dont(info);
+                    }
+                    MutateInfo::Box(info) => {
+                        res_typs.push(check_if_need_box(
+                            exp.clone(), got, pos, true,
+                            mutate_ast.reborrow(), MutateInfo::Box(info)
+                        ));
+                        mutate_info = MutateInfo::Box(info);
+                    }
+                }
+            }
+                // expected.ref_children().iter().zip(got_typ.ref_children()).map(|(exp, got)| {
+                //     // TODO adding the box will prob be problematic
+                //     check_if_need_box(exp.clone(), got, pos, true, mutate_ast, mutate_info)
+                // }).collect();
             if let Some(err_one) = res_typs.iter().find(|x| x.is_err()) {
                 return Err(unsafe { err_one.as_ref().err().unwrap_unchecked().clone() })
             }
@@ -442,10 +555,32 @@ fn match_to_convert_types(expected: &Type, got_typ: &Type, ast: &mut Vec<Ast>, p
         /*---*/let args = add_to_tree(func_call, ast, Ast::new_no_pos(AstNode::Args));
         /*----*/add_to_tree(args, ast, Ast::new_no_pos(AstNode::Identifier(String::from("x"))));
     }
-    // TODO add case _: unreachable!()
+}
+fn match_to_convert_types_enums_trait(expected: &Type, got_typ: &Type, ast: &mut Vec<Ast>, pos: usize, info: &Info) {
+    let match_pos = insert_as_parent_of(ast, pos, AstNode::Match, None);
+    let from_enum_name = got_typ.to_string();
+    let to_enum_name = expected.to_string();
+    for typ in got_typ.ref_children() {
+        let case = add_to_tree(match_pos, ast, Ast::new_no_pos(AstNode::Case));
+        /**/let condition = add_to_tree(case, ast, Ast::new_no_pos(AstNode::Body));
+        /*-*/let prop = add_to_tree(condition, ast, Ast::new_no_pos(AstNode::Property));
+        /*--*/let frm_enm = add_to_tree(prop, ast, Ast::new_no_pos(AstNode::Identifier(from_enum_name.clone())));
+        ast[frm_enm].typ = Some(Type { kind: TypeKind::Enum(TypName::Static("")), children: None }); //1 so that is uses `::` and not `.`
+        /*--*/add_to_tree(prop, ast, Ast::new_no_pos(AstNode::Identifier(format!("_{typ}"))));
+        /**/add_to_tree(case, ast, Ast::new_no_pos(AstNode::Identifier(String::from("x"))));
+
+        /**/let body = add_to_tree(case, ast, Ast::new_no_pos(AstNode::Module));
+        /*-*/let prop = add_to_tree(body, ast, Ast::new_no_pos(AstNode::Property));
+        /*--*/add_to_tree(prop, ast, Ast::new_no_pos(AstNode::Identifier(to_enum_name.clone())));
+        /*--*/let func_call = add_to_tree(prop, ast, Ast::new_no_pos(AstNode::FunctionCall(true)));
+        let opt = expected.ref_children().iter().find(|exp| implements_trait(typ, exp, ast, info).is_some()).unwrap();
+        /*---*/add_to_tree(func_call, ast, Ast::new_no_pos(AstNode::Identifier(format!("_{opt}"))));
+        /*---*/let args = add_to_tree(func_call, ast, Ast::new_no_pos(AstNode::Args));
+        /*----*/add_to_tree(args, ast, Ast::new_no_pos(AstNode::Identifier(String::from("x"))));
+    }
 }
 
-fn compare_generic_and_a_typ_children<F: Fn(&Type, &Type) -> Result<Type, String>>(
+fn compare_generic_and_a_typ_children<F: Fn(&Type, &Type, Option<String>) -> Result<Type, String>>(
     expected: &Type, got_typ: &Type, err: F
 ) -> Result<Type, String> {
     let expected_children = unwrap(&expected.ref_children()[0].children);
@@ -480,26 +615,26 @@ fn compare_generic_and_a_typ_children<F: Fn(&Type, &Type) -> Result<Type, String
         match &got_arg.kind {
             TypeKind::Generic(GenericType::NoVal(name)) => {
                 if let Some(exp) = expected_hm.get(&GOrT::Generic(name.clone())) {
-                    if exp.is_some() { return err(expected, got_typ) }
-                } else { return err(expected, got_typ) }
+                    if exp.is_some() { return err(expected, got_typ, None) }
+                } else { return err(expected, got_typ, None) }
             }
             TypeKind::Generic(GenericType::WithVal(name)) => {
                 if let Some(exp) = expected_hm.get(&GOrT::Generic(name.clone())) {
                     if let Some(exp) = exp {
-                        if *exp != got_arg.ref_children()[0] { return err(expected, got_typ) }
+                        if *exp != got_arg.ref_children()[0] { return err(expected, got_typ, None) }
                         // if let TypeKind::Unknown = &got_arg.ref_children()[0].kind {
                         //     res_arg.children.as_mut().unwrap()[0] = exp.clone();
                         // } else if *exp != got_arg.ref_children()[0] { return err(expected, got_typ) }
                     }
-                } else { return err(expected, got_typ) }
+                } else { return err(expected, got_typ, None) }
             }
             TypeKind::AssociatedType(name) => {
                 let inner_typ = got_arg.children.as_ref()
                     .map(|children| children[0].clone());
 
                 if let Some(exp) = expected_hm.get(&GOrT::AType(name.clone())) {
-                    if matches!(exp, Some(_) if *exp != inner_typ) { return err(expected, got_typ) }
-                } else { return err(expected, got_typ) }
+                    if matches!(exp, Some(_) if *exp != inner_typ) { return err(expected, got_typ, None) }
+                } else { return err(expected, got_typ, None) }
             }
             _ => unreachable!("{:?}", got_arg),
         };

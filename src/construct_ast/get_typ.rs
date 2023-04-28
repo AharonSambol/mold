@@ -121,6 +121,7 @@ pub fn try_get_arg_typ(
             | SolidToken::Colon
             | SolidToken::NewLine
             | SolidToken::Operator(OperatorType::Eq)
+            | SolidToken::Where
             => break,
             SolidToken::Operator(OperatorType::BinOr) => {
                 update_pos_from_token(&tokens[*pos]);

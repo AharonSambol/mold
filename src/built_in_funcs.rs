@@ -32,6 +32,7 @@ struct BuiltInEnum {
     ignore: bool
 }
 
+
 pub fn put_at_start(input: &str) -> String {
     let mut data = String::new();
     let to_add = [
@@ -118,13 +119,14 @@ pub fn put_at_start(input: &str) -> String {
             generics: Some(vec!["T"]),
             methods: vec![
                 "__len__(self: &Self) -> int",
-                "into_iter(self) -> IntoIterator[Item=T]",
+                // "into_iter(self) -> IntoIterator[Item=T]",
+                "into_iter(self) -> Iterator[Item=T]",
                 "append(self, t: T)",
                 "index(self, pos: usize) -> T",
-                "Debug::fmt(self: &Self, f: &mut Formatter[`_]) -> Result[(), Error]",
+                "Debug::fmt(self: &Self, f: &mut Formatter[`_]) -> Result[(), Error] where T: Debug",
             ],
             methods_with_impl: vec!["def __init__(self, x: T):\n\t\tself.x = x"],
-            traits: Some(vec!["Debug", "IntoIterator[Item=T]"]),
+            traits: Some(vec!["IntoIterator[Item=T]"]),
         }),
         //1 HashSet
         BuiltIn::Struct(BuiltInStruct{

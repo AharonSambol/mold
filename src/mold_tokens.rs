@@ -83,7 +83,7 @@ pub enum SolidToken {
     Break, Continue, Return, Pass,
     Cast, In, IMut,
     From, Import, As,
-    Null,
+    Null, Where
 }
 
 impl Display for SolidToken {
@@ -130,6 +130,7 @@ impl Display for SolidToken {
             SolidToken::Import => write!(f, "import"),
             SolidToken::As => write!(f, "as"),
             SolidToken::Null => write!(f, "None"),
+            SolidToken::Where => write!(f, "where"),
         }
     }
 }
@@ -502,6 +503,7 @@ fn solidify_tokens(tokens: &Vec<TokenWPos>, input_code: &str) -> Vec<SolidTokenW
                     "imut" => SolidToken::IMut, "cast" => SolidToken::Cast,
                     "from" => SolidToken::From, "import" => SolidToken::Import,
                     "as" => SolidToken::As, "None" => SolidToken::Null,
+                    "where" => SolidToken::Where,
                     _ => {
                         if let Some(SolidTokenWPos{ tok: SolidToken::LifeTime(lf), .. }) = res.last_mut() {
                             *lf = format!("'{st}");

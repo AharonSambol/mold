@@ -1,11 +1,12 @@
 use std::collections::{HashMap};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 use pretty_print_tree::{Color, PrettyPrintTree};
-use crate::construct_ast::ast_structure::{Ast, Param};
-use crate::{add_trait, EMPTY_STR, IMPL_TRAITS, Implementation, ImplTraitsKey, ImplTraitsVal, typ_with_child, some_vec, unwrap_enum};
+use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
+use crate::{add_trait, EMPTY_STR, IMPL_TRAITS, Implementation, ImplTraitsKey, ImplTraitsVal, typ_with_child, some_vec, unwrap_enum, ConditionType, StrToType};
 use crate::add_types::generics::apply_generics_from_base;
-use crate::add_types::polymorphism::{escape_typ_chars, make_enums};
+use crate::add_types::polymorphism::{box_no_side_effects, escape_typ_chars, make_enums, matches_template};
 use crate::add_types::utils::{get_pointer_complete_inner, join};
 use crate::construct_ast::mold_ast::{add_trait_to_struct, get_trt_strct_functions, Info, TraitFuncs};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
@@ -330,21 +331,49 @@ pub fn clean_type(st: String) -> TypName {
 }
 
 pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info: &Info) -> Option<Type> {
-    #[inline] fn struct_matches_trait(trt_funcs: &TraitFuncs, funcs: &TraitFuncs, trait_name: &str) -> Option<(HashMap<String, Type>, HashMap<String, Type>)> {
+    #[inline] fn struct_matches_trait(
+        trt_funcs: &TraitFuncs, funcs: &TraitFuncs, trait_name: &str, ast: &[Ast],
+        struct_generics: StrToType, info: &Info, struct_name: &str
+    ) -> Option<(StrToType, StrToType, ConditionType)> {
         let mut a_types_hm = HashMap::new();
         let mut generics_hm = HashMap::new();
+        let mut condition = vec![];
+        // if struct_name == "Vec" {
+        //     panic!("!!!!");
+        // }
         'trait_func_loop: for (trt_f_name, (_, trt_f_types)) in trt_funcs {
             let mut func_types = funcs.get(trt_f_name);
             if func_types.is_none() {
                 func_types = funcs.get(&format!("{trait_name}::{trt_f_name}"));
             }
-            if let Some((_, func_types)) = func_types {
+            // if struct_name == "Vec" && trait_name == "Debug"{
+            //     panic!("!!!!{trt_f_name} {:?}  {:?}", func_types, funcs);
+            // }
+            if let Some((func_pos, func_types)) = func_types {
+                if let Some(where_clause) = ast[*func_pos].children.as_ref().unwrap().iter().nth(4) {
+                    for i in ast[*where_clause].ref_children() {
+                        let (generic_name, generic_typ) = unwrap_enum!(
+                            (&ast[*i].value, &ast[*i].typ),
+                            (AstNode::Identifier(name), Some(typ)),
+                            (name, typ)
+                        );
+                        condition.push((generic_name.clone(), generic_typ.clone()));
+                        if !matches_template(
+                            generic_typ.clone(), &struct_generics[generic_name], ast,
+                            info, *i //todo?
+                        ) {
+                            return None
+                        }
+                    }
+                }
+
                 if func_types == trt_f_types {
                     continue 'trait_func_loop
                 }
                 if func_types.output.is_some() != trt_f_types.output.is_some()
                     || func_types.input.is_some() != trt_f_types.input.is_some()
                 { return None }
+
                 let mut func_all_types =
                     if let Some(v) = &func_types.input { v.clone() }
                     else { vec![] };
@@ -373,11 +402,18 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
             }
             return None
         }
-        Some((generics_hm, a_types_hm))
+
+        let condition: ConditionType = if condition.is_empty() { None } else { Some(Rc::new(
+            move |struct_generics: StrToType, ast, info, pos|
+                condition.iter().all(|(name, typ)| {
+                    matches_template(typ.clone(), &struct_generics[name], ast, info, pos)
+                })
+        )) };
+        Some((generics_hm, a_types_hm, condition))
     }
     #[inline] fn types_match<'a>(
-        mut a_types_hm: &'a mut HashMap<String, Type>,
-        mut generics_hm: &'a mut HashMap<String, Type>,
+        mut a_types_hm: &'a mut StrToType,
+        mut generics_hm: &'a mut StrToType,
         got_types: &mut dyn Iterator<Item=&Type>,
         exp_types: &mut dyn Iterator<Item=&Type>
     ) -> bool {
@@ -411,12 +447,8 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
             typ = get_pointer_complete_inner(typ);
         }
     }
-
     if typ == expected_trait {
         return Some(typ.clone())
-    }
-    if expected_trait_name == "Debug" {
-        println!("!$, {}", typ)
     }
     if let TypeKind::OneOf = &typ.kind {
         return one_of_implements_trait(typ, expected_trait, ast, info, expected_trait_name)
@@ -458,30 +490,47 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
                     continue
                 }
             }
-            return Some(typ.clone())
+            Some(typ.clone())
         },
         TypeKind::Struct(struct_name) => {
-            let (expected_generics, expected_a_types) = get_generics_and_a_types_optional(expected_trait);
+            let (expected_generics, expected_a_types)
+                = get_generics_and_a_types_optional(expected_trait);
 
+            let (struct_generics, _) = get_generics_and_a_types(typ);
             let key = ImplTraitsKey {
                 name: struct_name.to_string(),
-                path: info.structs[struct_name.get_str()].parent_file.clone(),
+                path: info.structs[struct_name.get_str()].parent_file.clone()
             };
             unsafe {
                 if let Some(vc) = IMPL_TRAITS.get(&key) {
                     let expected_all_types = join_generics_and_types(
                         &Some(expected_generics),
-                        &mut expected_a_types.iter().map(|(name, typ)|
-                            (name, typ.as_ref().unwrap())
+                        &mut expected_a_types.iter().map(
+                            |(name, typ)| (name, typ.as_ref().unwrap())
                         )
                     );
+
                     for trt in vc.iter().filter(|x| x.trt_name == expected_trait_name) {
                         let mut a_types_hm = HashMap::new();
                         let mut generics_hm = HashMap::new();
                         let trt_all_types = join_generics_and_types(
                             &trt.generics, &mut trt.types.as_ref().unwrap_or(&HashMap::new()).iter(),
                         );
-
+                        // struct_generics, ast, info, pos
+                        if let Some(condition) = &trt.condition {
+                            let generics_map = HashMap::from_iter(
+                                struct_generics.iter().filter_map(|t|
+                                    if let Type { kind: TypeKind::Generic(GenericType::WithVal(name)), children: Some(ch) } = t {
+                                        Some((name.clone(), ch[0].clone()))
+                                    } else {
+                                        None
+                                    }
+                                )
+                            );
+                            if !condition(generics_map, ast, info, usize::MAX /* // todo */) {
+                                continue
+                            }
+                        }
                         if types_match(
                             &mut a_types_hm, &mut generics_hm,
                             &mut expected_all_types.iter(),
@@ -502,7 +551,6 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
                     }
                 }
             }
-
             let trait_generics = &info.traits[expected_trait_name].generics;
             if matches!(trait_generics, Some(vc) if !vc.is_empty()) {
                 return None //1 doesnt (yet) support duck typing for traits with generics
@@ -515,11 +563,19 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
             let trt_module = ast[trt_pos].ref_children()[1];
             let trt_funcs = get_trt_strct_functions(ast, &ast[trt_module]);
 
-            let types_hm = struct_matches_trait(
-                &trt_funcs, &strct_funcs, expected_trait_name
+            let struct_generics = HashMap::from_iter(
+                struct_generics.iter().map(|x| {
+                    unwrap_enum!(x, Type {
+                        kind: TypeKind::Generic(GenericType::WithVal(name)),
+                        children: Some(children)
+                    }, (name.clone(), children[0].clone()))
+                })
             );
-            types_hm.as_ref()?;
-            let (generics_hm, a_types_hm) = types_hm.unwrap();
+            let (generics_hm, a_types_hm, condition) = struct_matches_trait(
+                &trt_funcs, &strct_funcs, expected_trait_name, ast, struct_generics, info,
+                struct_name.get_str()
+            )?;
+
             let generics_vec = if generics_hm.is_empty() { None } else { Some(generics_hm.values().cloned().collect()) };
             let a_types_hm = if a_types_hm.is_empty() { None } else { Some(a_types_hm) };
             let implementation = add_trait_to_struct(
@@ -531,7 +587,8 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
                 trt_name: String::from(expected_trait_name),
                 implementation: Implementation::Is(implementation),
                 types: a_types_hm.clone(),
-                generics: generics_vec.clone()
+                generics: generics_vec.clone(),
+                condition
             };
             add_trait!(key, val);
             let mut children = unwrap(&generics_vec).clone();
@@ -559,11 +616,9 @@ pub fn implements_trait(mut typ: &Type, expected_trait: &Type, ast: &[Ast], info
     }
 }
 
-fn one_of_implements_trait(typ: &Type, expected_trait: &Type, ast: &[Ast], info: &Info, expected_trait_name: &str) -> Option<Type> {
-    println!("expected_trait_name: {expected_trait_name}");
-    if expected_trait_name == "Debug" {
-        panic!("!");
-    }
+fn one_of_implements_trait(
+    typ: &Type, expected_trait: &Type, ast: &[Ast], info: &Info, expected_trait_name: &str
+) -> Option<Type> {
     let mut options = typ.ref_children().iter();
     let first = implements_trait(options.next().unwrap(), expected_trait, ast, info);
     if first.is_none() || options.any(|typ| implements_trait(typ, expected_trait, ast, info) != first) {
@@ -579,7 +634,7 @@ fn one_of_implements_trait(typ: &Type, expected_trait: &Type, ast: &[Ast], info:
     // TODO ignore some implementations (IGNORE_STRUCT/ IGNORE_TRAIT)
     let key = ImplTraitsKey {
         name: typ.to_string(),
-        path: String::from("out/src/main.rs"),
+        path: String::from("out/src/main.rs")
     };
 
     if let Some(vc) = unsafe { IMPL_TRAITS.get_mut(&key) } {
@@ -630,7 +685,7 @@ fn one_of_implements_trait(typ: &Type, expected_trait: &Type, ast: &[Ast], info:
     };
 
     let implementation = format!(
-        "impl{generics} {trt_file}::{expected_trait} for {typ}{generics} {{ \n\t{} \n}}",
+        "impl{generics} {trt_file}::{expected_trait_name} for {typ}{generics} {{ \n\t{} \n}}",
         join(
             trt_funcs.iter().map(|(func_name, (_, func_typ))| {
                 let none = vec![];
@@ -650,7 +705,7 @@ fn one_of_implements_trait(typ: &Type, expected_trait: &Type, ast: &[Ast], info:
                     "fn {func_name}({param}) {rtrn} {{ \n\t\tmatch self {{\n\t\t\t{}\n\t\t}}\n\t}}",
                     join(typ.ref_children().iter().map(|t|
                         format!(
-                            "{typ_str}::_{}(x) => {trt_file}::{expected_trait}::{func_name}(x, {args}),",
+                            "{typ_str}::_{}(x) => {trt_file}::{expected_trait_name}::{func_name}(x, {args}),",
                             escape_typ_chars(&t.to_string())
                         )
                     ), "\n\t\t\t")
@@ -659,20 +714,18 @@ fn one_of_implements_trait(typ: &Type, expected_trait: &Type, ast: &[Ast], info:
             "\n"
         ),
     );
-    if expected_trait_name == "Debug" {
-        panic!("{implementation}");
-    }
     let val = ImplTraitsVal {
         trt_name: String::from(expected_trait_name),
         implementation: Implementation::Is(implementation),
         types: trt_a_types,
         generics: trt_generics,
+        condition: None
     };
     add_trait!(key, val);
     Some(first)
 }
 
-fn get_generics_and_a_types(typ: &Type) -> (Vec<Type>, HashMap<String, Type>){
+pub fn get_generics_and_a_types(typ: &Type) -> (Vec<Type>, StrToType){
     let mut trt_generics = vec![];
     let mut trt_a_types = HashMap::new();
 

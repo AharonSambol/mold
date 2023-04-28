@@ -167,7 +167,7 @@ pub fn print_tree(ast: &[Ast], pos: usize){
                         match &vc[*x].value {
                             AstNode::StaticFunction(name)
                             | AstNode::Function(name) =>    !unsafe { IGNORE_FUNCS  .contains(name.as_str()) },
-                            AstNode::Struct(name) =>        !unsafe { IGNORE_STRUCTS.contains(name.as_str()) },
+                            AstNode::Struct(name) =>        !unsafe { IGNORE_STRUCTS.contains(name.as_str()) } || name == "Vec",
                             AstNode::Trait{name, .. } =>    !unsafe { IGNORE_TRAITS .contains(name.as_str()) },
                             AstNode::Enum(name) =>          !unsafe { IGNORE_ENUMS  .contains(name.as_str()) },
                             _ => true

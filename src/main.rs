@@ -16,9 +16,11 @@ use std::{env, fs, panic};
 use std::backtrace::Backtrace;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::fmt::{Write as w};
+use std::fmt::{Debug, Formatter, Write as w};
+use std::panic::set_hook;
 use std::path::PathBuf;
 use std::process::{Command, exit};
+use std::rc::Rc;
 use std::time::Instant;
 use once_cell::sync::Lazy;
 use fancy_regex::Regex as FancyRegex;
@@ -66,20 +68,35 @@ lazy_static! {
     pub static ref MUT_POINTER_WITHOUT_LIFETIME: FancyRegex = FancyRegex::new(r"&\s*mut(?!\s*')").unwrap();
 }
 
+//1                                    struct_generics, ast,  info,  pos
+pub type ConditionType = Option<Rc<dyn Fn(StrToType, &[Ast], &Info, usize) -> bool>>;
 type OneOfEnums = HashMap<String, OneOfEnumTypes>;
+pub type StrToType = HashMap<String, Type>;
 
 #[derive(Eq, PartialEq, Hash, Debug)]
 struct ImplTraitsKey {
     name: String,
-    path: String
+    path: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct ImplTraitsVal { // TODO when adds a new Impl needs to not only check the name but also the generics
     trt_name: String,
     implementation: Implementation,
-    types: Option<HashMap<String, Type>>,
-    generics: Option<Vec<Type>>
+    types: Option<StrToType>,
+    generics: Option<Vec<Type>>,
+    condition: ConditionType
+}
+
+impl Debug for ImplTraitsVal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImplTraitsVal")
+            .field("trt_name", &self.trt_name)
+            .field("implementation", &self.implementation)
+            .field("types", &self.types)
+            .field("generics", &self.generics)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -379,7 +396,7 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
                             let stct_module = stct_tree[0].ref_children()[2];
                             let trt_funcs = get_trt_strct_functions(trt_tree, &trt_tree[trt_module]);
                             let stct_funcs = get_trt_strct_functions(stct_tree, &stct_tree[stct_module]);
-                            let fake_info = Info {
+                            let mut fake_info = Info {
                                 funcs: &mut file_info.funcs.clone(),
                                 structs: &mut file_info.structs.iter().map(|(name, (typ, _))| (name.clone(), typ.clone())).collect(),
                                 traits: &mut file_info.traits.iter().map(|(name, (typ, _))| (name.clone(), typ.clone())).collect(),
@@ -394,7 +411,7 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
                             // throw!();
                             let implementation = add_trait_to_struct(
                                 stct_tree, &key.name, &stct_funcs,
-                                &imp_trt.trt_name, &trt_funcs, &imp_trt.types, &imp_trt.generics, &fake_info
+                                &imp_trt.trt_name, &trt_funcs, &imp_trt.types, &imp_trt.generics, &mut fake_info
                             );
                             // println!("!!!!!!!!!! {}", implementation);
                             writeln!(file, "{}", implementation).unwrap()

@@ -3,7 +3,7 @@ use crate::add_types::polymorphism::{box_no_side_effects, try_box_no_side_effect
 use crate::add_types::utils::{get_pointer_complete_inner, join, join_or};
 use crate::construct_ast::ast_structure::{Ast, Param};
 use crate::construct_ast::mold_ast::{Info};
-use crate::{IMPL_TRAITS};
+use crate::{IMPL_TRAITS, StrToType};
 use crate::types::{GenericType, print_type, Type, TypeKind, unwrap};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
 use crate::construct_ast::tree_utils::update_pos_from_tree_node;
@@ -14,7 +14,7 @@ use crate::construct_ast::tree_utils::update_pos_from_tree_node;
 //        [Generic(Of("T"))]
 pub fn get_function_return_type(
     return_type: &Option<Type>, expected_inputs: &Option<Vec<Param>>, inputs: &Option<Vec<(Type, usize)>>,
-    ast: &mut Vec<Ast>, info: &mut Info
+    ast: &[Ast], info: &Info
 ) -> Option<Type> {
     let return_type = if let Some(x) = return_type { x } else { return None };
     if let Some(expected_inputs) = expected_inputs {
@@ -34,7 +34,7 @@ pub fn get_function_return_type(
     Some(return_type.clone())
 }
 
-pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, Type>, ast: &mut Vec<Ast>, info: &mut Info, pos: usize) {
+pub fn map_generic_types(template: &Type, got: &Type, res: &mut StrToType, ast: &[Ast], info: &Info, pos: usize) {
     // let cast_to_trait = |trt: &Type| if matches!(&trt.kind, TypeKind::Trait(_)) && !matches!(&got.kind, TypeKind::Trait(_)) {
     //     let res = implements_trait(got, trt, ast, info);
     //     if res.is_some() { Ok(res) } else { Err(format!("expected `{template}` but found `{got}`")) }
@@ -76,7 +76,7 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, 
     // if !matches_template(template.clone(), &got, ast, info) {
     //     throw!("(5) expected `{template}` but got `{got}`")
     // }
-    fn map_generic_types_inner(template: &Type, got: &Type, res: &mut HashMap<String, Type>) -> Result<(), String> {
+    fn map_generic_types_inner(template: &Type, got: &Type, res: &mut StrToType) -> Result<(), String> {
         if let TypeKind::Generic(GenericType::NoVal(name)) = &template.kind {
             if let Some(r) = res.get(name) {
                 if r != got {
@@ -97,7 +97,7 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, 
         let template_children = unwrap(&template.children);
         let got_children = unwrap(&got.children);
         'generics: for (tmpl_child, got_child) in template_children.iter().zip(got_children) {
-            let map_child = |tmpl: &Type, res: &mut HashMap<String, Type>| {
+            let map_child = |tmpl: &Type, res: &mut StrToType| {
                 if !matches!(tmpl.kind, TypeKind::Generic(GenericType::NoVal(_))) && got_child.kind != tmpl.kind {
                     let TypeKind::OneOf = tmpl.kind else {
                         return Err(format!("(1) expected `{tmpl}` but found `{got_child}`"))
@@ -138,7 +138,7 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut HashMap<String, 
     }
     if let Err(err) = map_generic_types_inner(template, &got, res) {
         unsafe {
-            println!("{:?}", IMPL_TRAITS.iter().find(|(k, v)| k.name == "Vec").unwrap().1)
+            println!("{:?}", IMPL_TRAITS.iter().find(|(k, _)| k.name == "Vec").unwrap().1)
         }
         throw!("{}", err)
     }
@@ -164,7 +164,7 @@ pub fn apply_generics_from_base(return_typ: &Option<Type>, base: &Type) -> Optio
     None
 }
 
-pub fn apply_map_to_generic_typ(typ: &Type, map: &HashMap<String, Type>) -> Type {
+pub fn apply_map_to_generic_typ(typ: &Type, map: &StrToType) -> Type {
     if let TypeKind::Generic(GenericType::NoVal(name)) = &typ.kind {
         // println!("{name}, {map:?}");
         map[name].clone()

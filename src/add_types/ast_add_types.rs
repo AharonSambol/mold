@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
 use crate::construct_ast::mold_ast::{Info, VarTypes};
-use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, implements_trait, print_type, clean_type, print_type_b, join_types};
+use crate::types::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, GenericType, UNKNOWN_TYPE, INT_TYPE, MUT_STR_TYPE, STR_TYPE, Type, TypeKind, TypName, unwrap, unwrap_u, implements_trait, print_type, clean_type, print_type_b, join_types, get_generics_and_a_types};
 use lazy_static::lazy_static;
 use pretty_print_tree::Color;
 use regex::Regex;
-use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS, IMPL_TRAITS, ImplTraitsKey, get_traits};
+use crate::{some_vec, unwrap_enum, typ_with_child, IGNORE_FUNCS, IMPL_TRAITS, ImplTraitsKey, get_traits, StrToType};
 use crate::add_types::generics::{apply_generics_from_base, apply_map_to_generic_typ, get_function_return_type, map_generic_types};
 use crate::add_types::polymorphism::{box_if_needed, box_no_side_effects, make_enums, matches_template};
 use crate::add_types::utils::{add_to_stack, find_function_in_struct, find_function_in_trait, get_from_stack, get_pointer_complete_inner, get_pointer_inner, is_float, join, join_or, update_pos_from_token};
@@ -610,7 +610,7 @@ fn add_types_inner(
         AstNode::ForVars | AstNode::Pass | AstNode::Continue | AstNode::Break | AstNode::Enum(_)
         | AstNode::Trait { .. } /*| AstNode::Traits*/ | AstNode::Type(_) | AstNode::Types
         | AstNode::Arg { .. } | AstNode::Cast | AstNode::As(_) | AstNode::From | AstNode::Import
-        | AstNode::Ignore | AstNode::RustStructInit => {}
+        | AstNode::Ignore | AstNode::RustStructInit | AstNode::Where => {}
     }
 }
 
@@ -949,7 +949,7 @@ fn format_args_and_get_return_typ(
         }
         None
     }
-    #[inline] fn get_generics(expected_input: &Option<Vec<Param>>, args: &Option<Vec<usize>>, ast: &mut Vec<Ast>, info: &mut Info, vars: &VarTypes) -> HashMap<String, Type> {
+    #[inline] fn get_generics(expected_input: &Option<Vec<Param>>, args: &Option<Vec<usize>>, ast: &mut Vec<Ast>, info: &mut Info, vars: &VarTypes) -> StrToType {
         let mut generic_map = HashMap::new();
         if let Some(expected_input) = &expected_input {
             // todo update here
@@ -1108,7 +1108,7 @@ fn format_args_and_get_return_typ(
     rtrn_typ.map(|rtrn_typ| apply_map_to_generic_typ(&rtrn_typ, &generic_map))
 }
 
-pub fn is_castable(exp: &Type, got: &Type, ast: &[Ast], info: &Info, is_built_in: bool) -> bool {
+pub fn is_castable(exp: &Type, got: &Type, ast: &mut Vec<Ast>, info: &mut Info, is_built_in: bool) -> bool {
     match &exp.kind {
         TypeKind::Generic(GenericType::NoVal(_)) => true,
         TypeKind::Generic(_) => throw!("huh? (not sure why I wrote this...)"),
@@ -1271,7 +1271,7 @@ fn put_args_in_vec(
 }
 
 pub fn get_enum_property_typ(
-    ast: &mut Vec<Ast>, info: &mut Info, children: &[usize], enm_name: &TypName
+    ast: &[Ast], info: &Info, children: &[usize], enm_name: &TypName
 ) -> Option<Type> {
     if let AstNode::FunctionCall(_) = &ast[children[1]].value {
         let children = ast[children[1]].ref_children();
@@ -1343,7 +1343,7 @@ pub fn get_enum_property_typ(
     }
 }
 
-fn is_enum_option_valid(ast: &mut Vec<Ast>, info: &mut Info, variant: usize, parentheses: Option<usize>, enm_name: &TypName, ignore_types: bool) {
+fn is_enum_option_valid(ast: &[Ast], info: &Info, variant: usize, parentheses: Option<usize>, enm_name: &TypName, ignore_types: bool) {
     let variant_name = unwrap_enum!(&ast[variant].value, AstNode::Identifier(n), n);
 
     if let Some(enm) = info.enums.get(enm_name.get_str()) {
@@ -1531,7 +1531,7 @@ pub fn get_property_method_typ_and_set_args(
 
 // TODO this function and `get_property_method_typ_and_set_args` are too similar...
 pub fn get_property_method_typ(
-    ast: &mut Vec<Ast>, info: &mut Info, children: &[usize],
+    ast: &[Ast], info: &Info, children: &[usize],
     left_kind: &Type, trait_name: &TypName, is_struct: bool, pos: usize
 ) -> (Option<Type>, bool) {
     let func_call = &ast[children[1]];

@@ -9,7 +9,7 @@ use crate::construct_ast::mold_ast::{FuncType, StructType, TraitType, Info, make
 use crate::construct_ast::tree_utils::{add_to_tree, print_tree};
 use crate::mold_tokens::{IsOpen, OperatorType, Pos, SolidToken, SolidTokenWPos};
 use crate::types::{GenericType, print_type, Type, TypeKind, TypName, UNKNOWN_TYPE, unwrap, unwrap_u};
-use crate::{add_trait, IMPL_TRAITS, Implementation, ImplTraitsKey, ImplTraitsVal, IS_COMPILED, PARSED_FILES, some_vec, typ_with_child, unwrap_enum};
+use crate::{add_trait, IMPL_TRAITS, Implementation, ImplTraitsKey, ImplTraitsVal, IS_COMPILED, PARSED_FILES, some_vec, StrToType, typ_with_child, unwrap_enum};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::{add_to_stack, update_pos_from_token};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
@@ -31,6 +31,7 @@ pub fn make_func(
     res
 }
 
+//1                              pos  body-pos    generics
 fn make_func_signature(
     tokens: &[SolidTokenWPos], mut pos: usize, ast: &mut Vec<Ast>, parent: usize,
     vars: &mut VarTypes, info: &mut Info
@@ -52,21 +53,22 @@ fn make_func_signature(
         pos += 2; //1 skip the ::
         write!(name, "::{}", unwrap_enum!(&tokens[pos].tok, SolidToken::Word(w), w)).unwrap();
         pos += 1; //1 skip the next word
-        let trait_name = name.split("::").next().unwrap();
-        let parent_struct = ast[parent].parent.unwrap();
-        let parent_struct_name = unwrap_enum!(&ast[parent_struct].value, AstNode::Struct(n), n);
+        // let trait_name = name.split("::").next().unwrap();
+        // let parent_struct = ast[parent].parent.unwrap();
+        // let parent_struct_name = unwrap_enum!(&ast[parent_struct].value, AstNode::Struct(n), n);
         // let traits = unwrap_u(&ast[parent_struct].children)[3];
-        let key = ImplTraitsKey {
-            name: parent_struct_name.clone(),
-            path: info.cur_file_path.to_str().unwrap().to_string(),
-        };
-        let val = ImplTraitsVal {
-            trt_name: trait_name.to_string(),
-            implementation: Implementation::None,
-            types: None,
-            generics: None,
-        };
-        add_trait!(key, val);
+        // let key = ImplTraitsKey {
+        //     name: parent_struct_name.clone(),
+        //     path: info.cur_file_path.to_str().unwrap().to_string()
+        // };
+        // let val = ImplTraitsVal {
+        //     trt_name: trait_name.to_string(),
+        //     implementation: Implementation::None,
+        //     types: None,
+        //     generics: None,
+        //     condition: None
+        // };
+        // add_trait!(key, val);
     }
     let index = add_to_tree(parent, ast, Ast::new(
         AstNode::StaticFunction(name.clone()),
@@ -191,6 +193,26 @@ fn make_func_signature(
             });
         }
     }
+
+    if let SolidToken::Where = tokens[pos].tok {
+        let where_clauses = add_to_tree(
+            index, ast, Ast::new(AstNode::Where, tokens[pos].pos.clone())
+        );
+        while let SolidToken::Where | SolidToken::Comma = tokens[pos].tok {
+            let generic_name = unwrap_enum!(&tokens[pos + 1].tok, SolidToken::Word(w), w);
+            assert!(matches!(tokens[pos + 2].tok, SolidToken::Colon));
+            pos += 3;
+            let generic_need_be = get_arg_typ(tokens, &mut pos, info);
+            add_to_tree(where_clauses, ast, Ast {
+                value: AstNode::Identifier(generic_name.clone()),
+                children: None,
+                parent: None,
+                typ: Some(generic_need_be),
+                is_mut: false,
+                pos: None,
+            });
+        }
+    }
     let SolidToken::Colon = tokens[pos].tok else {
         update_pos_from_token(&tokens[pos]);
         throw!("expected `:`, found `{}`", tokens[pos].tok)
@@ -209,9 +231,9 @@ pub fn make_struct(
     tokens: &[SolidTokenWPos], mut pos: usize, ast: &mut Vec<Ast>, parent: usize, indent: usize,
     info: &mut Info
 ) -> usize {
-    // 1                                                                                                    name    generics   a_types
-    #[inline] fn get_traits_in_parenthesis(tokens: &[SolidTokenWPos], pos: &mut usize, info: &mut Info) -> Vec<(String, Vec<Type>, HashMap<String, Type>)> {
-        #[inline] fn add_generic_or_a_type(generics: &mut Vec<Type>, a_types: &mut HashMap<String, Type>, tokens: &[SolidTokenWPos], pos: &mut usize, info: &mut Info) {
+    // 1                                                                                                         name    generics   a_types
+    #[inline] fn get_traits_in_parenthesis(tokens: &[SolidTokenWPos], pos: &mut usize, info: &mut Info) -> Vec<(String, Vec<Type>, StrToType)> {
+        #[inline] fn add_generic_or_a_type(generics: &mut Vec<Type>, a_types: &mut StrToType, tokens: &[SolidTokenWPos], pos: &mut usize, info: &mut Info) {
             if let SolidToken::Operator(OperatorType::Eq) = tokens[*pos + 1].tok {
                 let name = unwrap_enum!(&tokens[*pos].tok, SolidToken::Word(w), w.clone());
                 *pos += 2;
@@ -411,13 +433,14 @@ pub fn make_struct(
     for (trt_name, generics_names, a_types) in trait_names {
         let key = ImplTraitsKey {
             name: struct_name.clone(),
-            path: info.cur_file_path.to_str().unwrap().to_string(),
+            path: info.cur_file_path.to_str().unwrap().to_string()
         };
         let val = ImplTraitsVal {
             trt_name: trt_name.to_string(),
             implementation: Implementation::Todo(info.cur_file_path.to_str().unwrap().to_string()),
             types: if a_types.is_empty() { None } else { Some(a_types) },
-            generics: if generics_names.is_empty() { None } else { Some(generics_names) }
+            generics: if generics_names.is_empty() { None } else { Some(generics_names) },
+            condition: None
         };
         add_trait!(key, val);
     }
@@ -445,6 +468,7 @@ pub fn make_struct(
                 { break 'whl }
             }
             SolidToken::Type => {
+                panic!("no longer supported (I think)");
                 let trait_name = unwrap_enum!(&tokens[pos+1].tok, SolidToken::Word(n), n);
                 unwrap_enum!(&tokens[pos+2].tok, SolidToken::Period);
                 let type_name = unwrap_enum!(&tokens[pos+3].tok, SolidToken::Word(n), n);
@@ -469,7 +493,8 @@ pub fn make_struct(
                             types: Some(HashMap::from([(type_name.clone(), typ)])),
                             trt_name: trait_name.clone(),
                             implementation: Implementation::None,
-                            generics: None
+                            generics: None,
+                            condition: None
                         })
                     }
                 } else {
@@ -480,7 +505,8 @@ pub fn make_struct(
                                 types: Some(HashMap::from([(type_name.clone(), typ)])),
                                 trt_name: trait_name.clone(),
                                 implementation: Implementation::None,
-                                generics: None
+                                generics: None,
+                                condition: None
                             }]
                         );
                     }
