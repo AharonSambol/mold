@@ -137,9 +137,6 @@ pub fn map_generic_types(template: &Type, got: &Type, res: &mut StrToType, ast: 
         Ok(())
     }
     if let Err(err) = map_generic_types_inner(template, &got, res) {
-        unsafe {
-            println!("{:?}", IMPL_TRAITS.iter().find(|(k, _)| k.name == "Vec").unwrap().1)
-        }
         throw!("{}", err)
     }
 }

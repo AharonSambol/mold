@@ -191,21 +191,20 @@ fn run_on_path(path: &str) {
     unsafe {
         MODULE_PATH = Some(module_path_buf);
     }
-    let temp_path = if unsafe { IS_COMPILED } {
-        format!("out/src/{}", module_path.rsplit_once('/').unwrap().1) // todo windows is \
-    } else {
-        format!("out/src/{}", module_path.rsplit_once('/').unwrap().1) // todo windows is \
-        // format!("{}_TEMP_", module_path)
-    };
+    let new_src = "/tmp/mold/src/";
+    let module_name = module_path.split('/').last().unwrap().to_string();
+    let new_project_src = format!("{new_src}{module_name}"); // todo windows is \
+
     let path = if unsafe { IS_COMPILED } {
-        path.replacen(&module_path, &temp_path, 1)
+        path.replacen(&module_path, &new_project_src, 1)
         //.replacen(".mo", ".rs", 1);
     } else {
-        path.replacen(&module_path, &temp_path, 1)
+        path.replacen(&module_path, &new_project_src, 1)
             .replacen(".mo", ".py", 1)
     };
-    let copy_folder = CopyFolder { temp_path, module_path };
-    let main = copy_folder.start();
+    let copy_folder = CopyFolder { new_project_src, module_path };
+
+    copy_folder.start();
 
     if !unsafe { IS_COMPILED } {
         let python_built_ins = {
@@ -281,23 +280,22 @@ class pointer_:
     def __gt__(self, other): return self.p > other.p
 "};
         let mut built_ins = File::create(
-            format!("{}/mold_core_built_ins.py", copy_folder.temp_path) // todo windows is \
+            format!("{}/mold_core_built_ins.py", copy_folder.new_project_src) // todo windows is \
         ).unwrap();
         built_ins.write_all(python_built_ins.as_ref()).unwrap();
     }
 
     let mut one_of_enums = HashMap::new();
-
     parse_file(&path, &mut one_of_enums);
     if unsafe { IS_COMPILED } {
-        let module_name = copy_folder.temp_path.as_str().rsplit_once('/').unwrap().1; // todo windows is \
+        let mut main = File::create(format!("{new_src}/main.rs")).unwrap(); // todo windows is \
+
         let file_name = path
-            .strip_prefix(&copy_folder.temp_path).unwrap()
+            .strip_prefix(&copy_folder.new_project_src).unwrap()
             .strip_prefix('/').unwrap()
             .replace('/', "::"); // todo windows is \
         // let file_name = file_name.strip_suffix(".rs").unwrap();
         let file_name = file_name.strip_suffix(".mo").unwrap();
-
         // TODO something about this  v
         // one_of_enums.remove( //1 this removes `Iterator | IntoIterator` which is used for the python implementation
         //     "_boxof_IntoIterator_of_Item_eq_T_endof__endof___or___boxof_Iterator_of_Item_eq_T_endof__endof_"
@@ -369,10 +367,11 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
                 // println!("{res}");
                 writeln!(&mut rust_main_code, "{}", res).unwrap();
             } else {
+                panic!("!");
                 // todo if used then panic
             }
         }
-        main.unwrap().write_all(rust_main_code.as_ref()).unwrap();
+        main.write_all(rust_main_code.as_ref()).unwrap();
 
         unsafe {
             for (key, val) in IMPL_TRAITS.iter() {
@@ -426,7 +425,7 @@ fn main() {{ {module_name}::{file_name}::main(); }}"
             }
         }
 
-        let path = PathBuf::from(&copy_folder.temp_path);
+        let path = PathBuf::from(&copy_folder.new_project_src);
         delete_unused_files(&path);
         change_file_extensions(&path, "rs");
     }
@@ -443,7 +442,7 @@ fn parse_file(path: &String, one_of_enums: &mut OneOfEnums) {
         PARSING_FILES.insert(path.clone());
     }
 
-    let orig_data = fs::read_to_string(path).expect("Couldn't read file");
+    let orig_data = fs::read_to_string(path).unwrap_or_else(|_| panic!("Couldn't read file `{}`", path));
     let data = put_at_start(&orig_data);
     unsafe {
         SRC_CODE.push(data.clone());
@@ -512,34 +511,35 @@ use crate::{{ _index_mut, _index, clone, {} }};
 
 
 fn run(path: &String) {
+    let mold_folder = "/tmp/mold";
     if unsafe { IS_COMPILED } {
         let check = Command::new("cargo")
             .arg("check")
-            .current_dir("out")
-            .output()
-            .unwrap();
+            .current_dir(mold_folder)
+            .output().unwrap();
 
         if check.status.success() {
             Command::new("cargo")
                 .arg("fix")
                 .args(["--allow-no-vcs", "--broken-code"])
-                .current_dir("out")
-                .output()
-                .unwrap();
+                .current_dir(mold_folder)
+                .output().unwrap();
 
-            let mut a = Command::new("cargo")
+            Command::new("cargo")
                 .arg("build")
                 .args(["--release", "--quiet", "--color", "always"])
-                .current_dir("out")
+                .current_dir(mold_folder)
                 .spawn()
-                .expect("ls command failed to start");
-            a.wait().unwrap();
+                .expect("ls command failed to start")
+                .wait().unwrap();
 
             println!("\n\x1b[100m\x1b[1m\x1b[92m OUTPUT: \x1b[0m");
             let now = Instant::now();
 
-            let mut prs = Command::new("out/target/release/out").spawn().unwrap();
-            prs.wait().unwrap();
+            Command::new("./mold")
+                .current_dir(format!("{mold_folder}/target/release"))
+                .spawn().unwrap()
+                .wait().unwrap();
 
             println!("\n\x1b[40m\x1b[51m\x1b[1m\x1b[37m EXECUTION TIME: {:?} \x1b[0m", now.elapsed());
         } else {

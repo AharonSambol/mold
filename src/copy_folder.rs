@@ -3,75 +3,89 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use crate::{IS_COMPILED, PARSED_FILES};
+use std::thread::{sleep, spawn};
+use std::time::Duration;
+use crate::{IS_COMPILED, main, PARSED_FILES};
 use crate::add_types::utils::join;
 
 pub struct CopyFolder {
-    pub temp_path: String,
+    pub new_project_src: String,
     pub module_path: String,
 }
+
 impl Drop for CopyFolder {
-    // TODO if it exits badly this wont happen which is BAD (rn)
     fn drop(&mut self) {
+        /*1 delete_dir */ Command::new("rm")
+            .arg("-rf")
+            .arg(&self.new_project_src)
+            .spawn().expect("rm command failed to start")
+            .wait().expect("rm failed");
         if unsafe { IS_COMPILED } {
-            /*1 delete_dir */ Command::new("rm")
-                .arg("-rf")
-                .arg(&self.temp_path)
-                .spawn().expect("rm command failed to start")
-                .wait().expect("rm failed");
+            let base_src = self.new_project_src.rsplit_once('/').unwrap().0;  // todo windows is \
             /*1 delete main */ Command::new("rm")
                 .arg("main.rs")
-                .current_dir(self.temp_path.rsplit_once('/').unwrap().0) // todo windows is \
-                .spawn().expect("touch command failed to start")
-                .wait().expect("touch failed");
-        } else {
-            /*1 delete_dir */ Command::new("rm")
-                .arg("-rf")
-                .arg(&self.temp_path)
+                .current_dir(base_src)
                 .spawn().expect("rm command failed to start")
                 .wait().expect("rm failed");
-            // /*1 un_renamed_dir */ Command::new("mv")
-            //     .arg(&self.temp_path)
-            //     .arg(&self.module_path)
-            //     .spawn().expect("mv command failed to start")
-            //     .wait().expect("mv failed");
+            /*1 delete_dir */ Command::new("rm")
+                .arg("-rf")
+                .arg("target")
+                .current_dir("/tmp/mold")
+                .spawn().expect("rm command failed to start 1")
+                .wait().expect("rm failed");
         }
     }
 }
+
 impl CopyFolder {
-    pub fn start(&self) -> Option<File> {
-        if unsafe { IS_COMPILED } {
+    pub fn start(&self) {
+        let already_initialized = Path::new("/tmp/mold").exists();
+
+        if !already_initialized {
             /*1 mkdir */ Command::new("mkdir")
-                .arg(&self.temp_path)
+                .arg("/tmp/mold")
                 .spawn().expect("mkdir command failed to start")
                 .wait().expect("mkdir failed");
-            /*1 copy_dir */ Command::new("cp")
-                .arg("-a")
-                .arg(format!("{}/.", self.module_path))
-                .arg(format!("{}/", self.temp_path))
-                .output().expect("cp command failed to start");
+        }
+        /*1 mkdir */ Command::new("mkdir")
+            .arg(&self.new_project_src)
+            .spawn().expect("mkdir command failed to start")
+            .wait().expect("mkdir failed");
 
-            let src = self.temp_path.rsplit_once('/').unwrap().0;
+        /*1 copy_dir */ Command::new("cp")
+            .arg("-a")
+            .arg(format!("{}/.", self.module_path))
+            .arg(&self.new_project_src)
+            .output().expect("cp command failed to start");
+        if unsafe { IS_COMPILED } {
+            if !already_initialized {
+                /*1 make cargo.toml */
+                Command::new("touch")
+                    .arg("Cargo.toml")
+                    .current_dir("/tmp/mold")
+                    .spawn().expect("touch command failed to start")
+                    .wait().expect("touch failed");
+                fs::write("/tmp/mold/Cargo.toml", r#"[package]
+                lto = "fat"
+                codegen-units = 1
+                name = "mold"
+                version = "0.1.0"
+                edition = "2021"
+
+                [profile.release]
+                overflow-checks = true
+
+                [dependencies]
+                list_comprehension_macro = "*""#).expect("Unable to write file");
+            }
             /*1 make main */ Command::new("touch")
                 .arg("main.rs")
-                .current_dir(src)
+                .current_dir(&self.new_project_src)
                 .spawn().expect("touch command failed to start")
                 .wait().expect("touch failed");
-            let main = File::create(format!("{src}/main.rs")).unwrap(); // todo windows is \
-            Some(main)
         } else {
-            /*1 mkdir */ Command::new("mkdir")
-                .arg(&self.temp_path)
-                .spawn().expect("ls command failed to start")
-                .wait().expect("mkdir failed");
-            /*1 copy_dir */ Command::new("cp")
-                .arg("-a")
-                .arg(format!("{}/.", self.module_path))
-                .arg(format!("{}/", self.temp_path))
-                .output().expect("ls command failed to start");
-            let path = PathBuf::from(&self.temp_path);
+            let path = PathBuf::from(&self.new_project_src);
             change_file_extensions(&path, "py");
-            None
         }
     }
 }

@@ -444,8 +444,12 @@ def main():
 ```
 
 # How to use
+***Currently only Linux is supported***
 
-Download the compiler then to run some code with the interpreter simply pass the path to the 
+Download the compiler, then navigate to the folder it's in and run 
+`chmod +x mold` to make it executable
+
+Then to run some code with the interpreter simply pass the path to the 
 file you want to run (the file should have the `.mo` file extension).
 <br> e.g. `mold src/tictactoe.mo`
 

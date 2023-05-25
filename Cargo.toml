@@ -9,7 +9,7 @@ edition = "2021"
 
 [dependencies]
 lazy_static = "1.4.0"
-pretty-print-tree = { path = "../pretty-print-tree" }
+pretty-print-tree = { path = "pretty-print-tree" }
 #primitives_macro = { path = "primitives_macro" }
 
 regex = "*"
