@@ -46,6 +46,10 @@ impl CopyFolder {
                 .arg("/tmp/mold")
                 .spawn().expect("mkdir command failed to start")
                 .wait().expect("mkdir failed");
+            /*1 mkdir */ Command::new("mkdir")
+                .arg("/tmp/mold/src")
+                .spawn().expect("mkdir command failed to start")
+                .wait().expect("mkdir failed");
         }
         /*1 mkdir */ Command::new("mkdir")
             .arg(&self.new_project_src)
@@ -59,6 +63,7 @@ impl CopyFolder {
             .output().expect("cp command failed to start");
         if unsafe { IS_COMPILED } {
             if !already_initialized {
+                println!("Updating crates.io this might take a few minutes");
                 /*1 make cargo.toml */
                 Command::new("touch")
                     .arg("Cargo.toml")

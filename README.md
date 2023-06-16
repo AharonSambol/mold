@@ -446,16 +446,18 @@ def main():
 # How to use
 ***Currently only Linux is supported***
 
+First, you must have both Python and Rust installed. 
+
 Download the compiler, then navigate to the folder it's in and run 
 `chmod +x mold` to make it executable
 
 Then to run some code with the interpreter simply pass the path to the 
 file you want to run (the file should have the `.mo` file extension).
-<br> e.g. `mold src/tictactoe.mo`
+<br> e.g. `./mold src/tictactoe.mo`
 
 To run the compiler simply pass `compile` and then the path. This compiles and runs 
 (I'll hopefully add just a compile option).
-<br> e.g. `mold compile src/tictactoe.mo`
+<br> e.g. `./mold compile src/tictactoe.mo`
 
 When running after previously running and crashing you might get `mkdir: cannot create directory ‘out/src/project_name’: File exists`
 that's fine, you can ignore it.

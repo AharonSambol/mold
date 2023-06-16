@@ -1,11 +1,9 @@
 use std::collections::{HashMap, HashSet};
-use std::env::{args, var};
 use std::fs;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
-use lazy_static::lazy_static;
 use crate::construct_ast::ast_structure::{Ast, AstNode, Param};
-use crate::{DONT_PRINT, EMPTY_STR, IS_COMPILED, PARSED_FILES, CUR_LINE, CUR_COL, SRC_CODE, CUR_PATH, MODULE_PATH, LINE_DIFF, StrToType};
+use crate::{DONT_PRINT, EMPTY_STR, IS_COMPILED, PARSED_FILES, CUR_LINE, CUR_COL, SRC_CODE, CUR_PATH, LINE_DIFF, StrToType};
 use crate::{OneOfEnums, parse_file, unwrap_enum, throw};
 use crate::add_types::ast_add_types::add_types;
 use crate::add_types::utils::{add_new_line, add_to_stack, get_from_stack, join, update_pos_from_token};

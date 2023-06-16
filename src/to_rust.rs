@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use crate::construct_ast::ast_structure::{Ast, AstNode};
 use std::fmt::Write;
 use lazy_static::lazy_static;
-use regex::internal::Input;
 use regex::Regex;
 use crate::{EMPTY_STR, IGNORE_ENUMS, IGNORE_FUNCS, IGNORE_STRUCTS, IGNORE_TRAITS, typ_with_child, unwrap_enum, some_vec};
 use crate::add_types::ast_add_types::{get_associated_type, NUM_TYPES, SPECIFIED_NUM_TYPE_RE};

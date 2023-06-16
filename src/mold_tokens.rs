@@ -1,10 +1,9 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::fmt::Write;
 use std::hint::unreachable_unchecked;
-use crate::add_types::utils::{add_new_line, update_pos_from_token};
+use crate::add_types::utils::{add_new_line};
 use crate::mold_tokens::Token::{Brace, Bracket, Colon, Comma, Num, NewLine, Operator, Parenthesis, Period, Tab, Word, Str, Char, LifeTime};
-use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE, EMPTY_STR, IS_COMPILED, unwrap_enum};
-use crate::types::unwrap;
+use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE, EMPTY_STR, IS_COMPILED};
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]

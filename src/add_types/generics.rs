@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 use crate::add_types::polymorphism::{box_no_side_effects, try_box_no_side_effects};
-use crate::add_types::utils::{get_pointer_complete_inner, join, join_or};
+use crate::add_types::utils::{get_pointer_complete_inner, join_or};
 use crate::construct_ast::ast_structure::{Ast, Param};
 use crate::construct_ast::mold_ast::{Info};
-use crate::{IMPL_TRAITS, StrToType};
-use crate::types::{GenericType, print_type, Type, TypeKind, unwrap};
+use crate::{StrToType};
+use crate::types::{GenericType, Type, TypeKind, unwrap};
 use crate::{throw, CUR_COL, CUR_LINE, CUR_PATH, LINE_DIFF, SRC_CODE};
-use crate::construct_ast::tree_utils::update_pos_from_tree_node;
 
 //2 only generics whose children are also T
 //  as in [Generic(Of("T"))]

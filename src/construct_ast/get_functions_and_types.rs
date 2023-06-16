@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use crate::construct_ast::get_typ::{get_arg_typ, try_get_arg_typ};
+use crate::construct_ast::get_typ::{try_get_arg_typ};
 use crate::mold_tokens::{IsOpen, OperatorType, SolidToken, SolidTokenWPos};
 use crate::{unwrap_enum};
 use crate::construct_ast::mold_ast::{FuncType, FuncTypes, StructType, StructTypes, TraitType, TraitTypes, TypeTypes, Info, EnumTypes, EnumType};
